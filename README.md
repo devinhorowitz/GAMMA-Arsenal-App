@@ -26,6 +26,9 @@ inventory shows.
 - **Camos** from 3DSS's camo system: the ones you have discovered, and which factions' guns
   carry the rest.
 - **Parts,** and the **repair kits** that fit the gun.
+- **R.I.S.K. enhancements,** when Neffi's Randomized Item Stat Kits is installed: what each kind
+  of enhancement does to this gun's stats, weakest to strongest, and the worst bad roll.
+  R.I.S.K. adds flat amounts, so the same tier does very different things to different guns.
 
 In English and Russian.
 
@@ -68,6 +71,8 @@ opens Arsenal straight on the screen, as sharp as the inventory.
 - The GAMMA mods whose data Arsenal reads: Weighted NPC Random Loadouts, Grok's stash
   overhaul, Darkasleif's Nimble Upgrades Guns, Weapon Parts Overhaul, and 3DSS for GAMMA's
   camo system.
+- [R.I.S.K.](https://www.moddb.com/mods/stalker-anomaly/addons/risk-randomized-item-stat-kits-for-gamma)
+  by Neffi. Arsenal reads its enhancements from the running game and ships none of its files.
 
 ## Development
 

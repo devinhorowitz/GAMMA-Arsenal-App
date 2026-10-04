@@ -183,6 +183,45 @@
 	<string id="ui_mcm_arsenal_count_seen_desc">
 		<text>Учитывать также оружие в трупе, тайнике или у торговца, когда вы их открываете, а не только то, что вы забрали.</text>
 	</string>
+	<string id="st_arsenal_risk">
+		<text>Улучшения R.I.S.K.:</text>
+	</string>
+	<string id="st_arsenal_risk_note">
+		<text>Одно на оружии в исходном виде, от слабого к сильному</text>
+	</string>
+	<string id="st_arsenal_risk_bad">
+		<text>%s (неудача: %s)</text>
+	</string>
+	<string id="st_arsenal_risk_same">
+		<text>на карточке без изменений</text>
+	</string>
+	<string id="st_arsenal_risk_accuracy">
+		<text>Точность</text>
+	</string>
+	<string id="st_arsenal_risk_handling">
+		<text>Удобность</text>
+	</string>
+	<string id="st_arsenal_risk_sway">
+		<text>Раскачка</text>
+	</string>
+	<string id="st_arsenal_risk_fire_rate">
+		<text>Скорострельность</text>
+	</string>
+	<string id="st_arsenal_risk_velocity">
+		<text>Скорость пули</text>
+	</string>
+	<string id="st_arsenal_risk_reliability">
+		<text>Надёжность</text>
+	</string>
+	<string id="st_arsenal_risk_recoil">
+		<text>Контроль отдачи</text>
+	</string>
+	<string id="st_arsenal_risk_weight">
+		<text>Вес</text>
+	</string>
+	<string id="st_arsenal_risk_damage">
+		<text>Урон</text>
+	</string>
 	<string id="st_arsenal_tag_suppressed">
 		<text>с глушителем</text>
 	</string>

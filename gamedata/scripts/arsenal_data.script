@@ -236,6 +236,10 @@ CARD = {
 -- each a list of { ps = change section, prop = property, installed = the gun ships with it },
 -- `fixed` when the gun ships an upgrade of the group. Kept per section: the configs do not
 -- change while the game runs, and a page asks for a tree once per stat.
+-- R.I.S.K.'s enhancement groups are no mechanic's upgrades (its kits install them, one gun at a
+-- time), though its test file lists them in a few guns' "upgrades"
+local NOT_UPGRADES = "^risk_"
+
 local trees = {}
 function upgrade_tree(sec)
     if trees[sec] then return trees[sec] end
@@ -244,7 +248,7 @@ function upgrade_tree(sec)
         installed[u] = true
     end
     for g in each_of(sec, "upgrades") do
-        queue[#queue + 1] = g
+        if not g:find(NOT_UPGRADES) then queue[#queue + 1] = g end
     end
     local i = 1
     while queue[i] do
@@ -1177,6 +1181,74 @@ function parts(sec)
     for p in (list or ""):gmatch("[^,%s]+") do
         local it = item_of(p)
         if it then out[#out + 1] = it end
+    end
+    return out
+end
+
+-- R.I.S.K. (Neffi's Randomized Item Stat Kits) weapon enhancements: upgrade sections its kits
+-- install on one gun at a time. A family is a group, risk_up_gr_wpn_<family>, whose elements'
+-- change sections add a fixed amount (not a share of the gun's own) and carry a "value", the
+-- strength its tooltip shows. Per family, the card value of the gun as it ships with its
+-- weakest and strongest good result, and with its worst bad one, through the card formulas
+-- here; weight in kg; damage, which R.I.S.K. applies when a shot lands, as its percent. Sway
+-- moves the card's handling, as handling does.
+RISK_FAMILIES = {
+    { family = "accuracy", stat = "accuracy" },
+    { family = "handling", stat = "handling" },
+    { family = "sway", stat = "handling" },
+    { family = "fire_rate", stat = "fire_rate" },
+    { family = "velocity", stat = "speed" },
+    { family = "reliability", stat = "reliability" },
+    { family = "recoil", stat = "recoil" },
+    { family = "weight", stat = "weight", lower_better = true },
+    { family = "damage", stat = "damage" },
+}
+
+-- { { family, stat, base, low, high (the good results), worst (the worst bad one) }, ... } in
+-- the card's order; none without R.I.S.K. or for a stat the card formulas cannot compute
+function risk_enhancements(sec)
+    local out = {}
+    local p = params(sec)
+    for _, f in ipairs(RISK_FAMILIES) do
+        local g = "risk_up_gr_wpn_" .. f.family
+        local base
+        if f.stat == "weight" then
+            base = kg(weight(sec))
+        elseif f.stat == "damage" then
+            base = 0
+        else
+            base = CARD[f.stat](p)
+        end
+        local low, high, worst
+        for el in each_of(ini_sys:section_exist(g) and base ~= nil and g or "", "elements") do
+            local ps = ini_sys:r_string_ex(el, "section")
+            local v = ps and ini_sys:r_float_ex(ps, "value")
+            if v and v ~= 0 then
+                local x
+                if f.stat == "weight" then
+                    x = kg(weight(sec) + (ini_sys:r_float_ex(ps, "inv_weight") or 0))
+                elseif f.stat == "damage" then
+                    x = v
+                else
+                    local q = {}
+                    for k, val in pairs(p) do q[k] = val end
+                    for _, k in ipairs(PARAMS) do
+                        local d = ini_sys:r_float_ex(ps, k)
+                        if d then q[k] = q[k] + d end
+                    end
+                    x = CARD[f.stat](q)
+                end
+                if x and v > 0 then
+                    low, high = math.min(low or x, x), math.max(high or x, x)
+                elseif x then
+                    local bad = f.lower_better and math.max or math.min
+                    worst = worst and bad(worst, x) or x
+                end
+            end
+        end
+        if low then
+            out[#out + 1] = { family = f.family, stat = f.stat, base = base, low = low, high = high, worst = worst }
+        end
     end
     return out
 end

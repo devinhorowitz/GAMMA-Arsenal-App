@@ -19,7 +19,8 @@ SECTIONS = {
     "wpn_ak74": dict(kind="w_rifle", inv_name="st_ak74", inv_grid_x="10", repair_type="rifle_5", ammo_class="ammo_545, ammo_545_bad, ammo_545_alt, ammo_545_ap",
                      bullet_speed="900", condition_shot_dec="0.0005", zoom_cam_dispersion="0.5",
                      fire_modes="1, -1", inv_weight="3.3", description="st_ak74_descr", parent_section="wpn_ak74",
-                     fire_dispersion_base="0.6", rpm="600", upgrades="up_gr_a, up_gr_b", installed_upgrades="up_b1",
+                     fire_dispersion_base="0.6", rpm="600", upgrades="up_gr_a, up_gr_b, risk_up_gr_wpn_fire_rate",
+                     installed_upgrades="up_b1",
                      scopes="kobra, lam, ak_kit, missing_scope", silencer_status="2", silencer_name="wpn_sil",
                      grenade_launcher_status="2", grenade_launcher_name="wpn_gl", grenade_class="ammo_vog, ammo_vog_bad"),
     "wpn_ak74_pso": dict(kind="w_rifle", inv_name="st_ak74", inv_grid_x="10", parent_section="wpn_ak74"),
@@ -139,6 +140,23 @@ SECTIONS = {
     "wpn_upg_b": dict(kind="w_smg", inv_name="st_upg", inv_grid_x="1", rpm="600"),
     "up_fast": dict(section="up_sect_fast"),
     "up_sect_fast": dict(rpm="200"),
+    # R.I.S.K.: fire rate (+12, +240 and -240 RPM, and an element of no strength), weight (-2, then
+    # +2 and +1 kg), damage (+2, +40, -40 %), recoil (a gun without a recoil profile gets none)
+    "risk_up_gr_wpn_fire_rate": dict(elements="risk_up_fr_a, risk_up_fr_b, risk_up_fr_c, risk_up_fr_zero"),
+    "risk_up_fr_a": dict(section="risk_sect_fr_a"), "risk_sect_fr_a": dict(value="+3", rpm="+12"),
+    "risk_up_fr_b": dict(section="risk_sect_fr_b"), "risk_sect_fr_b": dict(value="+60", rpm="+240"),
+    "risk_up_fr_c": dict(section="risk_sect_fr_c"), "risk_sect_fr_c": dict(value="-60", rpm="-240"),
+    "risk_up_fr_zero": dict(section="risk_sect_fr_zero"), "risk_sect_fr_zero": dict(value="0", rpm="-600"),
+    "risk_up_gr_wpn_weight": dict(elements="risk_up_w_a, risk_up_w_b, risk_up_w_c"),
+    "risk_up_w_a": dict(section="risk_sect_w_a"), "risk_sect_w_a": dict(value="+50", inv_weight="-2.0"),
+    "risk_up_w_b": dict(section="risk_sect_w_b"), "risk_sect_w_b": dict(value="-50", inv_weight="+2.0"),
+    "risk_up_w_c": dict(section="risk_sect_w_c"), "risk_sect_w_c": dict(value="-25", inv_weight="+1.0"),
+    "risk_up_gr_wpn_damage": dict(elements="risk_up_d_a, risk_up_d_b, risk_up_d_c"),
+    "risk_up_d_a": dict(section="risk_sect_d_a"), "risk_sect_d_a": dict(value="+2"),
+    "risk_up_d_b": dict(section="risk_sect_d_b"), "risk_sect_d_b": dict(value="+40"),
+    "risk_up_d_c": dict(section="risk_sect_d_c"), "risk_sect_d_c": dict(value="-40"),
+    "risk_up_gr_wpn_recoil": dict(elements="risk_up_r_a"),
+    "risk_up_r_a": dict(section="risk_sect_r_a"), "risk_sect_r_a": dict(value="+30", zoom_cam_dispersion="-0.1"),
 }
 PARTS = {"con_parts_list": dict(wpn_ak74="prt_barrel, prt_bolt, prt_gone")}
 TEXT = {"st_ak74": "AK-74", "st_pm": "PM", "st_aps": "Stechkin APS", "st_toz": "TOZ-34", "st_rpg": "RPG-7",
@@ -469,6 +487,12 @@ MUTANTS = {
     "camo_required": ("c.required = c.required or d.unlock_required == true", "c.required = false"),
     "camo_belongs": ("if d and belongs(fd, s, t) then", "if d then"),
     "camo_guard": ("    if not (e and type(files) == \"table\" and belongs and label_for and unlocked) then return out end\n", ""),
+    "risk_upgrades": ("if not g:find(NOT_UPGRADES) then queue[#queue + 1] = g end", "queue[#queue + 1] = g"),
+    "risk_zero": ("if v and v ~= 0 then", "if v then"),
+    "risk_worst": ("local bad = f.lower_better and math.max or math.min", "local bad = math.min"),
+    "risk_damage": ("                elseif f.stat == \"damage\" then\n                    x = v\n", ""),
+    "risk_weight": ("x = kg(weight(sec) + (ini_sys:r_float_ex(ps, \"inv_weight\") or 0))", "x = kg(weight(sec))"),
+    "risk_sign": ("if x and v > 0 then", "if x then"),
     "kit_sort": ("table.sort(g.factions, function(a, b) return FACTION_AT[a] < FACTION_AT[b] end)", "-- unsorted"),
     "no_cap": ("return math.min(100, math.floor(above0((p.fire_dispersion_base - 1.5) / (0 - 1.5)) * 100))",
                "return math.floor(above0((p.fire_dispersion_base - 1.5) / (0 - 1.5)) * 100)"),
@@ -698,6 +722,20 @@ def main():
         none = "error: %s" % str(err)[:60]
     g.z_3dss_gamma_camo_system = cs
     check(none == [], "no camos without the camo system: %s" % none)
+    # R.I.S.K.: per family the stat with one enhancement on the gun as it ships, the worst bad roll
+    risk = {r.family: (r.base, r.low, r.high, r.worst) for r in m.risk_enhancements("wpn_ak74").values()}
+    fams = [r.family for r in m.risk_enhancements("wpn_ak74").values()]
+    check(fams == ["fire_rate", "recoil", "weight", "damage"]
+          and risk["fire_rate"] == (700, 712, 940, 460) and risk["weight"] == (3.3, 1.3, 1.3, 5.3)
+          and risk["damage"] == (0, 2, 40, -40),
+          "R.I.S.K. per family, in the card's order: the card value with its weakest and strongest good "
+          "result and its worst bad one, an element of no strength left out; weight in kg (lighter is "
+          "better); damage as its percent: %s" % risk)
+    rec = risk.get("recoil")
+    check(rec is not None and rec[1] == rec[2] and rec[1] > rec[0] and rec[3] is None,
+          "recoil through the card's formula, no bad roll when there is none: %s" % (rec,))
+    pm_fams = [r.family for r in m.risk_enhancements("wpn_pm").values()]
+    check("recoil" not in pm_fams, "no recoil row for a gun without a recoil profile: %s" % pm_fams)
     looks = [(x.name, x.makes) for x in m.attachments("wpn_fort").kits.values()]
     check(looks == [("Fort kit", None)], "a kit that makes the same variant names nothing: %s" % looks)
     check(tuple(m.max_stat("wpn_toz34", "accuracy")) == (100, 50),

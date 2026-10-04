@@ -75,6 +75,13 @@
 	<entry_max x="250" y="2" width="94" height="16">
 		<text font="letterica16" r="140" g="140" b="140" align="l" vert_align="t"/>
 	</entry_max>
+	<!-- R.I.S.K. enhancements: a family, and the stat with one of its enhancements -->
+	<risk_name x="0" y="0" width="124" height="18">
+		<text font="letterica16" r="200" g="200" b="200" align="l" vert_align="t" complex_mode="1"/>
+	</risk_name>
+	<risk_values x="128" y="0" width="216" height="18">
+		<text font="letterica16" r="200" g="200" b="200" align="l" vert_align="t" complex_mode="1"/>
+	</risk_values>
 	<!-- where to find it: a faction, and the ranks of its fighters that carry the gun -->
 	<where_faction x="0" y="0" width="84" height="18">
 		<text font="letterica16" r="200" g="200" b="200" align="l" vert_align="t" complex_mode="1"/>

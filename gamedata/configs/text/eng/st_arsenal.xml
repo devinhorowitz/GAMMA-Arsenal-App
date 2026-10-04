@@ -228,4 +228,43 @@
 	<string id="ui_mcm_arsenal_count_seen_desc">
 		<text>Also count the guns in a body, stash or trader's stock when you open it, not only the guns you take.</text>
 	</string>
+	<string id="st_arsenal_risk">
+		<text>R.I.S.K. enhancements:</text>
+	</string>
+	<string id="st_arsenal_risk_note">
+		<text>One on the gun as it ships, weakest to strongest</text>
+	</string>
+	<string id="st_arsenal_risk_bad">
+		<text>%s (bad roll: %s)</text>
+	</string>
+	<string id="st_arsenal_risk_accuracy">
+		<text>Accuracy</text>
+	</string>
+	<string id="st_arsenal_risk_handling">
+		<text>Handling</text>
+	</string>
+	<string id="st_arsenal_risk_sway">
+		<text>Sway</text>
+	</string>
+	<string id="st_arsenal_risk_fire_rate">
+		<text>Fire rate</text>
+	</string>
+	<string id="st_arsenal_risk_velocity">
+		<text>Velocity</text>
+	</string>
+	<string id="st_arsenal_risk_reliability">
+		<text>Reliability</text>
+	</string>
+	<string id="st_arsenal_risk_recoil">
+		<text>Recoil control</text>
+	</string>
+	<string id="st_arsenal_risk_weight">
+		<text>Weight</text>
+	</string>
+	<string id="st_arsenal_risk_damage">
+		<text>Damage</text>
+	</string>
+	<string id="st_arsenal_risk_same">
+		<text>no change on the card</text>
+	</string>
 </string_table>

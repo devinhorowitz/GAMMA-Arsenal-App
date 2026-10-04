@@ -261,6 +261,17 @@ function arsenal_data.camos(sec)
              { name = "Arctic", icon = "arctic", required = true, locked = true, factions = {} },
              { name = "Woodland", icon = "woodland", required = true, locked = false, factions = {} } }
 end
+-- R.I.S.K. on the Fort-17s: fire rate (the card agrees), accuracy (the card shows 75, not 70: left
+-- out), one that leaves the card as it is, weight, damage, recoil (the card has no such row: left out)
+function arsenal_data.risk_enhancements(sec)
+    if not FORT[sec] then return {} end
+    return { { family = "fire_rate", stat = "fire_rate", base = 450, low = 462, high = 690, worst = 210 },
+             { family = "accuracy", stat = "accuracy", base = 70, low = 71, high = 72 },
+             { family = "sway", stat = "accuracy", base = 75, low = 75, high = 75, worst = 75 },
+             { family = "weight", stat = "weight", base = 1.1, low = 0, high = 0.9, worst = 3.1 },
+             { family = "damage", stat = "damage", base = 0, low = 2, high = 40, worst = -40 },
+             { family = "recoil", stat = "recoil", base = 50, low = 55, high = 60 } }
+end
 function arsenal_data.made_from(sec)
     return FORT[sec] and { { from = "Fort-12", kit = "Conversion Kit" } } or {}
 end
@@ -335,6 +346,15 @@ MUTANTS = {
                    ""),
     "camo_green": ("            elseif c.required then\n                t:SetTextColor(theme.argb(\"good\"))\n", ""),
     "camo_ratio": ("                local w = h * ratio", "                local w = h"),
+    "risk_check": ("agrees = ok and type(s) == \"string\" and tonumber(s:match(\"[-+]?%d+%.?%d*\")) == r.base",
+                   "agrees = true"),
+    "risk_card_only": ('local row, unit, agrees = card_rows[r.stat], "", false', 'local row, unit, agrees = card_rows[r.stat], "", true'),
+    "risk_bad": ('s = string.format(game.translate_string("st_arsenal_risk_bad"), s, num(r.worst) .. u)', "-- no bad roll"),
+    "risk_sign": ('local function num(x) return (signed and x > 0) and ("+" .. x) or tostring(x) end',
+                  "local function num(x) return tostring(x) end"),
+    "risk_none": ("    if #risk_rows > 0 then", "    if false then"),
+    "risk_same": ("            if r.low == r.base and r.high == r.base then", "            if false then"),
+    "risk_worst_base": ("            if r.worst and r.worst ~= r.base then", "            if r.worst then"),
     "no_repair": ("    if #kits > 0 then", "    if false then"),
     "where_heading": ('text("entry_heading", game.translate_string("st_arsenal_where"))', "-- no heading"),
     "where_ranges": ("while j < #ranks and at[ranks[j + 1]] == at[ranks[j]] + 1 do j = j + 1 end", "-- no ranges"),
@@ -465,10 +485,11 @@ def main():
     check(mx and mx[0].x == 250, "the max sits right of the value column")
 
     # what fits it and what it is made of, after the ammo, before the description
-    order = [t for t in texts if t in ("Variants:", "Where to find:", "Ammo", "Magazines:", "Scopes:", "Suppressors:",
-                                       "Accessories:", "Camos:", "Parts:", "Repair kits:", "A gun.")]
-    check(order == ["Variants:", "Where to find:", "Ammo", "Magazines:", "Scopes:", "Suppressors:", "Accessories:",
-                    "Camos:", "Parts:", "Repair kits:", "A gun."],
+    order = [t for t in texts if t in ("R.I.S.K. enhancements:", "Variants:", "Where to find:", "Ammo", "Magazines:",
+                                       "Scopes:", "Suppressors:", "Accessories:", "Camos:", "Parts:", "Repair kits:",
+                                       "A gun.")]
+    check(order == ["R.I.S.K. enhancements:", "Variants:", "Where to find:", "Ammo", "Magazines:", "Scopes:",
+                    "Suppressors:", "Accessories:", "Camos:", "Parts:", "Repair kits:", "A gun."],
           "sections in order: %s" % order)
     def after(head, n):
         i = texts.index(head) if head in texts else -1
@@ -519,6 +540,18 @@ def main():
     sw = [(c.tex, c.w, c.h) for c in fort.children.values() if c.path == "camo_swatch"]
     check(sw == [("black", 18, 24), ("tan", 18, 24), ("arctic", 18, 24), ("woodland", 18, 24)],
           "each camo's swatch, square on a wide screen: %s" % sw)
+    check(after("R.I.S.K. enhancements:", 9) == ["One on the gun as it ships, weakest to strongest", "Fire rate",
+                                                 "462 \u2013 690 RPM (bad roll: 210 RPM)", "Sway",
+                                                 "no change on the card", "Weight",
+                                                 "0 \u2013 0.9 kg (bad roll: 3.1 kg)", "Damage",
+                                                 "+2 \u2013 +40 % (bad roll: -40 %)"],
+          "R.I.S.K. rows: a card stat where the card agrees, weight, damage signed; a stat the card shows "
+          "otherwise or not at all left out; one that leaves the card as it is says so: %s"
+          % after("R.I.S.K. enhancements:", 9))
+    rn = [c for c in fort.children.values() if c.path == "risk_name"]
+    rv = [c for c in fort.children.values() if c.path == "risk_values"]
+    check(len(rn) == 4 and all(a.y == b.y for a, b in zip(rn, rv)) and rv[0].x == 128,
+          "a family and its values side by side")
     check(after("Repair kits:", 2) == ["Type A Cleaning Kit", "Type A Repair Kit"],
           "the kits that repair it, once though both variants name them: %s" % after("Repair kits:", 2))
     check(after("Magazines:", 2) == ["Fort Magazine", "13 rounds"], "magazines with their rounds: %s" % after("Magazines:", 2))

@@ -480,6 +480,61 @@ function ArsenalPDA:ShowEntry(sec)
         joined(each(function(s) return tostring(arsenal_data.kg(arsenal_data.weight(s))) end)),
         game.translate_string("st_kg")))
 
+    -- R.I.S.K. enhancements, when it runs: per family, the stat with one enhancement on the
+    -- shown variant as it ships, weakest to strongest, the worst bad roll after; a card stat
+    -- only where the card formulas here give the card's own value, as for the max
+    local risk = safe(arsenal_data.risk_enhancements, shown.sec) or {}
+    local risk_rows = {}
+    if #risk > 0 then
+        local card_rows = {}
+        for _, row in ipairs(arsenal_data.has_stat_card(shown.sec) and arsenal_data.stat_rows(false) or {}) do
+            card_rows[row.stat] = row
+        end
+        for _, r in ipairs(risk) do
+            local row, unit, agrees = card_rows[r.stat], "", false
+            if row then
+                local ok, s = pcall(utils_ui.get_stats_string_value, nil, shown.sec, row.gr, row.stat)
+                agrees = ok and type(s) == "string" and tonumber(s:match("[-+]?%d+%.?%d*")) == r.base
+                unit = (row.gr.unit and row.gr.unit ~= "") and game.translate_string(row.gr.unit) or ""
+            elseif r.stat == "weight" then
+                agrees, unit = true, game.translate_string("st_kg")
+            elseif r.stat == "damage" then
+                agrees, unit = true, "%"
+            end
+            if agrees then risk_rows[#risk_rows + 1] = { r = r, unit = unit } end
+        end
+    end
+    if #risk_rows > 0 then
+        y = y + GAP
+        text("entry_heading", game.translate_string("st_arsenal_risk"))
+        rule()
+        text("entry_line", game.translate_string("st_arsenal_risk_note"), "dim")
+        for _, rr in ipairs(risk_rows) do
+            local r, u = rr.r, rr.unit ~= "" and (" " .. rr.unit) or ""
+            local signed = r.stat == "damage"
+            local function num(x) return (signed and x > 0) and ("+" .. x) or tostring(x) end
+            local s
+            if r.low == r.base and r.high == r.base then
+                s = game.translate_string("st_arsenal_risk_same")
+            else
+                s = ((r.low == r.high) and num(r.low)
+                    or string.format(game.translate_string("st_arsenal_rank_range"), num(r.low), num(r.high))) .. u
+            end
+            if r.worst and r.worst ~= r.base then
+                s = string.format(game.translate_string("st_arsenal_risk_bad"), s, num(r.worst) .. u)
+            end
+            local n = xml:InitTextWnd("risk_name", entry)
+            n:SetWndPos(vector2():set(n:GetWndPos().x, y))
+            n:SetText(game.translate_string("st_arsenal_risk_" .. r.family))
+            n:AdjustHeightToText()
+            local v = xml:InitTextWnd("risk_values", entry)
+            v:SetWndPos(vector2():set(v:GetWndPos().x, y))
+            v:SetText(s)
+            v:AdjustHeightToText()
+            y = y + math.max(n:GetHeight(), v:GetHeight()) + 2
+        end
+    end
+
     -- the variants, each with when and where it was found
     if #e.variants > 1 then
         y = y + GAP
