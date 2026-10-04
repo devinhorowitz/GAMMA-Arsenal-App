@@ -2,14 +2,16 @@
 
 # Arsenal
 
-**Every gun, suit and helmet in your GAMMA game, in the PDA: its stats, where to find it,
-what fits it, and which ones you have found. You learn of them as you play.**
+**Every gun, round, suit and helmet in your GAMMA game, in the PDA: its stats, where to find
+it, what fits it, and which ones you have found. You learn of them as you play.**
 
 ![Arsenal's page for the RD 5.45 Custom "ISG"](media/arsenal_screenshot.png)
 
 Arsenal is a PDA app for the S.T.A.L.K.E.R. Anomaly modpack GAMMA. It reads the running
 game's own configs, so the catalog is whatever your mod list has, with the numbers your
 inventory shows. What never turns up in your game, short of console commands, is not in it.
+Browse it by category, or tick **By faction** to see what each faction's fighters carry and
+wear.
 
 ## You learn as you play
 
@@ -30,21 +32,31 @@ and what its new-game kit offers. The rest you learn in the Zone:
   will tell you what one is and how to get it, for a price.
 
 A gun or suit shows its stats and what fits it once you have studied it: found one, or had
-its specs from someone who knows. New entries come with a PDA message and a mark in the list.
+its specs from someone who knows. A round is known once you know a gun that fires it. New entries come with a PDA message and glow in the list
+until you click them, like unread mail, and so does anything you find for the first time.
+Arsenal's tile in MAC's launcher shows how many are waiting.
 
 **MCM > Arsenal > Jailbreak** opens everything, like a finished encyclopedia.
 
 ## What a page shows
 
-- **The stat card** from the inventory, and the most each stat reaches fully upgraded. For
-  suits and helmets, the armor card GAMMA's inventory shows, value for value.
+- **The stat card** from the inventory, and the most each stat reaches fully upgraded, with a
+  gun's hit power and how often it jams once its parts wear. For suits and helmets, the armor
+  card GAMMA's inventory shows, value for value.
+- **Against bullets,** for suits and helmets: the strongest round each stops and the weakest
+  that pierces it, how many of the game's rounds it stops, and how much of a hit gets through
+  either way, worked out as GAMMA's damage balancer does.
 - **Variants.** Items that share a name are one entry. Versions that play differently are
   listed by what sets them apart, each with when and where you found it.
 - **Where to find it.** The factions whose fighters carry or wear it and at which ranks,
-  likeliest first, and how often a suit drops; the levels whose stashes most often hold it;
-  traders; story characters; tasks and story rewards; crafting; Homestead's stash runs; the
-  Armor Exchange; Nimble's trade-ins; the gun and kit it is made from; new-game kits.
-- **Ammo,** and the calibers a conversion upgrade opens.
+  likeliest first, and how often a suit drops; the levels where one stash most likely holds
+  it, with the chance (rare stashes too); traders by supply tier, with what unlocks the tier
+  (goodwill, Heavy Pockets, a mechanic's toolkits); bodies; story characters; tasks and story
+  rewards; crafting; Homestead's stash runs; the Armor Exchange; Nimble's trade-ins; the gun
+  and kit it is made from; new-game kits.
+- **Ammo,** as a table: each round's damage from this gun, armor piercing, bullet speed and
+  the damage left at 100 m; then the calibers a conversion upgrade opens. Rounds have pages of
+  their own: damage, armor piercing, speed, pellets, falloff, and the guns that fire them.
 - **Magazines,** when Mags Redux is on.
 - **Scopes, suppressors and accessories:** launchers with their grenades, laser modules,
   kits, and mounts an upgrade adds.

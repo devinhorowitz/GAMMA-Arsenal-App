@@ -135,9 +135,6 @@
 	<string id="st_arsenal_stashes">
 		<text>В тайниках</text>
 	</string>
-	<string id="st_arsenal_stashes_at">
-		<text>В тайниках, чаще всего: %s</text>
-	</string>
 	<string id="st_arsenal_no_source">
 		<text>Не встречается ни у группировок, ни в тайниках</text>
 	</string>
@@ -357,6 +354,12 @@
 	<string id="st_arsenal_known_count">
 		<text>Известно %s · Найдено %s из %s</text>
 	</string>
+	<string id="st_arsenal_by_faction">
+		<text>По группировкам</text>
+	</string>
+	<string id="st_arsenal_known_new_count">
+		<text>Известно %s · Найдено %s из %s · новых: %s</text>
+	</string>
 	<string id="st_arsenal_learned_on">
 		<text>Узнано %s: %s</text>
 	</string>
@@ -410,5 +413,146 @@
 	</string>
 	<string id="ui_mcm_arsenal_jailbreak_desc">
 		<text>Арсенал показывает то, о чём вы узнали: снаряжение своей группировки с самого начала, затем найденное, увиденное, добытое, прочитанное в КПК и услышанное от людей. Со взломом он показывает всё, что есть в этой игре, как законченная энциклопедия.</text>
+	</string>
+	<string id="st_arsenal_cat_ammo">
+		<text>Патроны</text>
+	</string>
+	<string id="st_arsenal_tag_ap">
+		<text>проб. %s</text>
+	</string>
+	<string id="st_arsenal_tag_hit">
+		<text>урон x%s</text>
+	</string>
+	<string id="st_arsenal_times">
+		<text>x%s</text>
+	</string>
+	<string id="st_arsenal_hit_power">
+		<text>Мощность выстрела: %s</text>
+	</string>
+	<string id="st_arsenal_jam_worn">
+		<text>Вероятность клина: %s на выстрел при состоянии деталей ниже 80%%</text>
+	</string>
+	<string id="st_arsenal_jam_both">
+		<text>Вероятность клина: %s на выстрел, %s при состоянии деталей ниже 80%%</text>
+	</string>
+	<string id="st_arsenal_jam_base">
+		<text>Вероятность клина: %s на выстрел</text>
+	</string>
+	<string id="st_arsenal_jam_none">
+		<text>Вероятность клина: нет</text>
+	</string>
+	<string id="st_arsenal_round_damage">
+		<text>Урон</text>
+	</string>
+	<string id="st_arsenal_round_ap">
+		<text>Бронепробитие</text>
+	</string>
+	<string id="st_arsenal_round_speed">
+		<text>Скорость пули</text>
+	</string>
+	<string id="st_arsenal_round_pellets">
+		<text>Дробин</text>
+	</string>
+	<string id="st_arsenal_round_kept">
+		<text>Остаётся на 50/100/200 м</text>
+	</string>
+	<string id="st_arsenal_fired_by">
+		<text>Используется в:</text>
+	</string>
+	<string id="st_arsenal_col_round">
+		<text>Патрон</text>
+	</string>
+	<string id="st_arsenal_col_damage">
+		<text>Урон</text>
+	</string>
+	<string id="st_arsenal_col_ap">
+		<text>Проб.</text>
+	</string>
+	<string id="st_arsenal_col_speed">
+		<text>м/с</text>
+	</string>
+	<string id="st_arsenal_col_kept">
+		<text>100 м</text>
+	</string>
+	<string id="st_arsenal_pellets">
+		<text>%s x %s</text>
+	</string>
+	<string id="st_arsenal_rounds_note">
+		<text>Урон из этого оружия, бронепробитие (проб.), скорость пули и урон, остающийся на 100 м.</text>
+	</string>
+	<string id="st_arsenal_ammo_other">
+		<text>Другие варианты: %s</text>
+	</string>
+	<string id="st_arsenal_vs_bullets">
+		<text>Против пуль:</text>
+	</string>
+	<string id="st_arsenal_pen_range">
+		<text>Держит патроны до %s (проб. %s); %s (проб. %s) и сильнее пробивают.</text>
+	</string>
+	<string id="st_arsenal_pen_all">
+		<text>Держит все встречающиеся патроны, сильнейший — %s (проб. %s).</text>
+	</string>
+	<string id="st_arsenal_pen_none">
+		<text>Пробивается любым патроном, начиная с %s (проб. %s).</text>
+	</string>
+	<string id="st_arsenal_pen_count">
+		<text>Держит %s из %s встречающихся патронов.</text>
+	</string>
+	<string id="st_arsenal_pen_damage">
+		<text>Попадание наносит %s урона, если броня держит, и %s, если пробита.</text>
+	</string>
+	<string id="st_arsenal_sold_tiers">
+		<text>Продаётся у торговцев:</text>
+	</string>
+	<string id="st_arsenal_tier">
+		<text>Уровень %s: %s</text>
+	</string>
+	<string id="st_arsenal_tier_need">
+		<text>Уровень %s, %s: %s</text>
+	</string>
+	<string id="st_arsenal_need_goodwill">
+		<text>репутация %s</text>
+	</string>
+	<string id="st_arsenal_need_kit">
+		<text>после набора инструментов</text>
+	</string>
+	<string id="st_arsenal_need_kits">
+		<text>после %s наборов инструментов</text>
+	</string>
+	<string id="st_arsenal_need_drugkit">
+		<text>после набора медикаментов</text>
+	</string>
+	<string id="st_arsenal_need_story">
+		<text>дальше по сюжету</text>
+	</string>
+	<string id="st_arsenal_need_heavy">
+		<text>Тяжёлые карманы</text>
+	</string>
+	<string id="st_arsenal_or">
+		<text>или</text>
+	</string>
+	<string id="st_arsenal_trade_barman">
+		<text>бармены</text>
+	</string>
+	<string id="st_arsenal_trade_mechanic">
+		<text>техники</text>
+	</string>
+	<string id="st_arsenal_trade_medic">
+		<text>медики</text>
+	</string>
+	<string id="st_arsenal_trade_other">
+		<text>другие торговцы</text>
+	</string>
+	<string id="st_arsenal_stashes_odds">
+		<text>В тайниках: %s</text>
+	</string>
+	<string id="st_arsenal_stash_odds">
+		<text>%s %s</text>
+	</string>
+	<string id="st_arsenal_stash_odds_rare">
+		<text>%s %s (редкие %s)</text>
+	</string>
+	<string id="st_arsenal_stash_odds_note">
+		<text>Шанс найти его в одном тайнике там.</text>
 	</string>
 </string_table>

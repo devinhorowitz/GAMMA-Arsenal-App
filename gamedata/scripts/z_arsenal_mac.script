@@ -2,7 +2,22 @@
     Arsenal's tile in Mod App Creator's launcher (PDA > Launcher). MAC returns the app's page
     from func() without a guard, so a page that failed to build would raise inside the PDA's
     own call; here it logs and comes back empty instead.
+
+    The tile carries a badge with how many models are new, 1 to 999, and none when nothing is.
+    MAC has no badges: its launcher page comes from mac_mcm.get_ui(), which every way into the
+    launcher calls by name, so Arsenal wraps that function and puts the badge on its own tile
+    once MAC has built the page. MAC's files stay as they are; a launcher page of another
+    shape gets no badge.
 --]]
+
+local BADGE_H = 20
+-- the badge's shape for a count of 1, 2 or 3 digits (ui_arsenal.xml, textures/ui/arsenal/ui_marks)
+local BADGES = {
+    { w = 20, tex = "arsenal_badge_1" },
+    { w = 28, tex = "arsenal_badge_2" },
+    { w = 36, tex = "arsenal_badge_3" },
+}
+local warned = false
 
 local function safe_ui()
     local ok, ui = pcall(ui_arsenal.get_ui)
@@ -10,6 +25,56 @@ local function safe_ui()
         return ui
     end
     printf("[arsenal] the page failed to build: %s", tostring(ui))
+end
+
+-- the badge on Arsenal's tile of MAC's launcher page `ui`: made with the page, its count set
+-- every time the launcher opens
+local function badge(ui)
+    local ids, apps = ui.apps_ids, ui.apps
+    if type(ids) ~= "table" or type(apps) ~= "table" then return end
+    local tile
+    for i, id in ipairs(ids) do
+        if id == "arsenal" then tile = apps[i] end
+    end
+    if not tile then return end
+    if not ui.arsenal_badge then
+        local xml = CScriptXmlInit()
+        xml:ParseFile("ui_arsenal.xml")
+        ui.arsenal_badge = xml:InitStatic("mac_badge", ui)
+        ui.arsenal_badge_text = xml:InitTextWnd("mac_badge_text", ui.arsenal_badge)
+    end
+    local n = arsenal_intel and arsenal_intel.count_new() or 0
+    local b, text = ui.arsenal_badge, ui.arsenal_badge_text
+    b:Show(n > 0)
+    if n <= 0 then return end
+    local s = tostring(math.min(n, 999))
+    local shape = BADGES[#s]
+    b:InitTexture(shape.tex)
+    b:SetTextureColor(arsenal_theme.argb("badge"))
+    b:SetWndSize(vector2():set(shape.w, BADGE_H))
+    text:SetWndSize(vector2():set(shape.w, BADGE_H))
+    text:SetText(s)
+    -- on the tile's top right corner, over its edge
+    local p = tile:GetWndPos()
+    b:SetWndPos(vector2():set(p.x + tile:GetWidth() - shape.w + 8, p.y - 6))
+end
+
+-- MAC's launcher page, with the badge; wrapped once, whatever the call passes along
+local function wrap_launcher()
+    if mac_mcm.arsenal_get_ui then return end
+    local get_ui = mac_mcm.get_ui
+    mac_mcm.arsenal_get_ui = get_ui
+    mac_mcm.get_ui = function(...)
+        local ui = get_ui(...)
+        if ui then
+            local ok, err = pcall(badge, ui)
+            if not ok and not warned then
+                warned = true
+                printf("[arsenal] no badge on the launcher: %s", tostring(err))
+            end
+        end
+        return ui
+    end
 end
 
 function on_game_start()
@@ -23,4 +88,7 @@ function on_game_start()
         tab = "eptArsenal",            -- the PDA section the page lives in
         func = safe_ui,
     })
+    if type(mac_mcm.get_ui) == "function" then
+        wrap_launcher()
+    end
 end

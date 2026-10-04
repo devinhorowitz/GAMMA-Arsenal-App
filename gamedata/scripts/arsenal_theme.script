@@ -23,6 +23,7 @@ local colors = {
     good    = { 56, 209, 115 },
     warn    = { 238, 155, 23 },
     danger  = { 238, 28, 36 },
+    badge   = { 200, 36, 30 },      -- the new count on the launcher tile, under white digits
 }
 
 local textures = {

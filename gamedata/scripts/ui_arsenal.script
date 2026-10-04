@@ -25,14 +25,24 @@ local GAP = 6
 local TILE_COLS, TILE_W, TILE_GAP, TILE_PAD = 3, 108, 10, 4
 local PART_TEXT_DY = 6  -- a part's name beside its icon panel, one line centered on it
 local CAMO_PAD = 3      -- a camo's swatch inside its panel
+-- a new row's glow: its alpha swings between these over the period (ms)
+local GLOW_MIN, GLOW_MAX, GLOW_PERIOD = 40, 110, 2000
+-- other apps' buttons on a model's page (add_action), in the bar over the lists, right to left
+-- from the first, left of "Found only"
+local MAX_ACTIONS, ACTION_STEP = 3, 126
+local actions = {}      -- { { id, label, show, run }, ... }, in the order added
 
 ---------------------------------------------------------------------------------------------
--- a list row: a name, and for a category a count on the right
+-- a list row: a name, and for a category a count on the right. A new one glows behind its
+-- name (`glow`: the glow's XML) until it is read.
 ---------------------------------------------------------------------------------------------
 class "ArsenalRow" (CUIListBoxItem)
 
-function ArsenalRow:__init(xml, key, text, role, count) super(ROW_H)
+function ArsenalRow:__init(xml, key, text, role, count, glow) super(ROW_H)
     self.key = key
+    if glow then
+        self.glow = xml:InitStatic(glow, self)
+    end
     self.name = xml:InitTextWnd("row_name", self)
     self.name:SetText(text)
     self.name:SetTextColor(theme.argb(role))
@@ -74,6 +84,10 @@ function ArsenalPDA:__init(flat) super()
     self:AddCallback("btn_back", ui_events.BUTTON_CLICKED, self.OnBack, self)
     xml:InitStatic("rule_top", self)
 
+    xml:InitTextWnd("by_faction_lbl", self)
+    self.by_faction_check = xml:InitCheck("by_faction", self)
+    self:Register(self.by_faction_check, "by_faction")
+    self:AddCallback("by_faction", ui_events.BUTTON_CLICKED, self.OnByFaction, self)
     self.cat_list = xml:InitListBox("cat_list", self)
     self:Register(self.cat_list, "cat_list")
     self:AddCallback("cat_list", ui_events.LIST_ITEM_SELECT, self.OnCategory, self)
@@ -81,8 +95,21 @@ function ArsenalPDA:__init(flat) super()
     self.wpn_list = xml:InitListBox("wpn_list", self)
     self:Register(self.wpn_list, "wpn_list")
     self:AddCallback("wpn_list", ui_events.LIST_ITEM_SELECT, self.OnWeapon, self)
+    self:AddCallback("wpn_list", ui_events.LIST_ITEM_CLICKED, self.OnWeaponClicked, self)
     xml:InitStatic("rule_wpn", self)
     self.detail = xml:InitScrollView("detail", self)
+
+    -- other apps' buttons for the model shown (add_action), hidden until one applies
+    self.action_btns = {}
+    for i = 1, MAX_ACTIONS do
+        local b = xml:Init3tButton("action_btn", self)
+        local p = b:GetWndPos()
+        b:SetWndPos(vector2():set(p.x - (i - 1) * ACTION_STEP, p.y))
+        b:Show(false)
+        self:Register(b, "action_" .. i)
+        self:AddCallback("action_" .. i, ui_events.BUTTON_CLICKED, function() self:OnAction(i) end, self)
+        self.action_btns[i] = b
+    end
 
     self.cat = arsenal_data.CATEGORIES[1]
     self.sec = nil
@@ -115,14 +142,48 @@ local function is_new(e)
     return arsenal_intel ~= nil and arsenal_intel.is_new(e)
 end
 
--- a mark after a name: something new is in it
-local function new_mark()
-    return " " .. theme.markup("warn") .. "*"
+-- the left list's keys: a category ("rifles"), or with the toggle a faction's gear (FACTION ..
+-- "dolg"). Which it shows, and the row chosen last in each, last while the game runs, the PDA's
+-- page and the flat window alike.
+local FACTION = "f:"
+local by_faction = false
+local last_key = {}
+
+-- the models a row of the left list stands for: a category's, by name; a faction's gear, the
+-- guns its fighters carry and the suits and helmets they wear, in the categories' order
+local function models_of(key)
+    local f = key and key:sub(1, #FACTION) == FACTION and key:sub(#FACTION + 1)
+    if not f then return arsenal_data.list(key) end
+    local order = {}
+    for i, c in ipairs(arsenal_data.CATEGORIES) do order[c] = i end
+    local out = {}
+    for _, g in ipairs(arsenal_data.faction_gear(f)) do out[#out + 1] = g.e end
+    table.sort(out, function(a, b)
+        if a.cat ~= b.cat then return (order[a.cat] or 99) < (order[b.cat] or 99) end
+        if a.name ~= b.name then return a.name < b.name end
+        return a.sec < b.sec
+    end)
+    return out
 end
 
--- every time the page is opened: what is found and known may have changed. Counts go over what
--- turns up in this game only.
+-- whether something listed under a row of the left list is new
+local function fresh_in(key)
+    for _, e in ipairs(models_of(key)) do
+        if listed(e) and is_new(e) then return true end
+    end
+    return false
+end
+
+-- every time the page is opened: what is found and known may have changed
 function ArsenalPDA:Reset()
+    self:SetCounts()
+    self:FillCategories()
+    self:FillWeapons()
+end
+
+-- the line over the lists. Counts go over what turns up in this game only; what is new
+-- is counted while there is any.
+function ArsenalPDA:SetCounts()
     local total, found, known = 0, 0, 0
     for _, c in ipairs(arsenal_data.CATEGORIES) do
         for _, e in ipairs(arsenal_data.list(c)) do
@@ -134,16 +195,25 @@ function ArsenalPDA:Reset()
         end
     end
     if immersive() then
-        self.found_count:SetText(string.format(game.translate_string("st_arsenal_known_count"), known, found, total))
+        local new = arsenal_intel.count_new()
+        self.found_count:SetText(new > 0
+            and string.format(game.translate_string("st_arsenal_known_new_count"), known, found, total, new)
+            or string.format(game.translate_string("st_arsenal_known_count"), known, found, total))
     else
         self.found_count:SetText(string.format(game.translate_string("st_arsenal_found_count"), found, total))
     end
-    self:FillCategories()
-    self:FillWeapons()
 end
 
+-- new rows glow in the headings' amber, slowly brightening and fading
 function ArsenalPDA:Update()
     CUIScriptWnd.Update(self)
+    local wave = 0.5 + 0.5 * math.sin(time_global() * 2 * math.pi / GLOW_PERIOD)
+    local color = theme.argb("heading", math.floor(GLOW_MIN + (GLOW_MAX - GLOW_MIN) * wave))
+    for _, rows in ipairs({ self.cat_rows or {}, self.wpn_rows or {} }) do
+        for _, row in pairs(rows) do
+            if row.glow then row.glow:SetTextureColor(color) end
+        end
+    end
 end
 
 function ArsenalPDA:OnBack()
@@ -179,30 +249,46 @@ function ArsenalPDA:OnFoundOnly()
     self:FillWeapons()
 end
 
--- the categories with something that turns up (with the jailbreak, anything), each with how many
--- of what turns up are found, and a mark when something listed in it is new
+-- the categories with something that turns up (with the jailbreak, anything), or with the
+-- toggle every faction with gear; each row with how many of what turns up are found, glowing
+-- while something listed under it is new
 function ArsenalPDA:FillCategories()
     self.cat_list:RemoveAll()
-    local sel
-    for _, c in ipairs(arsenal_data.CATEGORIES) do
-        local list = arsenal_data.list(c)
-        local n, f, fresh = 0, 0, false
+    self.cat_rows, self.cat_index = {}, {}
+    self.by_faction_check:SetCheck(by_faction)
+    local first
+    local function add(key, name, list)
+        local n, f = 0, 0
         for _, e in ipairs(list) do
             if arsenal_data.obtainable(e.sec) then
                 n = n + 1
                 if arsenal_collection.entry_found(e) then f = f + 1 end
             end
-            if listed(e) and is_new(e) then fresh = true end
         end
         if n > 0 or (#list > 0 and not immersive()) then
-            local name = game.translate_string("st_arsenal_cat_" .. c) .. (fresh and new_mark() or "")
-            self.cat_list:AddExistingItem(ArsenalRow(self.xml, c, name, "body", string.format("%d/%d", f, n)))
-            if c == self.cat then
-                sel = self.cat_list:GetSize() - 1
-            end
+            local fresh = fresh_in(key)
+            local row = ArsenalRow(self.xml, key, name, fresh and "bright" or "body", string.format("%d/%d", f, n),
+                fresh and "cat_glow" or nil)
+            self.cat_list:AddExistingItem(row)
+            self.cat_rows[key] = row
+            self.cat_index[key] = self.cat_list:GetSize() - 1
+            first = first or key
         end
     end
-    self.cat_list:SetSelectedIndex(sel or 0)
+    if by_faction then
+        for _, f in ipairs(arsenal_data.FACTIONS) do
+            add(FACTION .. f, game.translate_string("st_faction_" .. f), models_of(FACTION .. f))
+        end
+    else
+        for _, c in ipairs(arsenal_data.CATEGORIES) do
+            add(c, game.translate_string("st_arsenal_cat_" .. c), arsenal_data.list(c))
+        end
+    end
+    if not self.cat_index[self.cat] then
+        self.cat = first or ((not by_faction) and arsenal_data.CATEGORIES[1]) or nil
+        self.sec = nil
+    end
+    self.cat_list:SetSelectedIndex(self.cat_index[self.cat] or 0)
 end
 
 function ArsenalPDA:OnCategory()
@@ -214,18 +300,38 @@ function ArsenalPDA:OnCategory()
     end
 end
 
--- the models of the category the player knows of (with the jailbreak, all), by name; a model is
--- found once any of its variants is; one that never turns up (listed only with the jailbreak)
--- is darker still; a new one is marked
+-- the toggle: categories or factions, each view back on the row chosen last in it
+function ArsenalPDA:OnByFaction()
+    last_key[by_faction] = self.cat
+    by_faction = self.by_faction_check:GetCheck() == true
+    self.cat = last_key[by_faction]
+    self.sec = nil
+    self:FillCategories()
+    self:FillWeapons()
+end
+
+-- a listed model's name color: found, not found, or never turning up (listed only with the
+-- jailbreak); a new one is brighter until it is read
+local function role_of(e, new)
+    if not arsenal_data.obtainable(e.sec) then return "never" end
+    if new then return "bright" end
+    return arsenal_collection.entry_found(e) and "body" or "dim"
+end
+
+-- the models of the chosen category or faction the player knows of (with the jailbreak, all); a
+-- model is found once any of its variants is; a new one glows until it is clicked
 function ArsenalPDA:FillWeapons()
     self.wpn_list:RemoveAll()
+    self.wpn_rows = {}
     local only = self.found_only:GetCheck()
     local keep, first
-    for _, e in ipairs(arsenal_data.list(self.cat)) do
+    for _, e in ipairs(models_of(self.cat)) do
         local found = arsenal_collection.entry_found(e) ~= nil
         if listed(e) and (found or not only) then
-            local role = (not arsenal_data.obtainable(e.sec) and "never") or (found and "body") or "dim"
-            self.wpn_list:AddExistingItem(ArsenalRow(self.xml, e.sec, e.name .. (is_new(e) and new_mark() or ""), role))
+            local new = is_new(e)
+            local row = ArsenalRow(self.xml, e.sec, e.name, role_of(e, new), nil, new and "wpn_glow" or nil)
+            self.wpn_list:AddExistingItem(row)
+            self.wpn_rows[e.sec] = row
             local idx = self.wpn_list:GetSize() - 1
             if e.sec == self.sec then keep = idx end
             first = first or e.sec
@@ -247,6 +353,29 @@ function ArsenalPDA:OnWeapon()
     if item and item.key ~= self.sec then
         self:ShowEntry(item.key)
     end
+end
+
+-- a click on a model, the one shown already too: it is read, like an opened letter. A model
+-- the list shows first by itself stays new until it is clicked.
+function ArsenalPDA:OnWeaponClicked()
+    local item = self.wpn_list:GetSelectedItem()
+    local e = item and arsenal_data.get(item.key)
+    if not (e and arsenal_intel and is_new(e)) then return end
+    arsenal_intel.viewed(e)
+    if item.glow then
+        item.glow:Show(false)
+        item.glow = nil
+    end
+    item.name:SetTextColor(theme.argb(role_of(e, false)))
+    -- its category and its factions stop glowing once nothing new is left under them
+    for key, row in pairs(self.cat_rows or {}) do
+        if row.glow and not fresh_in(key) then
+            row.glow:Show(false)
+            row.glow = nil
+            row.name:SetTextColor(theme.argb("body"))
+        end
+    end
+    self:SetCounts()
 end
 
 ---------------------------------------------------------------------------------------------
@@ -403,6 +532,55 @@ local function safe(fn, ...)
     return ok and r or nil
 end
 
+-- a share as a percentage: one decimal below 10%, none from there, "<0.1%" for a sliver
+local function percent(x)
+    local p = (x or 0) * 100
+    if p == 0 then return "0%" end
+    if p < 0.1 then return "<0.1%" end
+    return (p < 10 and string.format("%.1f", p) or tostring(math.floor(p + 0.5))) .. "%"
+end
+
+-- a multiplier: "x1.14"
+local function times(x)
+    return string.format(game.translate_string("st_arsenal_times"), string.format("%.4g", x))
+end
+
+-- "a, b or c"
+local function or_list(parts)
+    if #parts < 2 then return parts[1] or "" end
+    return table.concat(parts, ", ", 1, #parts - 1) .. " " .. game.translate_string("st_arsenal_or") .. " " .. parts[#parts]
+end
+
+-- what unlocks a trader's tier, in words (arsenal_data.sold_by's need). Heavy Pockets by
+-- Arsenal's own string: the game titles its achievements in capitals.
+local function need_text(n)
+    local T = game.translate_string
+    local parts = {}
+    if n.goodwill then parts[#parts + 1] = string.format(T("st_arsenal_need_goodwill"), tostring(n.goodwill)) end
+    if n.kits then
+        parts[#parts + 1] = (n.kits == 1) and T("st_arsenal_need_kit") or string.format(T("st_arsenal_need_kits"), tostring(n.kits))
+    end
+    if n.drugkit then parts[#parts + 1] = T("st_arsenal_need_drugkit") end
+    if n.story then parts[#parts + 1] = T("st_arsenal_need_story") end
+    if n.heavy then parts[#parts + 1] = T("st_arsenal_need_heavy") end
+    return or_list(parts)
+end
+
+-- a gun's jam chance in words (arsenal_data.jam_chance), nil when there is no telling
+local function jam_text(j)
+    if not j then return nil end
+    local T = game.translate_string
+    local base = j.base or 0
+    if j.worn then
+        if base > 0 then return string.format(T("st_arsenal_jam_both"), percent(base), percent(base + j.worn)) end
+        return string.format(T("st_arsenal_jam_worn"), percent(j.worn))
+    end
+    return base > 0 and string.format(T("st_arsenal_jam_base"), percent(base)) or T("st_arsenal_jam_none")
+end
+
+-- the columns of a gun's rounds: damage, AP, speed, damage left at 100 m (round_cell's x)
+local ROUND_COLS = { 144, 194, 244, 294 }
+
 -- an item's inventory icon in a frame, inset by pad, at most at its own size, centered
 local function put_icon(xml, parent, frame, sec, pad)
     local tex, a = arsenal_data.icon(sec)
@@ -426,9 +604,37 @@ end
 -- A gun model's page. Its variants (sections of its name that differ in play) share it: the
 -- stat card lists each value where they differ, and a list of the variants shows which were
 -- found. The icon and description are the first found variant's, else the first variant's.
+-- the buttons other apps added (add_action) that apply to the section shown; with none, none
+-- shows, and an app that is not installed adds none
+function ArsenalPDA:UpdateActions(sec)
+    self.action_list, self.action_sec = {}, sec
+    for _, a in ipairs(sec and actions or {}) do
+        if not a.show or safe(a.show, sec) then
+            self.action_list[#self.action_list + 1] = a
+        end
+    end
+    for i, b in ipairs(self.action_btns or {}) do
+        local a = self.action_list[i]
+        b:Show(a ~= nil)
+        if a then
+            b:TextControl():SetText(game.translate_string(a.label or a.id))
+        end
+    end
+end
+
+function ArsenalPDA:OnAction(i)
+    local a = self.action_list and self.action_list[i]
+    if not a then return end
+    local ok, err = pcall(a.run, self.action_sec)
+    if not ok then
+        printf("[arsenal] the %s button failed: %s", a.id, tostring(err))
+    end
+end
+
 function ArsenalPDA:ShowEntry(sec)
     self.sec = sec
     self.detail:Clear()
+    self:UpdateActions(nil)
     if not sec then return end
     local xml = self.xml
     local e = arsenal_data.get(sec)
@@ -439,7 +645,6 @@ function ArsenalPDA:ShowEntry(sec)
     local know, imm = studied(e), immersive()
     local fx = imm and arsenal_intel.facts(e) or {}
     local full = not imm or (fx.ways and fx.ways.gunsmith) or false
-    if arsenal_intel then arsenal_intel.viewed(e) end
     local shown = e.variants[1]
     for _, v in ipairs(e.variants) do
         if arsenal_collection.is_found(v.sec) then
@@ -447,6 +652,7 @@ function ArsenalPDA:ShowEntry(sec)
             break
         end
     end
+    self:UpdateActions(shown.sec)
     local entry = xml:InitStatic("entry", nil)
 
     -- the icon on a lighter panel, like the inventory's grid, at most at its own size: the
@@ -543,11 +749,79 @@ function ArsenalPDA:ShowEntry(sec)
                 table.concat(extra, "; "))
         end
         text("entry_line", line_modes)
+        -- hit power, and how often it jams: the shown variant's
+        local hp = safe(arsenal_data.hit_power, shown.sec)
+        if hp and hp > 0 then
+            text("entry_line", string.format(game.translate_string("st_arsenal_hit_power"), string.format("%.3g", hp)))
+        end
+        local jam = jam_text(safe(arsenal_data.jam_chance, shown.sec))
+        if jam then text("entry_line", jam) end
     end
-    if know then
+    -- a round's weight is per box, which the inventory shows; the page leaves it out
+    if know and e.cat ~= "ammo" then
         text("entry_line", string.format("%s: %s %s", game.translate_string("st_prop_weight"),
             joined(each(function(s) return tostring(arsenal_data.kg(arsenal_data.weight(s))) end)),
             game.translate_string("st_kg")))
+    end
+
+    -- a round: what it does (its own values; a gun's are in that gun's table), and the guns
+    -- that fire it, those the player knows
+    if know and e.cat == "ammo" then
+        local rs = safe(arsenal_data.round_stats, shown.sec)
+        local function row(id, s)
+            local n = xml:InitTextWnd("round_stat", entry)
+            n:SetWndPos(vector2():set(0, y))
+            n:SetText(game.translate_string(id))
+            n:AdjustHeightToText()
+            local v = xml:InitTextWnd("round_value", entry)
+            v:SetWndPos(vector2():set(v:GetWndPos().x, y))
+            v:SetText(s)
+            v:AdjustHeightToText()
+            y = y + math.max(n:GetHeight(), v:GetHeight()) + 2
+        end
+        if rs then
+            row("st_arsenal_round_damage", times(rs.damage))
+            row("st_arsenal_round_ap", tostring(rs.ap))
+            if rs.speed then row("st_arsenal_round_speed", times(rs.speed)) end
+            if rs.pellets then row("st_arsenal_round_pellets", tostring(rs.pellets)) end
+            if rs.kept and rs.kept[100] then
+                row("st_arsenal_round_kept", string.format("%s / %s / %s", percent(rs.kept[50]), percent(rs.kept[100]),
+                    percent(rs.kept[200])))
+            end
+        end
+        local guns = {}
+        for _, g in ipairs(safe(arsenal_data.fired_by, shown.sec) or {}) do
+            if listed(g) then guns[#guns + 1] = g.name end
+        end
+        if #guns > 0 then
+            y = y + GAP
+            text("entry_heading", game.translate_string("st_arsenal_fired_by"))
+            rule()
+            text("entry_line", table.concat(guns, ", "))
+        end
+    end
+
+    -- a suit or helmet against bullets: the rounds it stops, and what a hit does either way
+    if know and armor then
+        local p = safe(arsenal_data.penetration, shown.sec)
+        if p and p.of > 0 then
+            local T = game.translate_string
+            y = y + GAP
+            text("entry_heading", T("st_arsenal_vs_bullets"))
+            rule()
+            local s
+            if p.holds and p.fails then
+                s = string.format(T("st_arsenal_pen_range"), p.holds.name, tostring(p.holds.ap), p.fails.name,
+                    tostring(p.fails.ap))
+            elseif p.holds then
+                s = string.format(T("st_arsenal_pen_all"), p.holds.name, tostring(p.holds.ap))
+            else
+                s = string.format(T("st_arsenal_pen_none"), p.fails.name, tostring(p.fails.ap))
+            end
+            text("entry_line", s)
+            text("entry_line", string.format(T("st_arsenal_pen_count"), tostring(p.stops), tostring(p.of)))
+            text("entry_line", string.format(T("st_arsenal_pen_damage"), percent(p.stopped), percent(p.pierced)), "dim")
+        end
     end
 
     -- R.I.S.K. enhancements, when it runs: per family, the stat with one enhancement on the
@@ -696,22 +970,43 @@ function ArsenalPDA:ShowEntry(sec)
                 or string.format(game.translate_string("st_arsenal_drop_chance"), pct), "dim")
         end
     end
-    -- stashes: the levels whose stashes most often draw it; else those the player has seen it at
-    local levels = full and safe(arsenal_data.stashes, shown.sec)
-    if levels then
-        local names = {}
-        for _, l in ipairs(levels) do names[#names + 1] = game.translate_string(l) end
-        line(#names > 0 and string.format(game.translate_string("st_arsenal_stashes_at"), table.concat(names, ", "))
-            or game.translate_string("st_arsenal_stashes"))
+    -- stashes: the levels where one stash most likely holds it, with the chance (a rare stash's
+    -- too); else those the player has seen it at
+    local odds = full and safe(arsenal_data.stash_odds, shown.sec)
+    if odds then
+        local T = game.translate_string
+        local spots = {}
+        for _, r in ipairs(odds) do
+            spots[#spots + 1] = (r.rare > 0 and r.rare ~= r.common)
+                and string.format(T("st_arsenal_stash_odds_rare"), T(r.lvl), percent(r.common), percent(r.rare))
+                or string.format(T("st_arsenal_stash_odds"), T(r.lvl), percent(r.common))
+        end
+        if #spots > 0 then
+            line(string.format(T("st_arsenal_stashes_odds"), table.concat(spots, ", ")))
+            text("entry_line", T("st_arsenal_stash_odds_note"), "dim")
+        else
+            line(T("st_arsenal_stashes"))
+        end
     elseif fx.stash then
         local names = {}
         for l in pairs(fx.stash) do names[#names + 1] = game.translate_string(l) end
         table.sort(names)
         line(string.format(game.translate_string("st_arsenal_stashes_seen"), table.concat(names, ", ")))
     end
-    -- the other ways it turns up
+    -- the other ways it turns up; traders a row per tier, with what unlocks it and who
     local up = full and safe(arsenal_data.turns_up_model, shown.sec) or {}
-    if up.trader then line(game.translate_string("st_arsenal_sold_by")) end
+    local sold = full and safe(arsenal_data.sold_by, shown.sec) or {}
+    if #sold > 0 then
+        local T = game.translate_string
+        line(T("st_arsenal_sold_tiers"), "dim")
+        for _, r in ipairs(sold) do
+            local names = table.concat(r.traders, ", ")
+            text("entry_line", r.need and string.format(T("st_arsenal_tier_need"), tostring(r.tier), need_text(r.need), names)
+                or string.format(T("st_arsenal_tier"), tostring(r.tier), names))
+        end
+    elseif up.trader then
+        line(game.translate_string("st_arsenal_sold_by"))
+    end
     if fx.sold then
         local names = {}
         for n in pairs(fx.sold) do names[#names + 1] = n end
@@ -792,27 +1087,62 @@ function ArsenalPDA:ShowEntry(sec)
         line(game.translate_string(full and "st_arsenal_no_source" or "st_arsenal_where_unknown"), "dim")
     end
 
-    -- ammo of every variant, shown variant's first
-    local ammo, order = {}, { shown }
+    -- the variants, shown variant's first
+    local order = { shown }
     for _, v in ipairs(e.variants) do
         if v ~= shown then order[#order + 1] = v end
     end
-    for _, v in ipairs(order) do
-        for _, n in ipairs(arsenal_data.ammo_names(v.sec)) do
-            ammo[#ammo + 1] = n
+    -- A gun's rounds: the shown variant's, a row each with what it does from this gun (damage,
+    -- AP, speed, damage left at 100 m) once the gun is studied, else by name; what only another
+    -- variant chambers, and what an upgrade converts it to, by name under them
+    local rounds = (e.cat ~= "ammo") and safe(arsenal_data.gun_rounds, shown.sec) or {}
+    local mine, other = {}, {}
+    for _, r in ipairs(rounds) do mine[r.name] = true end
+    for i = 2, #order do
+        for _, n in ipairs(safe(arsenal_data.ammo_names, order[i].sec) or {}) do
+            if not mine[n] then other[#other + 1] = n end
         end
     end
-    ammo = distinct(ammo)
-    if #ammo > 0 or #up_calibres > 0 then
+    other = distinct(other)
+    if #rounds > 0 or #other > 0 or #up_calibres > 0 then
+        local T = game.translate_string
         y = y + GAP
-        text("entry_heading", game.translate_string("ui_ammo_types"))
+        text("entry_heading", T("ui_ammo_types"))
         rule()
-        if #ammo > 0 then
-            text("entry_line", table.concat(ammo, ", "))
+        local function round_row(name, cells, role)
+            local n = xml:InitTextWnd("round_name", entry)
+            n:SetWndPos(vector2():set(0, y))
+            n:SetText(name)
+            if role then n:SetTextColor(theme.argb(role)) end
+            n:AdjustHeightToText()
+            for i, s in ipairs(cells) do
+                local c = xml:InitTextWnd("round_cell", entry)
+                c:SetWndPos(vector2():set(ROUND_COLS[i], y))
+                c:SetText(s)
+                if role then c:SetTextColor(theme.argb(role)) end
+            end
+            y = y + n:GetHeight() + 2
+        end
+        if know and #rounds > 0 then
+            round_row(T("st_arsenal_col_round"), { T("st_arsenal_col_damage"), T("st_arsenal_col_ap"),
+                T("st_arsenal_col_speed"), T("st_arsenal_col_kept") }, "dim")
+            for _, r in ipairs(rounds) do
+                local dmg = r.pellets and string.format(T("st_arsenal_pellets"), tostring(r.damage), tostring(r.pellets))
+                    or tostring(r.damage)
+                round_row(r.name, { dmg, tostring(r.ap), tostring(r.speed), r.kept and percent(r.kept) or "-" })
+            end
+            text("entry_line", T("st_arsenal_rounds_note"), "dim")
+        elseif #rounds > 0 then
+            local names = {}
+            for _, r in ipairs(rounds) do names[#names + 1] = r.name end
+            text("entry_line", table.concat(distinct(names), ", "))
+        end
+        if #other > 0 then
+            text("entry_line", string.format(T("st_arsenal_ammo_other"), table.concat(other, ", ")), "dim")
         end
         -- the ammo of another caliber an upgrade converts it to
         for _, c in ipairs(up_calibres) do
-            text("entry_line", string.format(game.translate_string("st_arsenal_ammo_by_upgrade"), c), "dim")
+            text("entry_line", string.format(T("st_arsenal_ammo_by_upgrade"), c), "dim")
         end
     end
 
@@ -1047,6 +1377,26 @@ function get_ui()
     SINGLETON = SINGLETON or ArsenalPDA()
     SINGLETON:Reset()
     return SINGLETON
+end
+
+-- Another app's button on Arsenal's model pages, such as Workbench's "Customize":
+--     ui_arsenal.add_action("workbench", { label = "st_workbench_customize",
+--         show = function(sec) return <whether it applies to this section> end,
+--         run = function(sec) <open the app on that section> end })
+-- `sec` is the section the page shows (the first found variant, else the first). The button
+-- shows only on the pages it applies to, at most three apps' at once; adding an id again
+-- replaces it.
+function add_action(id, def)
+    assert(type(id) == "string" and type(def) == "table" and type(def.run) == "function",
+        "ui_arsenal.add_action(id, { label, show, run }): id a string, run a function")
+    remove_action(id)
+    actions[#actions + 1] = { id = id, label = def.label, show = def.show, run = def.run }
+end
+
+function remove_action(id)
+    for i = #actions, 1, -1 do
+        if actions[i].id == id then table.remove(actions, i) end
+    end
 end
 
 -- the page in a window of its own (arsenal_mcm's key), when the player is up and about;

@@ -17,7 +17,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 GD = os.path.join(ROOT, "gamedata")
 RAW = "https://raw.githubusercontent.com/devinhorowitz/GAMMA-Arsenal-App/main/"
-TESTS = ["test_data.py", "test_collection.py", "test_ui.py", "test_mcm.py", "test_intel.py"]
+TESTS = ["test_data.py", "test_collection.py", "test_ui.py", "test_mcm.py", "test_intel.py", "test_mac.py"]
 
 
 def version():

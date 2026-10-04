@@ -18,7 +18,9 @@
         or trader sells word of a special gun (one no ordinary fighter carries, arsenal_data.special)
     A model is studied once the player handles one (it enters his inventory), or from the specs
     above; its page shows its stats and what fits it only then. Only what turns up in this game
-    (arsenal_data.obtainable) is ever learned.
+    (arsenal_data.obtainable) is ever learned. A round is known, and its values show, once the
+    player knows a gun that fires it or finds one; what is learned of where rounds lie is kept
+    as facts, without news.
 
     Saved with the game (m_data.arsenal_intel), keyed by model (its first variant's section);
     a save from another catalog moves its keys to the models that hold them now, on load.
@@ -146,6 +148,10 @@ function reveal(x, how, fact, study, quiet)
     local e = model(x)
     if not (e and arsenal_data.obtainable(e.sec)) then return nil end
     local k = e.sec
+    if e.cat == "ammo" then
+        add_fact(k, fact)
+        return nil
+    end
     local new = not st.known[k]
     if new then
         st.known[k] = { at = stamp(), how = how }
@@ -166,15 +172,23 @@ function listed(e)
     return known(e) and arsenal_data.obtainable(e.sec)
 end
 
--- whether the player knows a model (a found one he does)
+-- whether the player knows a model (a found one is known; a round once a gun that fires it
+-- is)
 function known(e)
     if jailbroken() then return true end
-    return st.known[e.sec] ~= nil or (arsenal_collection and arsenal_collection.entry_found(e) ~= nil) or false
+    if st.known[e.sec] ~= nil or (arsenal_collection and arsenal_collection.entry_found(e) ~= nil) then return true end
+    if e.cat == "ammo" then
+        for _, g in ipairs(arsenal_data.fired_by(e.sec)) do
+            if known(g) then return true end
+        end
+    end
+    return false
 end
 
--- whether a model's stats and what fits it show
+-- whether a model's stats and what fits it show (a round's values, once it is known)
 function studied(e)
     if jailbroken() then return true end
+    if e.cat == "ammo" then return known(e) end
     return st.studied[e.sec] == true or (arsenal_collection and arsenal_collection.entry_found(e) ~= nil) or false
 end
 
@@ -192,9 +206,22 @@ function is_new(e)
     return not jailbroken() and st.new[e.sec] == true
 end
 
--- a model's page was opened: no longer new
+-- a model was read (clicked in the list): no longer new
 function viewed(e)
     st.new[e.sec] = nil
+end
+
+-- how many listed models are new; none with the jailbreak
+function count_new()
+    local n, seen = 0, {}
+    for k in pairs(st.new) do
+        local e = model(k)
+        if e and not seen[e] and is_new(e) and listed(e) then
+            seen[e] = true
+            n = n + 1
+        end
+    end
+    return n
 end
 
 -- how many models of a list are known
@@ -326,9 +353,13 @@ function player_faction()
     return is_faction(f) and f or nil
 end
 
--- a found gun or suit: known and studied (the collection sends its own news)
-function found(sec)
+-- a found gun or suit: known and studied (the collection sends its own news). Found in play
+-- (`live`: after the scan when a save loads), it is new, like what the news tells of, until
+-- it is read; what the player carries when a save loads is not.
+function found(sec, live)
     reveal(sec, { kind = "found" }, nil, true, true)
+    local e = live and model(sec)
+    if e and arsenal_data.obtainable(e.sec) then st.new[e.sec] = true end
 end
 
 -- the gear on a fighter or in a box: known, with who carries it or where it lies

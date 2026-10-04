@@ -59,7 +59,7 @@ seen_on = false
 arsenal_mcm = { count_seen = function() return seen_on end }
 -- what the player knows (arsenal_intel): told of every find
 told = {}
-arsenal_intel = { found = function(sec) told[#told + 1] = sec end }
+arsenal_intel = { found = function(sec, live) told[#told + 1] = sec .. (live and " in play" or "") end }
 for _, s in ipairs({ "a", "b", "c", "d", "e" }) do
     local v = { sec = "wpn_" .. s, name = s:upper() }
     model(s:upper(), { v })
@@ -83,7 +83,9 @@ function show(name) if callbacks.GUI_on_show then callbacks.GUI_on_show(name) en
 MUTANTS = {
     "quiet_scan": ("if obj then\n            mark(obj:section(), true)", "if obj then\n            mark(obj:section(), false)"),
     "twice": ("if not v or found[v.sec] then return nil end", "if not v then return nil end"),
-    "intel": ("    if arsenal_intel and arsenal_intel.found then arsenal_intel.found(sec) end\n", ""),
+    "intel": ("    if arsenal_intel and arsenal_intel.found then arsenal_intel.found(sec, scanned) end\n", ""),
+    "intel_all_live": ("arsenal_intel.found(sec, scanned)", "arsenal_intel.found(sec, true)"),
+    "intel_never_live": ("arsenal_intel.found(sec, scanned)", "arsenal_intel.found(sec, false)"),
     "no_save": ("m_data.arsenal = { v = VERSION, found = found }", "m_data.arsenal = nil"),
     "variant": ("local v = arsenal_data.variant_for(sec)", "local v = arsenal_data.variant_of(sec)"),
     "no_regroup": ("    regroup()\n    scan()", "    scan()"),
@@ -136,8 +138,9 @@ def main():
     check(news() == ["New in Arsenal: AK-74"], "a scoped AK-74 finds the AK-74, with news: %s" % news())
     g.take("wpn_ak74")
     check(len(news()) == 1, "found once")
-    check(list(g.told.values()) == ["wpn_ak74", "wpn_pm", "wpn_pm", "wpn_ak74_pso"],
-          "what the player knows is told of each find, quiet ones too, once a game loaded: %s" % list(g.told.values()))
+    check(list(g.told.values()) == ["wpn_ak74", "wpn_pm", "wpn_pm", "wpn_ak74_pso in play"],
+          "what the player knows is told of each find, quiet ones too, and which were found in play: %s"
+          % list(g.told.values()))
     check(m.found_at("wpn_ak74").lvl == "l01_escape" and m.found_at("wpn_ak74").d == 14, "when and where")
 
     # a model of two variants: each is news, the model counts once, found when its first was

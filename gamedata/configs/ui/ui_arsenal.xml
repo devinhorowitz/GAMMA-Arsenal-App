@@ -29,12 +29,25 @@
 		<texture>ui_button_ordinary</texture>
 		<text font="letterica16" align="c" vert_align="c">st_arsenal_back</text>
 	</btn_back>
+	<!-- another app's button for the model shown (ui_arsenal.add_action, e.g. Workbench's
+	     "Customize"): the first here, more to its left; hidden while none applies -->
+	<action_btn x="414" y="107" width="120" height="26" stretch="1" check_mode="0">
+		<texture>ui_button_ordinary</texture>
+		<text font="letterica16" align="c" vert_align="c"/>
+	</action_btn>
 	<rule_top x="28" y="139" width="764" height="1" stretch="1">
 		<texture>arsenal_rule</texture>
 	</rule_top>
 
-	<!-- columns -->
-	<cat_list x="28" y="146" width="132" height="560" item_height="22" can_select="1" always_show_scroll="0">
+	<!-- columns. The left one lists the categories, or with "By faction" ticked every faction's
+	     gear; the toggle sits over it like "Found only" -->
+	<by_faction_lbl x="32" y="146" width="96" height="20">
+		<text font="letterica16" r="200" g="200" b="200" align="l" vert_align="c">st_arsenal_by_faction</text>
+	</by_faction_lbl>
+	<by_faction x="130" y="141" width="30" height="30" stretch="1">
+		<texture>ui_inGame2_checkbox</texture>
+	</by_faction>
+	<cat_list x="28" y="174" width="132" height="532" item_height="22" can_select="1" always_show_scroll="0">
 		<font font="letterica16" r="200" g="200" b="200"/>
 	</cat_list>
 	<rule_cat x="164" y="146" width="1" height="560" stretch="1">
@@ -89,6 +102,21 @@
 	<where_ranks x="88" y="0" width="256" height="18">
 		<text font="letterica16" r="200" g="200" b="200" align="l" vert_align="t" complex_mode="1"/>
 	</where_ranks>
+	<!-- a gun's rounds, a row each: the name, then four numbers in columns the script places
+	     (round_cols: damage, AP, speed, damage left at 100 m), right-aligned -->
+	<round_name x="0" y="0" width="140" height="18">
+		<text font="letterica16" r="200" g="200" b="200" align="l" vert_align="t" complex_mode="1"/>
+	</round_name>
+	<round_cell x="0" y="0" width="46" height="18">
+		<text font="letterica16" r="200" g="200" b="200" align="r" vert_align="t"/>
+	</round_cell>
+	<!-- a round's own values: what, then how much -->
+	<round_stat x="0" y="0" width="150" height="18">
+		<text font="letterica16" r="200" g="200" b="200" align="l" vert_align="t" complex_mode="1"/>
+	</round_stat>
+	<round_value x="154" y="0" width="190" height="18">
+		<text font="letterica16" r="200" g="200" b="200" align="l" vert_align="t" complex_mode="1"/>
+	</round_value>
 
 	<!-- what fits the gun: tiles three to a row (108 wide, 10 apart), the icon on a panel like
 	     the gun's, the name under it, a note (grenades, the gun a kit makes) under that -->
@@ -121,4 +149,20 @@
 	<row_count x="0" y="0" width="126" height="22">
 		<text font="letterica16" r="140" g="140" b="140" align="r" vert_align="c"/>
 	</row_count>
+	<!-- a new row's glow behind its name, as wide as its list; the script tints and pulses it -->
+	<cat_glow x="0" y="1" width="132" height="20" stretch="1">
+		<texture>arsenal_glow</texture>
+	</cat_glow>
+	<wpn_glow x="0" y="1" width="250" height="20" stretch="1">
+		<texture>arsenal_glow</texture>
+	</wpn_glow>
+
+	<!-- the new count on Arsenal's tile in MAC's launcher (z_arsenal_mac): one shape per number of
+	     digits, sized and tinted by the script -->
+	<mac_badge x="0" y="0" width="20" height="20" stretch="1">
+		<texture>arsenal_badge_1</texture>
+	</mac_badge>
+	<mac_badge_text x="0" y="0" width="20" height="20">
+		<text font="letterica16" r="255" g="255" b="255" align="c" vert_align="c"/>
+	</mac_badge_text>
 </w>

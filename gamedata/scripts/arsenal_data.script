@@ -21,9 +21,9 @@
     stand-in here that reads the same values from the section alone.
 --]]
 
--- categories in display order: weapons by kind, then armor by GAMMA's armor class (its repair
--- type, which also picks the repair kits) and helmets
-CATEGORIES = { "pistols", "smgs", "shotguns", "rifles", "snipers", "launchers", "melee",
+-- categories in display order: weapons by kind, the rounds they fire, then armor by GAMMA's
+-- armor class (its repair type, which also picks the repair kits) and helmets
+CATEGORIES = { "pistols", "smgs", "shotguns", "rifles", "snipers", "launchers", "melee", "ammo",
     "light", "medium", "heavy", "exo", "helmets" }
 ARMOR = { light = true, medium = true, heavy = true, exo = true, helmets = true }
 local KIND = {
@@ -53,9 +53,49 @@ function is_helmet(sec)
 end
 
 -- the category a section is listed under, or nil
+-- the rounds the catalog's guns fire: their ammo_class, and their grenade_class when they take
+-- a launcher. Those are the ammo the catalog lists; a cartridge part, a helicopter's or a
+-- device's rounds, or a knife's stand-in ammo is not.
+local fired_set
+
+-- rounds the inventory's own lists leave out (utils_ui's tooltips skip it): GAMMA's home-made
+-- buckshot
+local HIDDEN_ROUNDS = { ammo_12x70_buck_self = true }
+
+-- A worn round (_bad, _verybad): GAMMA's ammo converter swaps it for a fresh box the moment it
+-- reaches an inventory (item_weapon's ammo_aggregation, _NO_DAMAGED_AMMO), so the catalog lists
+-- the fresh round only, and a worn one found counts as it
+local function worn_round(sec)
+    return sec:find("_verybad$") or sec:find("_bad$")
+end
+
+local function fresh_round(sec)
+    return (sec:gsub("_verybad$", ""):gsub("_bad$", ""))
+end
+
+local function build_fired()
+    fired_set = {}
+    ini_sys:section_for_each(function(sec)
+        if ini_sys:r_string_ex(sec, "kind") == "w_ammo" then return end
+        local ok, cat = pcall(category_of, sec)
+        if ok and cat and cat ~= "melee" and not ARMOR[cat] then
+            for a in (ini_sys:r_string_ex(sec, "ammo_class") or ""):gmatch("[^,%s]+") do fired_set[a] = true end
+            if (ini_sys:r_float_ex(sec, "grenade_launcher_status") or 0) > 0 then
+                for a in (ini_sys:r_string_ex(sec, "grenade_class") or ""):gmatch("[^,%s]+") do fired_set[a] = true end
+            end
+        end
+    end)
+end
+
 function category_of(sec)
     if SKIP[sec] or sec:find("^mp_") or sec:find("^animation_") then return nil end
     local kind = ini_sys:r_string_ex(sec, "kind")
+    if kind == "w_ammo" then
+        if not (fired_set and fired_set[sec]) or worn_round(sec) or HIDDEN_ROUNDS[sec] then return nil end
+        if not translated(ini_sys:r_string_ex(sec, "inv_name")) then return nil end
+        if not ini_sys:r_float_ex(sec, "inv_grid_x") then return nil end
+        return "ammo"
+    end
     if ARMOR_CLASS[ini_sys:r_string_ex(sec, "class") or ""] then
         if not (kind and ARMOR_KIND[kind]) then return nil end
         if not translated(ini_sys:r_string_ex(sec, "inv_name")) then return nil end
@@ -83,10 +123,19 @@ local function by_name(a, b)
     return a.sec < b.sec
 end
 
--- a field as the engine reads it: r_float_ex is the engine's atof, so "1.0f" is 1 and a list
--- gives its first value
+-- A number field as the game's scripts read it. r_float_ex is tonumber of the text (_g's ini
+-- reader, and this install's _g_patches), so a number reads as a double and anything else, "1.0f"
+-- or a list, as nothing. hit_power is a list, one value per difficulty: the game takes its first
+-- (ui_wpn_params.read_float), and so does this.
+local function field(sec, key)
+    if key == "hit_power" then
+        return tonumber((ini_sys:r_string_ex(sec, key) or ""):match("^%s*([^,]*)"))
+    end
+    return ini_sys:r_float_ex(sec, key)
+end
+
 local function num(sec, key)
-    local n = ini_sys:r_float_ex(sec, key)
+    local n = field(sec, key)
     return n and string.format("%.4g", n) or ""
 end
 
@@ -112,8 +161,20 @@ local SAME = { "ammo_mag_size", "rpm", "hit_power", "fire_dispersion_base", "PDM
     "control_inertion_factor", "bullet_speed", "condition_shot_dec", "zoom_cam_dispersion",
     "silencer_status", "scope_status", "grenade_launcher_status", "inv_weight" }
 
+-- what makes two rounds of one name play differently
+local AMMO_SAME = { "k_hit", "k_ap", "k_bullet_speed", "k_dist", "k_air_resistance", "buck_shot" }
+
+local function ammo_signature(sec)
+    local t = {}
+    for _, k in ipairs(AMMO_SAME) do
+        t[#t + 1] = num(sec, k)
+    end
+    return table.concat(t, "|")
+end
+
 function signature(sec, cat)
     if ARMOR[cat or ""] then return armor_signature(sec) end
+    if cat == "ammo" then return ammo_signature(sec) end
     local t = { ammo_key(sec), ((ini_sys:r_string_ex(sec, "fire_modes") or ""):gsub("%s", "")) }
     for _, k in ipairs(SAME) do
         t[#t + 1] = num(sec, k)
@@ -154,7 +215,7 @@ local function first_ammo(sec)
 end
 
 local function value(sec, key)
-    return ini_sys:r_float_ex(sec, key) or 0
+    return field(sec, key) or 0
 end
 
 local function above0(d)
@@ -176,10 +237,11 @@ function params(sec)
 end
 
 -- Momopate's bullet speed (as a fraction of 1000 m/s) and recoil control (nil without a recoil
--- profile) from a gun's values; momopate_weaponstats.script
-local function bspeed(p)
+-- profile) from a gun's values; momopate_weaponstats.script. The speed is the gun's first
+-- round's, or `ammo`'s.
+local function bspeed(p, ammo)
     local bs = p.bullet_speed
-    local ammo = first_ammo(p.sec)
+    ammo = ammo or first_ammo(p.sec)
     if ammo then
         local k = ini_sys:r_float_ex(ammo, "k_bullet_speed") or 1
         bs = (bs ~= 0) and (k * bs) or k
@@ -214,6 +276,35 @@ local function recoil(p)
     return math.max(1, r)
 end
 
+-- A gun's damage with a round, as the old stat card showed it (GAMMA's card has no damage row;
+-- its ammo descriptions quote this number, "DMG 38"): hit_power, the first of its four values,
+-- times the round's k_hit, over 1.5, rounded down. The engine keeps those as float32, a hair
+-- short of their decimal values (1.14 is 1.1399999857), so a millionth more keeps 38 from
+-- reading 37 as the descriptions' decimal figures do.
+local function hit_damage(sec, ammo)
+    local hp = value(sec, "hit_power")
+    if ammo then
+        local k = ini_sys:r_float_ex(ammo, "k_hit") or 1
+        hp = (hp ~= 0) and (k * hp) or k
+    end
+    return math.floor(above0(hp / 1.5) * 100 + 1e-6)
+end
+
+-- a round's armor penetration as GAMMA's ammo descriptions give it ("AP BR2 (27)"): k_ap x 1000,
+-- the scale of an armor's ballistic class x 100
+function ap_of(ammo)
+    return math.floor((ini_sys:r_float_ex(ammo, "k_ap") or 0) * 1000 + 0.5)
+end
+
+-- The share of a round's damage and penetration left at d meters, as GBO takes it off the
+-- player's shots (grok_bo: over 1 + d / 200 * (air * 0.5 / (1 - air + 0.1)), air the round's
+-- k_air_resistance, 0.05 when it has none); nil where the formula breaks down (air 1.1 or more)
+function kept_at(ammo, d)
+    local air = ini_sys:r_float_ex(ammo, "k_air_resistance") or 0.05
+    if 1 - air + 0.1 <= 0 then return nil end
+    return 1 / (1 + d / 200 * (air * 0.5 / (1 - air + 0.1)))
+end
+
 -- A stat as the inventory's stat card shows it (utils_ui and ish_item_stats), from a gun's
 -- values: the same formula in the same order, rounded the same way, so a tag or a maximum
 -- reads like the card. Keyed by the card's row names. The percentages stop at 100: stacked
@@ -243,12 +334,7 @@ CARD = {
         return r and math.ceil(r)
     end,
     damage = function(p)
-        local hp, ammo = value(p.sec, "hit_power"), first_ammo(p.sec)
-        if ammo then
-            local k = ini_sys:r_float_ex(ammo, "k_hit") or 1
-            hp = (hp ~= 0) and (k * hp) or k
-        end
-        return math.floor(above0(hp / 1.5) * 100)
+        return hit_damage(p.sec, first_ammo(p.sec))
     end,
 }
 
@@ -384,6 +470,12 @@ TAGGERS = {
     function(sec) return status(sec, "scope_status") == 2 and tag("st_arsenal_tag_scope_mount") or "" end,
 }
 
+-- what tells rounds of one name apart: armor penetration, then damage
+AMMO_TAGGERS = {
+    function(sec) return tag("st_arsenal_tag_ap", tostring(ap_of(sec))) end,
+    function(sec) return tag("st_arsenal_tag_hit", num(sec, "k_hit")) end,
+}
+
 -- name the variants of one gun (or suit, with its own taggers): a tag only where variants
 -- still clash, then numbers
 local function label(name, reps, taggers)
@@ -460,6 +552,7 @@ function build()
     for _, c in ipairs(CATEGORIES) do
         by_cat[c] = {}
     end
+    build_fired()
     local groups, order = {}, {}
     ini_sys:section_for_each(function(sec)
         local ok, cat = pcall(category_of, sec)
@@ -490,7 +583,7 @@ function build()
         end
         if #vars > 1 then
             table.sort(vars, function(a, b) return a.sec < b.sec end)
-            label(g.name, vars, ARMOR[g.cat] and ARMOR_TAGGERS or TAGGERS)
+            label(g.name, vars, ARMOR[g.cat] and ARMOR_TAGGERS or (g.cat == "ammo" and AMMO_TAGGERS) or TAGGERS)
             table.sort(vars, by_name)
         end
         local e = { sec = vars[1].sec, cat = g.cat, name = g.name, variants = vars }
@@ -534,12 +627,17 @@ function count()
 end
 
 -- the variant a weapon in the world belongs to: a scoped or silenced combination counts as
--- the gun it was made from
+-- the gun it was made from, a worn round as the fresh one
 function variant_for(sec)
     build()
     if not sec then return nil end
     local parent = ini_sys:r_string_ex(sec, "parent_section")
-    return by_var[parent or sec] or by_var[sec]
+    local v = by_var[parent or sec] or by_var[sec]
+    if not v and worn_round(sec) then
+        v = by_var[fresh_round(sec)]
+        if v and v.entry.cat ~= "ammo" then v = nil end
+    end
+    return v
 end
 
 function entry_for(sec)
@@ -563,7 +661,7 @@ end
 local function round_names(list)
     local out, seen = {}, {}
     for _, r in ipairs(list) do
-        if not (r:find("_bad$") or r:find("_verybad$")) then
+        if not (r:find("_bad$") or r:find("_verybad$") or HIDDEN_ROUNDS[r]) then
             local n = translated(ini_sys:r_string_ex(r, "inv_name_short"))
                 or translated(ini_sys:r_string_ex(r, "inv_name"))
             if n and not seen[n] then
@@ -594,6 +692,141 @@ end
 function has_stat_card(sec)
     if is_armor(sec) then return true end
     return ini_sys:r_string_ex(sec, "ammo_class") ~= nil and not IsItem("fake_ammo_wpn", sec)
+end
+
+local function short_name(r)
+    return translated(ini_sys:r_string_ex(r, "inv_name_short")) or translated(ini_sys:r_string_ex(r, "inv_name")) or r
+end
+
+-- The rounds a gun fires (utils_item.get_ammo, as the game reads it), a row each, worn rounds
+-- left out:
+--     { sec, name = the short name, damage (hit_damage), ap (ap_of), speed = the card's bullet
+--       speed with it, pellets = its buck_shot when above 1, kept = kept_at 100 m }
+function gun_rounds(sec)
+    if is_armor(sec) or not has_stat_card(sec) then return {} end
+    local ok, list = pcall(utils_item.get_ammo, sec, nil)
+    local p = params(sec)
+    local out, seen = {}, {}
+    for _, a in ipairs((ok and type(list) == "table") and list or list_of(sec, "ammo_class")) do
+        if not seen[a] and not worn_round(a) and not HIDDEN_ROUNDS[a] and ini_sys:section_exist(a) then
+            seen[a] = true
+            local pellets = math.floor(ini_sys:r_float_ex(a, "buck_shot") or 1)
+            out[#out + 1] = { sec = a, name = short_name(a), damage = hit_damage(sec, a), ap = ap_of(a),
+                speed = math.ceil(bspeed(p, a) * 1000), pellets = pellets > 1 and pellets or nil,
+                kept = kept_at(a, 100) }
+        end
+    end
+    return out
+end
+
+-- whether a round is a bullet (or shot), not a grenade or rocket
+function is_bullet(sec)
+    local c = ini_sys:r_string_ex(sec, "class")
+    return c == "AMMO" or c == "AMMO_S"
+end
+
+-- A round's own values: { damage = k_hit, ap (ap_of), speed = k_bullet_speed, pellets (more
+-- than one), kept = { [50], [100], [200] = kept_at } }; a grenade's only what it has
+function round_stats(sec)
+    local pellets = math.floor(ini_sys:r_float_ex(sec, "buck_shot") or 1)
+    local out = { damage = ini_sys:r_float_ex(sec, "k_hit") or 1, ap = ap_of(sec), pellets = pellets > 1 and pellets or nil }
+    if is_bullet(sec) then
+        out.speed = ini_sys:r_float_ex(sec, "k_bullet_speed") or 1
+        out.kept = {}
+        for _, d in ipairs({ 50, 100, 200 }) do
+            out.kept[d] = kept_at(sec, d)
+        end
+    end
+    return out
+end
+
+-- the gun models that fire a round: in their ammo (or, with a launcher, their grenades), by
+-- category, then name
+local fired_by_index   -- round model -> { gun model, ... }
+
+function fired_by(sec)
+    local r = entry_for(sec)
+    if not r then return {} end
+    if not fired_by_index then
+        fired_by_index = {}
+        local order = {}
+        for i, c in ipairs(CATEGORIES) do order[c] = i end
+        local seen = {}
+        for _, c in ipairs(CATEGORIES) do
+            for _, e in ipairs(c ~= "ammo" and by_cat[c] or {}) do
+                for _, v in ipairs(e.variants) do
+                    for _, s in ipairs(v.members) do
+                        local rounds = list_of(s, "ammo_class")
+                        if (ini_sys:r_float_ex(s, "grenade_launcher_status") or 0) > 0 then
+                            for _, g in ipairs(list_of(s, "grenade_class")) do rounds[#rounds + 1] = g end
+                        end
+                        for _, a in ipairs(rounds) do
+                            local m = entry_for(a)
+                            if m and m.cat == "ammo" then
+                                seen[m] = seen[m] or {}
+                                if not seen[m][e] then
+                                    seen[m][e] = true
+                                    fired_by_index[m] = fired_by_index[m] or {}
+                                    table.insert(fired_by_index[m], e)
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+        for _, list in pairs(fired_by_index) do
+            table.sort(list, function(a, b)
+                if a.cat ~= b.cat then return order[a.cat] < order[b.cat] end
+                return by_name(a, b)
+            end)
+        end
+    end
+    return fired_by_index[r] or {}
+end
+
+-- a gun's hit power, the first of its hit_power values (the player's on every difficulty GAMMA
+-- has; NPCs use the first), as its section has it (field): GBO's damage to NPCs leaves upgrades
+-- out
+function hit_power(sec)
+    return value(sec, "hit_power")
+end
+
+-- How often a gun jams, per shot, in GAMMA, where the player's gun keeps its condition at
+-- grok_gun_condition_fixed's `cond`; nil without that (a condition that wears gives no number):
+--   base: the engine's misfire chance at that condition: 0 above misfire_start_condition ("No
+--     Weapon Jam Chance at Full Condition" sets it below), else from misfire_start_prob on
+--   worn: Weapon Parts Overhaul's once the gun's parts have worn to 60-79%, its first band of
+--     wear below 80% (arti_jamming's calculate_jam: 30 per part a band below 80%, doubling
+--     a band further down, averaged over the parts, times the section's condition_shot_dec x
+--     666, the MCM's jam chance and the condition's factor, out of 1000); nil for a gun
+--     without parts, or when WPO's settings cannot be read
+function jam_chance(sec)
+    local gc = grok_gun_condition_fixed
+    local lock = gc and tonumber(gc.cond)
+    if not lock then return nil end
+    local c = f32(lock)
+    local out = { base = 0 }
+    local s_cond = ini_sys:r_float_ex(sec, "misfire_start_condition") or 0
+    if c <= s_cond then
+        local s_prob = ini_sys:r_float_ex(sec, "misfire_start_prob") or 0
+        local e_cond = ini_sys:r_float_ex(sec, "misfire_end_condition") or 0
+        local e_prob = ini_sys:r_float_ex(sec, "misfire_end_prob") or 0
+        local span = (s_cond ~= e_cond) and (s_cond - e_cond) or s_cond
+        local p = (c < e_cond) and e_prob or (s_prob + (s_cond - c) * (e_prob - s_prob) / span)
+        out.base = math.max(0, math.min(1, p))
+    end
+    local parts = itms_manager and itms_manager.ini_parts
+    local aj = arti_jamming
+    local ok, j = pcall(function() return aj.get_config("jamchance") end)
+    j = ok and tonumber(j)
+    local base = ini_sys:r_string_ex(sec, "parent_section") or sec
+    if parts and j and parts:r_string_ex("con_parts_list", base) then
+        local jc = 30 * (ini_sys:r_float_ex(sec, "condition_shot_dec") or 0.0008) * 666 * j
+        if c < 1 then jc = jc * (1 + ((1.0 - c) / 0.7 - 0.05)) end
+        out.worn = math.max(0, math.min(1000, math.floor(jc))) / 1000
+    end
+    return out
 end
 
 -- fire modes as the HUD shows them: 1, 3, A
@@ -1226,15 +1459,71 @@ end
 -- extra loot, crafting. sources() and obtainable() put them together with the rest.
 ---------------------------------------------------------------------------------------------
 
--- the sections a condlist names ("{+info} supplies_2, supplies_1"), its conditions and effects
--- dropped
-local function condlist_sections(s)
+-- a condlist's entries in order ("{+info} supplies_2, supplies_1"): { cond = what its braces
+-- hold, sec = the section it names }, its effects dropped
+local function condlist_entries(s)
     local out = {}
     for _, part in ipairs(fields(s, ",")) do
         local sec = part:gsub("{.-}", ""):gsub("%%.-%%", ""):match("^%s*([%w_%.%-]+)%s*$")
-        if sec then out[#out + 1] = sec end
+        if sec then out[#out + 1] = { cond = part:match("{(.-)}") or "", sec = sec } end
     end
     return out
+end
+
+-- the sections a condlist names
+local function condlist_sections(s)
+    local out = {}
+    for _, x in ipairs(condlist_entries(s)) do
+        out[#out + 1] = x.sec
+    end
+    return out
+end
+
+-- What a buy_supplies entry's conditions ask of the player before a trader stocks its tier:
+--     { goodwill = the least goodwill with any faction it names (actor_goodwill_ge), heavy = the
+--       Heavy Pockets achievement, kits = toolkits brought to the mechanic (toolkit_task_done),
+--       drugkit = a drug kit brought to the medic (drugkit_task_done), story = an info portion,
+--       or a condition this does not know }
+-- false for an entry without conditions
+local function unlock(cond)
+    if cond:match("^%s*$") then return false end
+    local u, known = {}, 0
+    for n in cond:gmatch("=actor_goodwill_ge%([^:%)]*:%s*(%d+)%s*%)") do
+        u.goodwill = math.min(u.goodwill or math.huge, tonumber(n))
+        known = known + 1
+    end
+    if cond:find("=heavy_pockets_functor", 1, true) then
+        u.heavy = true
+        known = known + 1
+    end
+    local kits = cond:match("=toolkit_task_done%(%s*(%d+)")
+    if kits then
+        u.kits = tonumber(kits)
+        known = known + 1
+    end
+    if cond:find("=drugkit_task_done", 1, true) then
+        u.drugkit = true
+        known = known + 1
+    end
+    local terms = 0
+    for _ in cond:gmatch("[=+!~%-][%w_]") do terms = terms + 1 end
+    if terms > known then u.story = true end
+    return u
+end
+
+-- what unlocks an item at a trader when any of its entries does: the least goodwill and fewest
+-- toolkits any asks, and whatever else any asks; false once one asks nothing
+local function any_unlock(a, b)
+    if a == false or b == false then return false end
+    if a == nil then return b end
+    local u = {}
+    for _, k in ipairs({ "goodwill", "kits" }) do
+        u[k] = (a[k] and b[k]) and math.min(a[k], b[k]) or a[k] or b[k]
+    end
+    for _, k in ipairs({ "heavy", "drugkit", "story" }) do
+        u[k] = (a[k] or b[k]) or nil
+    end
+    return u
 end
 
 -- Story gifts: what a story dialog or quest hands over, in scripts that keep it in their
@@ -1249,6 +1538,17 @@ local CORPSE_COMMS = { "stalker", "dolg", "freedom", "bandit", "army", "zombied"
     "renegade", "greh", "isg", "greh_npc", "army_npc" }
 
 local turns_up     -- item section -> { trader, corpse, task, gift, craft, homestead = true; story = { name, ... } }
+-- Traders' stock by tier: an item's tier at a trade config is the lowest of its buy_supplies
+-- entries that stocks it (GAMMA numbers them supplies_1 to supplies_5; one without a number is
+-- tier 1), and what unlocks it any_unlock of theirs. GAMMA's tiers nest, each stocking what the
+-- tiers below it do, so the first entry the game finds true (trade_manager checks them left to
+-- right) stocks the item exactly when one of those is.
+local sold         -- item section -> trade config -> { tier, need = unlock's, or false }
+local trade_names  -- trade config -> the census's names for its characters ("-" for none)
+
+-- the bodies' rounds a dart or Barrikada round may come as instead (death_manager's try_spawn_ammo)
+local ROUND_SWAP = { ammo_12x76_dart = { "ammo_12x76_zhekan", "ammo_12x70_buck" },
+    ammo_23x75_barrikada = { "ammo_23x75_shrapnel" } }
 
 local function mark_up(sec, kind, name)
     if not (sec and sec ~= "" and ini_sys:section_exist(sec)) then return end
@@ -1263,13 +1563,14 @@ local function mark_up(sec, kind, name)
 end
 
 local function build_turns_up()
-    turns_up = {}
+    turns_up, sold, trade_names = {}, {}, {}
     -- Traders: a config some NPC's logic names (the census's [arsenal_trade]) stocks what its
     -- [trader] buy_supplies sections list with a count and a chance above zero, as trade_manager
     -- and the engine do; its sell_condition sections hide what they list without a value (GAMMA's
-    -- presets hide every gun, suit and helmet that way, so traders sell knives and addons)
+    -- presets hide every gun, suit and helmet that way, so traders sell knives, ammo and addons)
     local c = census()
     for _, l in ipairs(c and lines(c, "arsenal_trade") or {}) do
+        trade_names[l.k] = l.v or "-"
         local ok, ini = pcall(ini_file, "items\\trade\\" .. l.k .. ".ltx")
         if ok and ini and ini:section_exist("trader") then
             local hidden
@@ -1287,11 +1588,19 @@ local function build_turns_up()
                 end
             end
             hidden = hidden or {}
-            for _, sup in ipairs(condlist_sections(ini:r_string_ex("trader", "buy_supplies"))) do
-                for _, x in ipairs(lines(ini, sup)) do
+            for _, en in ipairs(condlist_entries(ini:r_string_ex("trader", "buy_supplies"))) do
+                local tier = tonumber(en.sec:match("_(%d+)$")) or 1
+                local need = unlock(en.cond)
+                for _, x in ipairs(lines(ini, en.sec)) do
                     local v = fields(x.v, ",")
                     if (tonumber(v[1]) or 0) > 0 and (tonumber(v[2]) or 0) > 0 and not hidden[x.k] then
                         mark_up(x.k, "trader")
+                        if turns_up[x.k] then
+                            sold[x.k] = sold[x.k] or {}
+                            local t = sold[x.k][l.k]
+                            sold[x.k][l.k] = { tier = math.min(t and t.tier or tier, tier),
+                                need = any_unlock(t and t.need, need) }
+                        end
                     end
                 end
             end
@@ -1304,7 +1613,8 @@ local function build_turns_up()
         end
     end
     -- Corpses' extra loot (death_manager): an item of a community's lists with a chance above
-    -- zero, which [item_count] lets a body hold at least one of
+    -- zero, which [item_count] lets a body hold at least one of; rounds are not (its lists skip
+    -- them: bodies get rounds for their guns)
     local death = itms_manager and itms_manager.ini_death
     if death then
         local most = {}
@@ -1317,10 +1627,32 @@ local function build_turns_up()
                 for _, r in ipairs({ "", "_novice", "_trainee", "_experienced", "_professional", "_veteran", "_expert",
                     "_master", "_legend" }) do
                     for _, x in ipairs(lines(death, comm .. pv .. r)) do
-                        if (tonumber(fields(x.v, ",")[1]) or 0) > 0 and (most[x.k] or 0) >= 1 then
+                        if (tonumber(fields(x.v, ",")[1]) or 0) > 0 and (most[x.k] or 0) >= 1
+                            and not (is_bullet(x.k) or ini_sys:r_bool_ex(x.k, "grenade_ammo")) then
                             mark_up(x.k, "corpse")
                         end
                     end
+                end
+            end
+        end
+        -- The rounds bodies hold for the guns they carry (try_spawn_ammo): one type of each gun's
+        -- ammo, a box of its item_count when that goes above zero (a dart round may come as a
+        -- slug or buckshot instead, a Barrikada round as shrapnel), and a launcher's grenades,
+        -- up to two of each without an item_count. A worn round counts as the fresh one.
+        if not carried then build_carried() end
+        local function body_round(a, n)
+            if (n or 0) > 0 then mark_up(fresh_round(a), "corpse") end
+        end
+        for s in pairs(npc_attach) do
+            for _, a in ipairs(list_of(s, "ammo_class")) do
+                body_round(a, most[a])
+                for _, alt in ipairs(ROUND_SWAP[fresh_round(a)] or {}) do
+                    body_round(alt, most[alt])
+                end
+            end
+            if (ini_sys:r_float_ex(s, "grenade_launcher_status") or 0) > 0 then
+                for _, g in ipairs(list_of(s, "grenade_class")) do
+                    body_round(g, most[g] or 2)
                 end
             end
         end
@@ -1383,43 +1715,157 @@ function turns_up_as(sec)
     return turns_up[sec]
 end
 
--- Stashes (Grok's stash overhaul, treasure_manager.script). An item in [possible_items] that
--- this game's economy does not bar, with a kind, a tier (grok_items_tier.ltx) and a price,
--- goes into a stash when math.random(1, 100) is below its kind's chance times the tier's
--- multiplier, in common or rare stashes; at 1 or less it never does. Each item's tier is drawn
--- from the stash's level's list (the script's local map_tiers), and marked stashes skip a few
--- levels (its local blacklisted_maps).
+-- GAMMA's generic trade configs, which many characters share: named for their trade
+local TRADES = { trade_generic_barman = "st_arsenal_trade_barman", trade_generic_mechanic = "st_arsenal_trade_mechanic",
+    trade_generic_medic = "st_arsenal_trade_medic" }
+
+local function need_key(t)
+    local n = t.need
+    if not n then return t.tier .. "|" end
+    return table.concat({ t.tier, n.goodwill or "", n.kits or "", n.heavy and "h" or "", n.drugkit and "d" or "",
+        n.story and "s" or "" }, "|")
+end
+
+-- Who sells a model, a row per tier and what unlocks it there, the lowest tier first:
+--     { tier, need = what unlocks it (unlock's), or false, traders = { name, ... } }
+-- A trader shows as the census names the character; a generic config as its trade
+-- ("mechanics"), and one whose characters the census could not name as "other traders". A
+-- model's tier at a config is its lowest variant's.
+function sold_by(sec)
+    local e = entry_for(sec)
+    if not e then return {} end
+    if not turns_up then build_turns_up() end
+    local best = {}
+    for _, v in ipairs(e.variants) do
+        for _, s in ipairs(v.members) do
+            for cfg, t in pairs(sold[s] or {}) do
+                if not best[cfg] or t.tier < best[cfg].tier then best[cfg] = t end
+            end
+        end
+    end
+    local by_key, out = {}, {}
+    for cfg, t in pairs(best) do
+        local key = need_key(t)
+        local row = by_key[key]
+        if not row then
+            row = { tier = t.tier, need = t.need, traders = {}, trades = {}, key = key }
+            by_key[key] = row
+            out[#out + 1] = row
+        end
+        local names = {}
+        for _, n in ipairs(fields(trade_names[cfg], ",")) do
+            local tn = n ~= "-" and translated(n)
+            if tn then names[#names + 1] = tn end
+        end
+        if TRADES[cfg] or #names == 0 then
+            row.trades[TRADES[cfg] or "st_arsenal_trade_other"] = true
+        else
+            for _, n in ipairs(names) do row.traders[n] = true end
+        end
+    end
+    for _, row in ipairs(out) do
+        local list = {}
+        for n in pairs(row.traders) do list[#list + 1] = n end
+        table.sort(list)
+        for _, id in ipairs({ "st_arsenal_trade_barman", "st_arsenal_trade_mechanic", "st_arsenal_trade_medic",
+            "st_arsenal_trade_other" }) do
+            if row.trades[id] then list[#list + 1] = game.translate_string(id) end
+        end
+        row.traders, row.trades = list, nil
+    end
+    table.sort(out, function(a, b)
+        if a.tier ~= b.tier then return a.tier < b.tier end
+        return a.key < b.key
+    end)
+    for _, row in ipairs(out) do row.key = nil end
+    return out
+end
+
+-- Stashes (Grok's stash overhaul, treasure_manager.script). A stash gets a budget W,
+-- math.random(min_weight, max_weight) of its settings (common, or rare: a marked stash once the
+-- player has done enough tasks), 200 more with the Rag and Bone achievement, and is filled in
+-- passes until W is spent. A pass rolls every kind of its effect table once: a tier drawn from
+-- the level's list (the script's local map_tiers), then, when the kind has items of that tier,
+-- the kind's chance times the tier's multiplier against math.random(1, 100); a hit adds one of
+-- those items, any alike, and takes the kind's weight times the tier's weight multiplier off W.
+-- The items: those of [possible_items] this game's economy does not bar, with a kind, a tier
+-- (grok_items_tier.ltx, less half the uses a multi-use item has lost, 1 to 5) and a price above
+-- 1. An item whose roll is 1 or less never goes in. Marked stashes skip a few levels (the
+-- script's local blacklisted_maps).
 STASH_LEVELS = 3
-local stashed, stashed_eco     -- gun model -> { [tier] = true }, and the economy it was built for
+local stashed, stashed_eco     -- model -> { [tier] = true }, and the economy it was built for
 local stashed_secs             -- the sections stashes hold
+local stash_at                 -- model -> { { kind, tier }, ... }: each section stashes may hold that counts as it
+local stash_pool               -- kind -> tier -> how many items
+local stash_types              -- common, rare -> { min, max, kinds = { [kind] = { chance, weight,
+                               -- tiers = { [tier] = { cm = chance multiplier, wm = weight multiplier } } } } }
+local stash_passes             -- type|level|rag -> the passes a stash takes, on average
 
 local function economy()
     local ok, eco = pcall(function() return game_difficulties.get_eco_factor("type") end)
     return ok and tonumber(eco) or 1
 end
 
+-- a stash type's settings and effect table, as init_settings reads them
+local function stash_settings(ini, which)
+    local set = "settings_" .. which
+    local st = { min = ini:r_float_ex(set, "min_weight") or 0, max = ini:r_float_ex(set, "max_weight") or 0, kinds = {} }
+    local n = ini:r_float_ex(set, "num_of_tiers") or 5
+    for _, l in ipairs(lines(ini, "kind_tier_effect_" .. which)) do
+        local v = fields(l.v, ",")
+        if #v >= 2 + n * 2 then
+            local k = { chance = tonumber(v[1]), weight = tonumber(v[2]), tiers = {} }
+            for t = 1, n do
+                k.tiers[t] = { cm = tonumber(v[t * 2 + 1]), wm = tonumber(v[t * 2 + 2]) }
+            end
+            st.kinds[l.k] = k
+        end
+    end
+    return st
+end
+
 local function build_stashed(eco)
-    stashed, stashed_eco, stashed_secs = {}, eco, {}
+    stashed, stashed_eco, stashed_secs, stash_at, stash_pool, stash_passes = {}, eco, {}, {}, {}, {}
+    stash_types = nil
     local tm = treasure_manager
     local ini, tiers = tm and tm.ini_treasure, tm and tm.ini_tiers
     if not (ini and tiers) then return end
+    stash_types = { common = stash_settings(ini, "common"), rare = stash_settings(ini, "rare") }
     for _, l in ipairs(lines(ini, "possible_items")) do
-        local sec = l.k
-        local e = ini_sys:section_exist(sec) and entry_for(sec)
         local barred = false
         for _, x in ipairs(fields(l.v, ",")) do
             if tonumber(x) == eco then barred = true end
         end
-        local kind, tier = e and ini_sys:r_string_ex(sec, "kind"), e and tiers:r_float_ex(sec, "tier")
-        if e and not barred and kind and tier and (ini_sys:r_float_ex(sec, "cost") or 1000) > 1 then
-            tier = math.max(1, math.min(5, math.ceil(tier)))
-            for _, t in ipairs({ "kind_tier_effect_common", "kind_tier_effect_rare" }) do
-                local v = fields(ini:r_string_ex(t, kind), ",")
-                local chance, multi = tonumber(v[1]), tonumber(v[tier * 2 + 1])
-                if chance and multi and chance * multi > 1 then
-                    stashed[e] = stashed[e] or {}
-                    stashed[e][tier] = true
-                    stashed_secs[sec] = true
+        -- a multi-use item's uses ("<section>__<uses>", utils_item.get_defined_uses)
+        local sec, max_uses = l.k, 1
+        local base, uses = l.k:match("^(.*)__(%d)")
+        uses = tonumber(uses)
+        if base and uses and ini_sys:section_exist(base) then
+            sec, max_uses = base, ini_sys:r_float_ex(base, "max_uses") or uses
+        else
+            uses = nil
+        end
+        if not barred and (max_uses > 1 or ini_sys:section_exist(l.k)) then
+            uses = uses or 1
+            local cost = (ini_sys:r_float_ex(sec, "cost") or 1000) * (uses / max_uses)
+            local kind, tier = ini_sys:r_string_ex(sec, "kind"), tiers:r_float_ex(sec, "tier")
+            if cost > 1 and kind and tier then
+                tier = math.max(1, math.min(5, math.ceil(tier - (max_uses - uses) / 2)))
+                stash_pool[kind] = stash_pool[kind] or {}
+                stash_pool[kind][tier] = (stash_pool[kind][tier] or 0) + 1
+                local e = ini_sys:section_exist(l.k) and entry_for(l.k)
+                if e then
+                    stash_at[e] = stash_at[e] or {}
+                    table.insert(stash_at[e], { kind = kind, tier = tier })
+                    for _, st in pairs(stash_types) do
+                        local k = st.kinds[kind]
+                        local tv = k and k.tiers[tier]
+                        if tv and k.chance and k.chance * (tv.cm or 1) > 1 then
+                            stashed[e] = stashed[e] or {}
+                            stashed[e][tier] = true
+                            stashed_secs[l.k] = true
+                        end
+                    end
                 end
             end
         end
@@ -1432,35 +1878,101 @@ local function stash_ready()
     if not stashed or stashed_eco ~= eco then build_stashed(eco) end
 end
 
--- Whether stashes hold a gun model: nil if they never do, else the levels whose stashes
--- most often draw its tier, best first, at most STASH_LEVELS (none when the level lists
--- cannot be read)
-function stashes(sec)
+-- whether stashes ever hold a model
+function stashable(sec)
+    local e = entry_for(sec)
+    if not e then return false end
+    stash_ready()
+    return stashed[e] ~= nil
+end
+
+-- P(math.random(1, 100) < x)
+local function roll(x)
+    return math.max(0, math.min(100, math.ceil(x) - 1)) / 100
+end
+
+-- The passes a stash takes on average, for a stash type on a level whose tiers come in shares
+-- `f` (tier -> share): W / m + 1/2 + v / (2 m^2), m and v the mean and variance of what one
+-- pass spends (renewal theory); nil when a pass spends nothing
+local function passes(st, f, rag)
+    local m, v = 0, 0
+    for kind, k in pairs(st.kinds) do
+        local km, k2 = 0, 0
+        for t, share in pairs(f) do
+            local tv = k.tiers[t]
+            if tv and k.chance and k.weight and ((stash_pool[kind] or {})[t] or 0) > 0 then
+                local p = share * roll(k.chance * (tv.cm or 1))
+                local c = k.weight * (tv.wm or 1)
+                km, k2 = km + p * c, k2 + p * c * c
+            end
+        end
+        m, v = m + km, v + k2 - km * km
+    end
+    if m <= 0 then return nil end
+    return ((st.min + st.max) / 2 + (rag and 200 or 0)) / m + 0.5 + v / (2 * m * m)
+end
+
+-- A model's odds of being in one stash, by level: { { lvl, common, rare }, ... } (0 to 1), the
+-- likeliest in a common stash first, at most STASH_LEVELS. A pass picks one of the model's
+-- sections with chance q (its tier's share of the level's list, times the roll, over the items
+-- of its kind and tier), so a stash holds the model with chance 1 - (1 - q)^passes. Checked
+-- against the script's own draws, simulated. nil if stashes never hold it; {} when the level
+-- lists cannot be read.
+function stash_odds(sec)
     local e = entry_for(sec)
     if not e then return nil end
     stash_ready()
-    local tiers = stashed[e]
-    if not tiers then return nil end
+    if not stashed[e] then return nil end
     local tm = treasure_manager
     local lists = upvalue(tm and tm.set_random_stash, "map_tiers")
     local skip = upvalue(tm and tm.box_in_valid_map, "blacklisted_maps")
-    local best = {}
-    for lvl, v in pairs(type(lists) == "table" and lists or {}) do
-        local n = 0
-        for _, t in ipairs(v) do
-            if tiers[t] then n = n + 1 end
-        end
-        if n > 0 and not (type(skip) == "table" and skip[lvl]) then
-            best[#best + 1] = { lvl = lvl, share = n / #v }
+    local ok, rag = pcall(function() return game_achievements.has_achievement("rag_and_bone") end)
+    rag = (ok and rag) and true or false
+    local mine = stash_at[e] or {}
+    local out = {}
+    for lvl, list in pairs(type(lists) == "table" and lists or {}) do
+        if type(list) == "table" and #list > 0 and not (type(skip) == "table" and skip[lvl]) then
+            local f = {}
+            for _, t in ipairs(list) do
+                f[t] = (f[t] or 0) + 1 / #list
+            end
+            local row = { lvl = lvl }
+            for name, st in pairs(stash_types) do
+                local q = 0
+                for _, x in ipairs(mine) do
+                    local k = st.kinds[x.kind]
+                    local tv = k and k.tiers[x.tier]
+                    local n = (stash_pool[x.kind] or {})[x.tier] or 0
+                    if f[x.tier] and tv and k.chance and n > 0 then
+                        q = q + f[x.tier] * roll(k.chance * (tv.cm or 1)) / n
+                    end
+                end
+                local key = name .. "|" .. lvl .. "|" .. tostring(rag)
+                if stash_passes[key] == nil then stash_passes[key] = passes(st, f, rag) or false end
+                local np = stash_passes[key]
+                row[name] = (q > 0 and np) and (1 - (1 - math.min(1, q)) ^ np) or 0
+            end
+            if row.common > 0 or row.rare > 0 then out[#out + 1] = row end
         end
     end
-    table.sort(best, function(a, b)
-        if a.share ~= b.share then return a.share > b.share end
+    table.sort(out, function(a, b)
+        if a.common ~= b.common then return a.common > b.common end
+        if a.rare ~= b.rare then return a.rare > b.rare end
         return a.lvl < b.lvl
     end)
+    for i = #out, STASH_LEVELS + 1, -1 do
+        out[i] = nil
+    end
+    return out
+end
+
+-- Whether stashes hold a model: nil if they never do, else stash_odds's levels, best first
+function stashes(sec)
+    local odds = stash_odds(sec)
+    if not odds then return nil end
     local out = {}
-    for i = 1, math.min(STASH_LEVELS, #best) do
-        out[i] = best[i].lvl
+    for i, r in ipairs(odds) do
+        out[i] = r.lvl
     end
     return out
 end
@@ -1867,6 +2379,48 @@ function standin_ap_res(obj, sec)
     return 1 - (ini_sys:r_float_ex(sec, "hit_fraction_actor") or 1)
 end
 
+-- How a suit or helmet takes bullets, new and alone (no plates, artefacts or boosters), as
+-- grok_actor_damage_balancer works a hit on the player out, in its order and rounding (they
+-- decide ties); a suit for body hits, a helmet for the head:
+--   class: ceil((1 - hit_fraction_actor) x 100) / 100; a round whose k_ap x 10 is at most this
+--     is stopped, and 40% of its damage goes first
+--   protection: ceil(bone armor x 0.80 x 100) / 100 (the spine's, the head's; upgrades in),
+--     rounded up again as the total, at most 0.65
+--   stopped, pierced: the share of a hit's damage that gets through either way
+--   holds, fails: the most piercing round of the catalog that turns up it stops, and the least
+--     piercing it does not ({ sec, name, ap = ap_of }); stops, of: how many of those it stops
+function penetration(sec)
+    local adj = adb("FireWound")
+    local g = grok_actor_damage_balancer
+    local limit = tonumber(g and g.limiter) or 0.65
+    local p = armor_params(sec)
+    local class = math.ceil((1 - (ini_sys:r_float_ex(sec, "hit_fraction_actor") or 1)) * 1 * 100) / 100
+    local prot = math.ceil(p.armor * 1 * (adj or 0.80) * 100) / 100
+    local total = math.min(limit, math.ceil(prot * 100) / 100)
+    local out = { class = class, protection = total, stopped = (1 - 0.40) * (1 - total), pierced = 1 - total,
+        stops = 0, of = 0 }
+    for _, e in ipairs(list("ammo")) do
+        local r = e.variants[1].sec
+        if is_bullet(r) and obtainable(r) then
+            local ap = (ini_sys:r_float_ex(r, "k_ap") or 0) * 10
+            local x = { sec = r, name = short_name(r), ap = ap_of(r), k = ap }
+            out.of = out.of + 1
+            if class >= ap then
+                out.stops = out.stops + 1
+                if not out.holds or ap > out.holds.k or (ap == out.holds.k and x.name < out.holds.name) then
+                    out.holds = x
+                end
+            elseif not out.fails or ap < out.fails.k or (ap == out.fails.k and x.name < out.fails.name) then
+                out.fails = x
+            end
+        end
+    end
+    for _, x in ipairs({ out.holds or {}, out.fails or {} }) do
+        x.k = nil
+    end
+    return out
+end
+
 -- Outfits Affect Movespeed's get_outfit_speed: the item's line in outfit_speed.ltx [speed], 1
 -- for one it does not list
 local speeds
@@ -2198,7 +2752,7 @@ local function build_reach()
     for _, c in ipairs(CATEGORIES) do
         for _, e in ipairs(by_cat[c]) do
             local worn_drops = ARMOR[c] and #worn_by(e.sec) > 0 and not (armor_drop(e.sec) or {}).off
-            if #carriers(e.sec) > 0 or stashes(e.sec) or #starting_kits(e.sec) > 0 or worn_drops
+            if #carriers(e.sec) > 0 or stashable(e.sec) or #starting_kits(e.sec) > 0 or worn_drops
                 or next(turns_up_model(e.sec)) then
                 reach[e] = true
             end
@@ -2308,17 +2862,17 @@ end
 
 -- Whether a model is special: it turns up, but no ordinary fighter carries or wears it and no
 -- stash holds it (a kit, a trade-in, a special squad, a story character, a task or gift does):
--- a gunsmith's word of mouth
+-- a gunsmith's word of mouth. Ammo never is: the guns that fire it tell of it.
 function special(sec)
     local e = entry_for(sec)
-    if not (e and obtainable(e.sec)) then return false end
+    if not (e and e.cat ~= "ammo" and obtainable(e.sec)) then return false end
     for _, c in ipairs(carriers(e.sec)) do
         if #c.ranks > 0 then return false end
     end
     for _, c in ipairs(ARMOR[e.cat] and worn_by(e.sec) or {}) do
         if #c.ranks > 0 then return false end
     end
-    return stashes(e.sec) == nil
+    return not stashable(e.sec)
 end
 
 -- forget the catalog (a new game, or a test)
@@ -2327,4 +2881,5 @@ function reset()
     trees = {}
     carried, stashed, stashed_eco, made, kits, worn = nil, nil, nil, nil, nil, nil
     speeds, turns_up, addon_ok, rolled, reach, model_up = nil, nil, nil, nil, nil, nil
+    sold, trade_names, fired_by_index = nil, nil, nil
 end

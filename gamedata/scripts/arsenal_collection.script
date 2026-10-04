@@ -48,7 +48,7 @@ function mark(sec, quiet)
     local v = arsenal_data.variant_for(sec)
     if not v or found[v.sec] then return nil end
     found[v.sec] = stamp()
-    if arsenal_intel and arsenal_intel.found then arsenal_intel.found(sec) end
+    if arsenal_intel and arsenal_intel.found then arsenal_intel.found(sec, scanned) end
     if not quiet then
         notify({ v })
     end

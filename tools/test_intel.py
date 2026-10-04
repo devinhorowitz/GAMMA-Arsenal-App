@@ -75,7 +75,7 @@ for _, x in ipairs({ { "wpn_duty", "Duty Rifle", "rifles" }, { "duty_suit", "Dut
     { "wpn_mono", "Monolith Rifle", "rifles" }, { "wpn_mono2", "Monolith SMG", "smgs" }, { "wpn_mono3", "Monolith MG", "rifles" },
     { "mono_suit", "Monolith Suit", "heavy" }, { "mono_helm", "Monolith Helmet", "helmets" },
     { "wpn_special", "Special Gun", "rifles" }, { "wpn_never", "Never Gun", "rifles" }, { "wpn_trade", "Trade Knife", "melee" },
-    { "wpn_box", "Box Gun", "rifles" } }) do
+    { "wpn_box", "Box Gun", "rifles" }, { "ammo_duty", "Duty Round", "ammo" }, { "ammo_free", "Freedom Round", "ammo" } }) do
     M[x[1]] = model(x[1], x[2], x[3])
 end
 -- a scoped copy of the Monolith rifle counts as it
@@ -95,7 +95,7 @@ arsenal_data = {
     FACTIONS = { "stalker", "dolg", "freedom", "csky", "ecolog", "killer", "army", "bandit", "monolith", "zombied",
         "renegade", "greh", "isg" },
     RANKS = { "novice", "trainee", "experienced", "professional", "veteran", "expert", "master", "legend" },
-    CATEGORIES = { "pistols", "smgs", "rifles", "snipers", "melee", "medium", "heavy", "helmets" },
+    CATEGORIES = { "pistols", "smgs", "rifles", "snipers", "melee", "medium", "heavy", "helmets", "ammo" },
     ARMOR = { medium = true, heavy = true, helmets = true },
 }
 function arsenal_data.entry_for(sec) return M[COMBO[sec] or sec] end
@@ -113,6 +113,13 @@ function arsenal_data.faction_gear(f)
     return out
 end
 function arsenal_data.kit_models(f) return f == "dolg" and { M.wpn_kit } or {} end
+-- the guns that fire a round
+local FIRED = { ammo_duty = { "wpn_duty" }, ammo_free = { "wpn_free" } }
+function arsenal_data.fired_by(sec)
+    local out = {}
+    for _, s in ipairs(FIRED[sec] or {}) do out[#out + 1] = M[s] end
+    return out
+end
 function arsenal_data.special(sec) return sec == "wpn_special" end
 FOUND = {}
 arsenal_collection = { entry_found = function(e) return FOUND[e.sec] end }
@@ -138,6 +145,10 @@ end
 """
 
 MUTANTS = {
+    "ammo_reveal": ('    if e.cat == "ammo" then\n        add_fact(k, fact)\n        return nil\n    end\n', ""),
+    "ammo_fact": ("        add_fact(k, fact)\n        return nil", "        return nil"),
+    "ammo_known_gun": ("            if known(g) then return true end", "            if false then return true end"),
+    "ammo_studied": ('    if e.cat == "ammo" then return known(e) end\n', ""),
     "obtainable": ("    if not (e and arsenal_data.obtainable(e.sec)) then return nil end", "    if not e then return nil end"),
     "seed_kit": ("        reveal(e, how, { ways = { kit = true } }, true, true)\n", ""),
     "seed_quiet": ("                true, true)\n", "                true, false)\n"),
@@ -169,10 +180,17 @@ MUTANTS = {
     "news_more": ("        if #names > 3 then", "        if false then"),
     "new_flag": ("            st.new[k] = true\n", ""),
     "viewed": ("    st.new[e.sec] = nil", "    -- stays new"),
+    "found_live": ("    local e = live and model(sec)", "    local e = model(sec)"),
+    "found_not_new": ("    if e and arsenal_data.obtainable(e.sec) then st.new[e.sec] = true end", "    -- not new"),
+    "found_never": ("    if e and arsenal_data.obtainable(e.sec) then st.new[e.sec] = true end",
+                    "    if e then st.new[e.sec] = true end"),
+    "count_listed": ("        if e and not seen[e] and is_new(e) and listed(e) then", "        if e and not seen[e] and is_new(e) then"),
+    "count_jail": ("        if e and not seen[e] and is_new(e) and listed(e) then", "        if e and not seen[e] and listed(e) then"),
+    "count_once": ("            seen[e] = true\n            n = n + 1", "            n = n + 1"),
     "jail_listed": ("    if jailbroken() then return true end\n    return known(e) and arsenal_data.obtainable(e.sec)",
                     "    return known(e) and arsenal_data.obtainable(e.sec)"),
-    "found_known": ("    return st.known[e.sec] ~= nil or (arsenal_collection and arsenal_collection.entry_found(e) ~= nil) or false",
-                    "    return st.known[e.sec] ~= nil"),
+    "found_known": ("    if st.known[e.sec] ~= nil or (arsenal_collection and arsenal_collection.entry_found(e) ~= nil) then return true end",
+                    "    if st.known[e.sec] ~= nil then return true end"),
     "regroup": ("        return e and e.sec or k", "        return k"),
     "load_version": ("    st = (type(d) == \"table\" and d.v == VERSION) and d or fresh()", "    st = (type(d) == \"table\") and d or fresh()"),
 }
@@ -366,6 +384,25 @@ def main():
     run(lambda: m.viewed(M.wpn_mono))
     check("wpn_mono" not in new() and "wpn_mono2" in new(), "a page seen is no longer new")
 
+    # finds: carried when a save loads, known but not new; found in play, new until read, though
+    # known already (a variant found the first time); never what never turns up
+    m.reset()
+    run(lambda: m.found("wpn_eco", False))
+    check("wpn_eco" in known() and "wpn_eco" not in new(), "carried when a save loads: known, not new: %s" % new())
+    run(lambda: m.found("wpn_eco", True))
+    run(lambda: m.found("wpn_mono_kobra", True))
+    run(lambda: m.found("wpn_never", True))
+    check(new() == ["wpn_eco", "wpn_mono"], "found in play: new, by its model, known before or not: %s" % new())
+    # the count: listed models only, each once
+    st().new["wpn_free"] = True
+    st().new["wpn_mono_kobra"] = True
+    check(run(lambda: m.count_new()) == 2, "two new: %s" % run(lambda: m.count_new()))
+    g.JAIL = True
+    check(run(lambda: m.count_new()) == 0, "none with the jailbreak")
+    g.JAIL = False
+    run(lambda: m.viewed(M.wpn_eco))
+    check(run(lambda: m.count_new()) == 1, "one read, one left")
+
     # listed and studied: with the jailbreak, everything; a found model is known and studied
     m.reset()
     check(not m.listed(M.wpn_eco) and not m.studied(M.wpn_eco), "unknown: not listed")
@@ -377,6 +414,31 @@ def main():
           "with the jailbreak, everything")
     g.JAIL = False
     check(not m.listed(M.wpn_never), "never what never turns up")
+
+    # rounds: known, their values shown, once a gun that fires them is known or one is found;
+    # where they lie is a fact, without news; never known on their own
+    m.reset()
+    run(lambda: cb.actor_on_first_update())
+    check(m.known(M.ammo_duty) and m.studied(M.ammo_duty) and m.listed(M.ammo_duty),
+          "a round a known gun fires: known, listed, its values shown")
+    check(not m.known(M.ammo_free) and not m.studied(M.ammo_free), "a round no known gun fires: unknown")
+    g.NEWS = lua.table_from({})
+    got = run(lambda: m.reveal("ammo_free", lua.table_from({"kind": "trade", "who": "Owl"}),
+                               lua.table_from({"sold": "Owl"})))
+    run(lambda: g.run_timers())
+    check(got is None and len(g.NEWS) == 0 and "ammo_free" not in known() and not m.known(M.ammo_free)
+          and facts("ammo_free", "sold") == {"Owl": True},
+          "a round in a trader's stock: a fact, no news, not known by itself: %s %s %s"
+          % (got, list(g.NEWS.values()), facts("ammo_free", "sold")))
+    run(lambda: m.found("ammo_free", True))
+    g.FOUND["ammo_free"] = lua.table_from({})
+    check(m.known(M.ammo_free) and "ammo_free" in new() and run(lambda: m.count_new()) == 1,
+          "a round found in play: known and new: %s" % new())
+    g.FOUND["ammo_free"] = None
+    st().new["ammo_free"] = None
+    free = g.person(810, "freedom", "novice", lua.table_from(["wpn_free"]))
+    run(lambda: cb.npc_on_death_callback(free, g.db.actor))
+    check(m.known(M.ammo_free), "known once a gun that fires it is")
 
     # saving: what is kept comes back; another version starts fresh; keys move to their model
     m.reset()

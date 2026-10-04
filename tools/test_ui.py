@@ -57,8 +57,11 @@ function W:SetTextureRect(r) self.rect = r end
 function W:SetStretchTexture(b) end
 function W:SetTextureColor(c) self.tcolor = c end
 function W:Show(b) self.shown = b end
+function W:Enable(b) self.enabled = b end
+function W:TextControl() return self end
 function W:SetAutoDelete(b) self.autodelete = b end
 function W:GetCheck() return self.checked == true end
+function W:SetCheck(v) self.checked = v == true end
 -- list box
 function W:AddExistingItem(item) self.items = self.items or {}; table.insert(self.items, item) end
 function W:RemoveAll() self.items = {}; self.sel = nil end
@@ -107,7 +110,11 @@ CUIListBoxItem.__index = CUIListBoxItem
 CUIScriptWnd = setmetatable({}, { __index = W })
 function CUIScriptWnd.Update(self) end
 function CUIScriptWnd:Register(w, name) self.registered = self.registered or {}; self.registered[name] = w end
-function CUIScriptWnd:AddCallback(name, ev, fn, obj) self.cb = self.cb or {}; self.cb[name] = function() fn(obj) end end
+-- a selection by cb[name](), a click (LIST_ITEM_CLICKED) by clk[name]()
+function CUIScriptWnd:AddCallback(name, ev, fn, obj)
+    local t = ev == ui_events.LIST_ITEM_CLICKED and "clk" or "cb"
+    self[t] = self[t] or {}; self[t][name] = function() fn(obj) end
+end
 function CUIScriptWnd:SetWndRect(r) self.rect = r.r end
 function CUIScriptWnd:ShowDialog(b) self.dialog_shown = true end
 function CUIScriptWnd:HideDialog() self.dialog_shown = false end
@@ -121,7 +128,9 @@ arsenal_mcm = { flat_key = function() return DIK_keys.DIK_F7 end }
 function vector2() return { set = function(self, x, y) self.x, self.y = x, y; return self end } end
 function Frect() return { set = function(self, a, b, c, d) self.r = { a, b, c, d }; return self end } end
 function GetARGB(a, r, g, b) return string.format("%d,%d,%d,%d", a, r, g, b) end
-ui_events = { BUTTON_CLICKED = 1, LIST_ITEM_SELECT = 2, WINDOW_KEY_PRESSED = 6 }
+ui_events = { BUTTON_CLICKED = 1, LIST_ITEM_SELECT = 2, LIST_ITEM_CLICKED = 3, WINDOW_KEY_PRESSED = 6 }
+TIME = 0
+function time_global() return TIME end
 local T = { st_arsenal_found_count = "Found %s of %s", st_arsenal_found_on = "Found %s in %s",
             st_arsenal_not_found = "Not found yet", st_arsenal_cat_pistols = "Pistols",
             st_arsenal_cat_rifles = "Rifles", st_arsenal_cat_melee = "Melee", st_arsenal_fire_modes = "Fire modes",
@@ -131,6 +140,7 @@ local T = { st_arsenal_found_count = "Found %s of %s", st_arsenal_found_on = "Fo
 for k, v in pairs(STRINGS) do T[k] = T[k] or v end
 T.st_perc, T.st_stat_rpm = "%", "RPM"
 game = { translate_string = function(k) return T[k] or k end }
+TEXT = T
 pda_section = nil
 ActorMenu = { get_pda_menu = function() return { SetActiveSubdialog = function(self, s) pda_section = s end } end }
 utils_xml = { is_widescreen = function() return true end, screen_ratio = function() return 0.75 end }
@@ -145,7 +155,8 @@ utils_ui = {
         return "75 %", false
     end,
 }
-arsenal_theme = { argb = function(role) return role end, markup = function(role) return "<" .. role .. ">" end }
+arsenal_theme = { argb = function(role, a) return a and (role .. "@" .. a) or role end,
+                  markup = function(role) return "<" .. role .. ">" end }
 logged = {}
 function printf(fmt, ...) logged[#logged + 1] = string.format(fmt, ...) end
 
@@ -165,6 +176,7 @@ local guns = {
     smgs = {},
     melee = { model("Knife", { { sec = "wpn_knife", name = "Knife" } }) },
     medium = { model("SEVA", { { sec = "sci_suit", name = "SEVA" } }) },
+    ammo = { model("5.45x39 FMJ", { { sec = "ammo_545", name = "5.45x39 FMJ" } }) },
 }
 for c, l in pairs(guns) do for _, e in ipairs(l) do e.cat = c end end
 found = { wpn_fort17 = { y = 2012, mo = 5, d = 14, lvl = "l01_escape" } }
@@ -185,9 +197,9 @@ FIT = {
 }
 icons = {}
 arsenal_data = {
-    CATEGORIES = { "pistols", "smgs", "rifles", "melee", "medium" },
+    CATEGORIES = { "pistols", "smgs", "rifles", "melee", "medium", "ammo" },
     ARMOR = { medium = true },
-    has_stat_card = function(sec) return sec ~= "wpn_knife" end,
+    has_stat_card = function(sec) return sec ~= "wpn_knife" and sec ~= "ammo_545" end,
     list = function(c) return guns[c] or {} end,
     count = function() return 5 end,
     get = function(sec)
@@ -234,7 +246,8 @@ arsenal_data = {
     fire_modes = function() return "1 / A" end,
     weight = function() return 3.3 end,
     kg = function(x) return math.floor(x * 100 + 0.5) / 100 end,
-    ammo_names = function() return { "5.45 FMJ" } end,
+    -- the other Fort-17 also chambers 9x18
+    ammo_names = function(sec) return sec == "wpn_fort" and { "5.45 FMJ", "9x18 FMJ" } or { "5.45 FMJ" } end,
     description = function() return "A gun." end,
 }
 -- where to find them: the Fort-17s are carried, stashed, traded with Nimble, made of another gun
@@ -244,6 +257,17 @@ arsenal_data.RANKS = ALL
 arsenal_data.FACTIONS = { "stalker", "dolg", "freedom", "csky", "ecolog", "killer", "army", "bandit", "monolith",
     "zombied", "renegade", "greh", "isg" }
 local FORT = { wpn_fort = true, wpn_fort17 = true }
+-- the factions' gear, in no particular order: Loners wear the SEVA and carry the AK-74 and the
+-- Fort-17; bandits carry the PM and the Fort-17; nobody else carries anything
+GEAR = { stalker = { "sci_suit", "wpn_ak74", "wpn_fort" }, bandit = { "wpn_pm", "wpn_fort" } }
+function arsenal_data.faction_gear(f)
+    local out = {}
+    for _, s in ipairs(GEAR[f] or {}) do
+        local e = arsenal_data.get(s)
+        out[#out + 1] = { e = e, ranks = { novice = 0.5 }, armor = (e.cat == "medium") or nil, best = 0.5 }
+    end
+    return out
+end
 function arsenal_data.carriers(sec)
     -- a loadout naming the suit: a suit's page shows who wears it, not this
     if sec == "sci_suit" then return { { faction = "ecolog", ranks = ALL } } end
@@ -253,9 +277,13 @@ function arsenal_data.carriers(sec)
              { faction = "isg", ranks = {}, special = true },
              { faction = "army", ranks = ALL } }
 end
-function arsenal_data.stashes(sec)
-    if FORT[sec] then return { "l01_escape", "l02_garbage" } end
-    if sec == "sci_suit" then return { "l08_yantar" } end
+-- a stash's odds: the Fort-17s' two levels (Garbage's a sliver, the same in a rare stash), the
+-- SEVA's one (none in rare stashes), the PM in stashes no level list names
+function arsenal_data.stash_odds(sec)
+    if FORT[sec] then
+        return { { lvl = "l01_escape", common = 0.0123, rare = 0.034 }, { lvl = "l02_garbage", common = 0.0006, rare = 0.0006 } }
+    end
+    if sec == "sci_suit" then return { { lvl = "l08_yantar", common = 0.05, rare = 0 } } end
     if sec == "wpn_pm" then return {} end
 end
 -- both Fort-17s trade for the same gun; Nimble's own Fort-17 comes for either Fort-12
@@ -288,7 +316,7 @@ function arsenal_data.obtainable(sec) return sec ~= "wpn_ghost" end
 function arsenal_data.addon_turns_up(sec) return sec ~= "ps01" end
 function arsenal_data.turns_up_model(sec)
     if sec == "sci_suit" then return { story = { "st_strelok_name", "GENERATE_NAME_x" }, craft = true } end
-    if sec == "wpn_ak74" then return { trader = true } end
+    if sec == "wpn_ak74" or sec == "wpn_pm" then return { trader = true } end
     return {}
 end
 function arsenal_data.exchange(sec)
@@ -318,6 +346,44 @@ function arsenal_data.risk_enhancements(sec)
 end
 function arsenal_data.made_from(sec)
     return FORT[sec] and { { from = "Fort-12", kit = "Conversion Kit" } } or {}
+end
+-- traders by tier: the AK-74 from four (one with the game's name for Heavy Pockets when it has
+-- one); the PM turns up at traders that keep no tiers
+function arsenal_data.sold_by(sec)
+    if sec ~= "wpn_ak74" then return {} end
+    return { { tier = 1, need = false, traders = { "Sidorovich", "mechanics" } },
+             { tier = 2, need = { kits = 1 }, traders = { "Mechanic One" } },
+             { tier = 3, need = { kits = 2, drugkit = true, story = true }, traders = { "Beard" } },
+             { tier = 4, need = { goodwill = 1500, heavy = true }, traders = { "Owl" } } }
+end
+-- the Fort-17's rounds, one of them buckshot without a falloff
+function arsenal_data.gun_rounds(sec)
+    if sec ~= "wpn_fort17" then return {} end
+    return { { sec = "ammo_545", name = "5.45 FMJ", damage = 38, ap = 27, speed = 924, kept = 0.932 },
+             { sec = "ammo_buck", name = "12x70 Buckshot", damage = 19, ap = 3, speed = 325, pellets = 9 } }
+end
+function arsenal_data.round_stats(sec)
+    if sec ~= "ammo_545" then return nil end
+    return { damage = 1.14, ap = 27, speed = 1.5, kept = { [50] = 0.965, [100] = 0.932, [200] = 0.872 } }
+end
+-- what fires the 5.45: the AK-74 and the Ghost
+function arsenal_data.fired_by(sec)
+    if sec ~= "ammo_545" then return {} end
+    return { arsenal_data.get("wpn_ak74"), arsenal_data.get("wpn_ghost") }
+end
+HIT = { wpn_fort17 = 0.465, wpn_fort = 0.465, wpn_pm = 0.45 }
+function arsenal_data.hit_power(sec) return HIT[sec] or 0 end
+-- jams: the Fort-17 from the engine and with worn parts, the PM with worn parts, the AK-74 never
+JAMS = { wpn_fort17 = { base = 0.003, worn = 0.014 }, wpn_pm = { base = 0, worn = 0.017 }, wpn_ak74 = { base = 0 } }
+function arsenal_data.jam_chance(sec) return JAMS[sec] end
+-- the SEVA against bullets; PEN = "all" or "none" for a suit that stops everything or nothing
+function arsenal_data.penetration(sec)
+    if sec ~= "sci_suit" then return nil end
+    local p = { class = 0.31, protection = 0.25, stopped = 0.45, pierced = 0.75, stops = 23, of = 43,
+                holds = { name = "5.45 FMJ", ap = 27 }, fails = { name = "12x76 Dart", ap = 42 } }
+    if PEN == "all" then p.fails, p.stops = nil, 43 end
+    if PEN == "none" then p.holds, p.stops = nil, 0 end
+    return p
 end
 function arsenal_data.starting_kits(sec)
     if not FORT[sec] then return {} end
@@ -349,10 +415,52 @@ arsenal_collection = {
 """
 
 MUTANTS = {
+    "toggle_ignored": ("    by_faction = self.by_faction_check:GetCheck() == true\n", ""),
+    "toggle_no_memory": ("    self.cat = last_key[by_faction]\n", ""),
+    "toggle_no_save": ("    last_key[by_faction] = self.cat\n", ""),
+    "toggle_both": ("    if by_faction then\n        for _, f in ipairs(arsenal_data.FACTIONS) do",
+                    "    if false then\n        for _, f in ipairs(arsenal_data.FACTIONS) do"),
+    "toggle_check_sync": ("    self.by_faction_check:SetCheck(by_faction)\n", ""),
+    "jam_line": ("        if jam then text(\"entry_line\", jam) end\n", ""),
+    "jam_both": ('        if base > 0 then return string.format(T("st_arsenal_jam_both"), percent(base), percent(base + j.worn)) end\n', ""),
+    "jam_none": ('return base > 0 and string.format(T("st_arsenal_jam_base"), percent(base)) or T("st_arsenal_jam_none")',
+                 'return base > 0 and string.format(T("st_arsenal_jam_base"), percent(base)) or nil'),
+    "hit_power_line": ("        if hp and hp > 0 then\n", "        if false then\n"),
+    "percent_sliver": ('    if p < 0.1 then return "<0.1%" end\n', ""),
+    "percent_whole": ('(p < 10 and string.format("%.1f", p) or tostring(math.floor(p + 0.5)))', 'string.format("%.1f", p)'),
+    "or_list": ('return table.concat(parts, ", ", 1, #parts - 1) .. " " .. game.translate_string("st_arsenal_or") .. " " .. parts[#parts]',
+                'return table.concat(parts, ", ")'),
+    "need_kit_one": ('(n.kits == 1) and T("st_arsenal_need_kit")', '(false) and T("st_arsenal_need_kit")'),
+    "heavy_game_name": ('parts[#parts + 1] = T("st_arsenal_need_heavy")',
+                        'parts[#parts + 1] = T("encyclopedia_achievements_heavy_pockets")'),
+    "sold_fallback": ("    elseif up.trader then\n", "    elseif false then\n"),
+    "sold_heading": ('        line(T("st_arsenal_sold_tiers"), "dim")\n', ""),
+    "sold_need": ('text("entry_line", r.need and string.format(T("st_arsenal_tier_need")', 'text("entry_line", false and string.format(T("st_arsenal_tier_need")'),
+    "stash_rare_part": ("(r.rare > 0 and r.rare ~= r.common)", "(r.rare > 0)"),
+    "stash_note": ('            text("entry_line", T("st_arsenal_stash_odds_note"), "dim")\n', ""),
+    "stash_none_named": ("        if #spots > 0 then\n", "        if true then\n"),
+    "rounds_table": ("        if know and #rounds > 0 then\n            round_row", "        if false then\n            round_row"),
+    "rounds_pellets": ("local dmg = r.pellets and string.format(T(\"st_arsenal_pellets\"), tostring(r.damage), tostring(r.pellets))\n                    or tostring(r.damage)",
+                       "local dmg = tostring(r.damage)"),
+    "rounds_kept": ('r.kept and percent(r.kept) or "-"', "percent(r.kept)"),
+    "rounds_cols": ("c:SetWndPos(vector2():set(ROUND_COLS[i], y))", "c:SetWndPos(vector2():set(0, y))"),
+    "rounds_other": ("            if not mine[n] then other[#other + 1] = n end", "            other[#other + 1] = n"),
+    "rounds_header_dim": ("            if role then c:SetTextColor(theme.argb(role)) end\n", ""),
+    "round_rows": ('            row("st_arsenal_round_ap", tostring(rs.ap))\n', ""),
+    "round_value_x": ("local v = xml:InitTextWnd(\"round_value\", entry)\n            v:SetWndPos(vector2():set(v:GetWndPos().x, y))",
+                      "local v = xml:InitTextWnd(\"round_value\", entry)\n            v:SetWndPos(vector2():set(0, y))"),
+    "fired_listed": ("            if listed(g) then guns[#guns + 1] = g.name end", "            guns[#guns + 1] = g.name"),
+    "ammo_weight": ('    if know and e.cat ~= "ammo" then\n        text("entry_line", string.format("%s: %s %s"',
+                    '    if know then\n        text("entry_line", string.format("%s: %s %s"'),
+    "pen_block": ("        if p and p.of > 0 then\n            local T", "        if false then\n            local T"),
+    "pen_all": ("            elseif p.holds then\n", "            elseif false then\n"),
+    "pen_count": ('            text("entry_line", string.format(T("st_arsenal_pen_count"), tostring(p.stops), tostring(p.of)))\n', ""),
+    "pen_damage": ('string.format(T("st_arsenal_pen_damage"), percent(p.stopped), percent(p.pierced))',
+                   'string.format(T("st_arsenal_pen_damage"), percent(p.pierced), percent(p.stopped))'),
     "layout_name": ('xml:InitListBox("wpn_list", self)', 'xml:InitListBox("weapon_list", self)'),
     "name_wrap": ("line:SetWndPos(vector2():set(0, name:GetWndPos().y + math.max(name:GetHeight(), NAME_H)))",
                   "-- found line where the layout puts it"),
-    "dim": ('(found and "body") or "dim"', '"body"'),
+    "dim": ('return arsenal_collection.entry_found(e) and "body" or "dim"', 'return "body"'),
     "model_found": ("local found = arsenal_collection.entry_found(e) ~= nil",
                     "local found = arsenal_collection.is_found(e.sec)"),
     "card_always": ("if know and arsenal_data.has_stat_card(shown.sec) then", "if know then"),
@@ -372,8 +480,7 @@ MUTANTS = {
     "no_card_check": ("if shown == b then", "if true then"),
     "no_mags": ("    if #mags > 0 then", "    if false then"),
     "modes_extra": ("if not has[m] then extra[#extra + 1] = m end", "extra[#extra + 1] = m"),
-    "no_conversions": ('text("entry_line", string.format(game.translate_string("st_arsenal_ammo_by_upgrade"), c), "dim")',
-                       "-- not shown"),
+    "no_conversions": ('text("entry_line", string.format(T("st_arsenal_ammo_by_upgrade"), c), "dim")', "-- not shown"),
     "no_after": ("sup[#sup + 1] = { sec = it.sec, name = it.name, note = it.upgrade and after or nil, never = it.never }",
                  "sup[#sup + 1] = { sec = it.sec, name = it.name, never = it.never }"),
     "flat_offset": ("local x, y = self.flat and PDA_X or 0, self.flat and PDA_Y or 0", "local x, y = 0, 0"),
@@ -415,16 +522,41 @@ MUTANTS = {
     "armor_worn": ("known_rows(armor and safe(arsenal_data.worn_by, shown.sec) or {}, fx.worn)", "known_rows({}, fx.worn)"),
     "armor_carried": ("known_rows((not armor) and safe(arsenal_data.carriers, shown.sec) or {}, fx.carried)",
                       "known_rows(safe(arsenal_data.carriers, shown.sec) or {}, fx.carried)"),
-    "never_role": ('local role = (not arsenal_data.obtainable(e.sec) and "never") or (found and "body") or "dim"',
-                   'local role = (found and "body") or "dim"'),
+    "never_role": ('    if not arsenal_data.obtainable(e.sec) then return "never" end\n', ""),
     "count_obtainable": ("            if arsenal_data.obtainable(e.sec) then\n                total = total + 1",
                          "            if true then\n                total = total + 1"),
     "never_line": ('        line(game.translate_string("st_arsenal_never"), "warn")\n', ""),
     "addon_never_note": ("            if it.never then\n", "            if false then\n"),
     "addon_hide": ("if up or not imm then", "if true then"),
     "listed": ("if listed(e) and (found or not only) then", "if found or not only then"),
-    "new_mark": ("e.name .. (is_new(e) and new_mark() or \"\")", "e.name"),
-    "cat_new": ("if listed(e) and is_new(e) then fresh = true end", "-- no mark"),
+    "row_glow": ('new and "wpn_glow" or nil', "nil"),
+    "action_always": ("        b:Show(a ~= nil)", "        b:Show(true)"),
+    "action_everywhere": ("        if not a.show or safe(a.show, sec) then", "        if true then"),
+    "action_model_key": ("    local ok, err = pcall(a.run, self.action_sec)", "    local ok, err = pcall(a.run, self.sec)"),
+    "action_unguarded": ("    local ok, err = pcall(a.run, self.action_sec)", "    local ok, err = true, a.run(self.action_sec)"),
+    "action_stale": ("    self.detail:Clear()\n    self:UpdateActions(nil)\n", "    self.detail:Clear()\n"),
+    "action_twice": ("    remove_action(id)\n    actions[#actions + 1]", "    actions[#actions + 1]"),
+    "action_stacked": ("        b:SetWndPos(vector2():set(p.x - (i - 1) * ACTION_STEP, p.y))\n", ""),
+    "no_factions": ('        add(FACTION .. f, game.translate_string("st_faction_" .. f), models_of(FACTION .. f))\n', ""),
+    "faction_by_name": ("        if a.cat ~= b.cat then return (order[a.cat] or 99) < (order[b.cat] or 99) end\n", ""),
+    "faction_unsorted": ("    table.sort(out, function(a, b)\n        if a.cat ~= b.cat", "    local _ = (function(a, b)\n        if a.cat ~= b.cat"),
+    "faction_list": ("    for _, e in ipairs(models_of(self.cat)) do", "    for _, e in ipairs(arsenal_data.list(self.cat)) do"),
+    "read_this_row_only": ("    for key, row in pairs(self.cat_rows or {}) do\n        if row.glow and not fresh_in(key) then",
+                           "    for key, row in pairs({ [self.cat] = self.cat_rows[self.cat] }) do\n        if row.glow and not fresh_in(key) then"),
+    "row_bright": ('    if new then return "bright" end\n', ""),
+    "cat_glow": ('fresh and "cat_glow" or nil', "nil"),
+    "cat_bright": ('fresh and "bright" or "body"', '"body"'),
+    "cat_fresh_unlisted": ("if listed(e) and is_new(e) then return true end", "if is_new(e) then return true end"),
+    "no_pulse": ("if row.glow then row.glow:SetTextureColor(color) end", "-- still"),
+    "pulse_flat": ("math.floor(GLOW_MIN + (GLOW_MAX - GLOW_MIN) * wave)", "GLOW_MAX"),
+    "read_on_show": ("    local shown = e.variants[1]\n",
+                     "    if arsenal_intel then arsenal_intel.viewed(e) end\n    local shown = e.variants[1]\n"),
+    "no_click": ('    self:AddCallback("wpn_list", ui_events.LIST_ITEM_CLICKED, self.OnWeaponClicked, self)\n', ""),
+    "click_glow_stays": ("        item.glow:Show(false)\n        item.glow = nil\n", ""),
+    "click_cat_stays": ("        if row.glow and not fresh_in(key) then", "        if false then"),
+    "click_count_stale": ('            row.name:SetTextColor(theme.argb("body"))\n        end\n    end\n    self:SetCounts()\n',
+                          '            row.name:SetTextColor(theme.argb("body"))\n        end\n    end\n'),
+    "header_no_new": ("    self.found_count:SetText(new > 0", "    self.found_count:SetText(false"),
     "not_studied_note": ('        text("entry_line", game.translate_string("st_arsenal_not_studied"), "dim")\n', ""),
     "gate_fits": ("    -- what fits it, its camos, parts and repair kits, once it is studied\n    if know then",
                   "    -- what fits it, its camos, parts and repair kits, once it is studied\n    if true then"),
@@ -435,8 +567,8 @@ MUTANTS = {
     "where_unknown": ('line(game.translate_string(full and "st_arsenal_no_source" or "st_arsenal_where_unknown"), "dim")',
                       'line(game.translate_string("st_arsenal_no_source"), "dim")'),
     "learned_line": ("    elseif learned and learned.at then", "    elseif false then"),
-    "viewed": ("    if arsenal_intel then arsenal_intel.viewed(e) end\n", ""),
-    "known_header": ("    if immersive() then\n        self.found_count", "    if false then\n        self.found_count"),
+    "viewed": ("    arsenal_intel.viewed(e)\n", ""),
+    "known_header": ("    if immersive() then\n        local new", "    if false then\n        local new"),
     "story_names": ("            if t ~= n then names[#names + 1] = t end", "            names[#names + 1] = t"),
     "full_sources": ("    local up = full and safe(arsenal_data.turns_up_model, shown.sec) or {}",
                      "    local up = safe(arsenal_data.turns_up_model, shown.sec) or {}"),
@@ -445,8 +577,6 @@ MUTANTS = {
     "armor_exchange": ("local ex = armor and safe(arsenal_data.exchange, shown.sec)", "local ex = nil"),
     "armor_max": ("if row.gr.track or not (MAXED[row.stat] or arsenal_data.ARMOR[e.cat]) then return nil end",
                   "if row.gr.track or not MAXED[row.stat] then return nil end"),
-    "where_levels": ("line(#names > 0 and string.format(game.translate_string(\"st_arsenal_stashes_at\")",
-                     "line(false and string.format(game.translate_string(\"st_arsenal_stashes_at\")"),
     "where_distinct": ("for _, list in ipairs({ distinct(from), distinct(gets) }) do", "for _, list in ipairs({ from, gets }) do"),
     "where_eco": ("        if k.economies then", "        if false then"),
     "where_free": ('or string.format(game.translate_string("st_arsenal_start_free"), who)', "or who"),
@@ -509,11 +639,43 @@ def main():
           "values listed by number with one unit: %s | %s | %s"
           % (joined("350 RPM", "200 RPM", "245 RPM"), joined("30", "20"), joined("1.05 kg", "2 lb")))
 
-    check(ui.found_count.text == "Found 1 of 5", "count line: %s" % ui.found_count.text)
-    cats = [(r.key, r.name.text, r.count.text) for r in ui.cat_list["items"].values()]
+    check(ui.found_count.text == "Found 1 of 6", "count line: %s" % ui.found_count.text)
+    items = list(ui.cat_list["items"].values())
+    cats = [(r.key, r.name.text, r.count.text) for r in items]
     check(cats == [("pistols", "Pistols", "1/2"), ("rifles", "Rifles", "0/1"), ("melee", "Melee", "0/1"),
-                   ("medium", "Medium armor", "0/1")],
-          "categories with found/total models, empty ones left out: %s" % cats)
+                   ("medium", "Medium armor", "0/1"), ("ammo", "Ammo", "0/1")],
+          "categories with found/total models, empty ones left out, and nothing else: %s" % cats)
+    tog = ui.by_faction_check
+    check(tog is not None and tog.checked is False, "the faction toggle, off: %s" % (tog and tog.checked,))
+
+    # the toggle: every faction with gear instead, found/total of it, in the factions' order; a
+    # faction's gear in the categories' order; each view back on the row chosen last in it
+    ui.cat_list.sel = 1
+    ui.cb.cat_list()
+    tog.checked = True
+    ui.cb.by_faction()
+    facs = [(r.key, r.count.text if r.count else None) for r in ui.cat_list["items"].values()]
+    check(facs == [("f:stalker", "1/3"), ("f:bandit", "1/2")],
+          "with the toggle, the factions with gear instead, found/total of it, in the factions' order: %s" % facs)
+    gear = [r.name.text for r in ui.wpn_list["items"].values()]
+    check(ui.cat == "f:stalker" and ui.cat_list.sel == 0
+          and gear == ["Fort-17", "AK-74 Tactical Modernized Carbine of the Northern Expedition Special Forces Unit", "SEVA"],
+          "the first faction's gear, pistols to suits: %s" % gear)
+    ui.cat_list.sel = 1
+    ui.cb.cat_list()
+    tog.checked = False
+    ui.cb.by_faction()
+    keys = [r.key for r in ui.cat_list["items"].values()]
+    check(keys[0] == "pistols" and ui.cat == "rifles" and ui.cat_list.sel == 1
+          and [r.key for r in ui.wpn_list["items"].values()] == ["wpn_ak74"],
+          "toggled back: the categories, on the one chosen before: %s %s" % (ui.cat, keys))
+    tog.checked = True
+    ui.cb.by_faction()
+    check(ui.cat == "f:bandit" and ui.cat_list.sel == 1, "and the factions on theirs: %s" % ui.cat)
+    tog.checked = False
+    ui.cb.by_faction()
+    ui.cat_list.sel = 0
+    ui.cb.cat_list()
     rows = [(r.key, r.name.text, r.name.color) for r in ui.wpn_list["items"].values()]
     check([r[1] for r in rows] == ["PM", "Fort-17", "Ghost"], "one row per gun model: %s" % [r[1] for r in rows])
     check([r[2] for r in rows] == ["dim", "body", "never"],
@@ -578,6 +740,10 @@ def main():
         i = texts.index(head) if head in texts else -1
         return texts[i + 1:i + 1 + n] if i >= 0 else []
 
+    def after_in(ts, head, n):
+        i = ts.index(head) if head in ts else -1
+        return ts[i + 1:i + 1 + n] if i >= 0 else []
+
     # where to find it: a row per faction with its ranks (runs as ranges, all as every rank, a
     # rankless squad as special), stashes, Nimble (what he takes first, each line once), the gun
     # a kit makes it of, new-game kits (every faction, an economy lock)
@@ -585,13 +751,15 @@ def main():
                                           "Loner", "Experienced – Veteran, Legend", "UNISG", "special squads",
                                           "Military", "every rank"],
           "the factions that carry it, with their ranks: %s" % after("Where to find:", 9))
-    check(after("every rank", 7) == ["In stashes, most often at Cordon, Garbage",
+    check(after("every rank", 8) == ["In stashes: Cordon 1.2% (rare 3.4%), Garbage <0.1%",
+                                     "The chance one stash there holds it.",
                                      "From Nimble, for Fort-12 / Fort-12 (old) and 45000 RU",
                                      "Nimble gives the Fort-17 Nimble for it and 30000 RU",
                                      "Made from the Fort-12 with the Conversion Kit",
                                      "New-game kit, 150 points: Loner, Bandit", "New-game kit, free: every faction",
                                      "New-game kit, 200 points: Duty; Tourist (Easy), Scavenger (Medium) only"],
-          "stashes, Nimble, a kit, new-game kits: %s" % after("every rank", 7))
+          "stashes with the chance one holds it (a rare stash's where it differs, a sliver as one), Nimble, a kit, "
+          "new-game kits: %s" % after("every rank", 8))
     fr = [c for c in fort.children.values() if c.path == "where_faction"]
     rr = [c for c in fort.children.values() if c.path == "where_ranks"]
     check(len(fr) == 4 and len(rr) == 4 and all(f.y == r.y for f, r in zip(fr, rr)) and rr[0].x == 88
@@ -611,8 +779,22 @@ def main():
           "kits: %s" % after("Accessories:", 10))
     modes = [t for t in texts if t.startswith("Fire modes")]
     check(modes == ["Fire modes: 1 / A (1 / 3 / A by upgrade)"], "fire modes an upgrade adds: %s" % modes)
-    check(after("Ammo", 2) == ["5.45 FMJ", "By upgrade: 9x19 FMJ, 9x19 AP"],
-          "the ammo of the caliber an upgrade converts it to: %s" % after("Ammo", 2))
+    check(after("Ammo", 18) == ["Round", "Damage", "AP", "m/s", "100 m", "5.45 FMJ", "38", "27", "924", "93%",
+                                "12x70 Buckshot", "19 x 9", "3", "325", "-",
+                                "Damage from this gun, armor piercing (AP), bullet speed, and the damage left at 100 m.",
+                                "Other variants: 9x18 FMJ", "By upgrade: 9x19 FMJ, 9x19 AP"],
+          "a gun's rounds as a table (pellets, no falloff), what only another variant chambers, then what an "
+          "upgrade converts it to: %s" % after("Ammo", 18))
+    cells = [c for c in fort.children.values() if c.path == "round_cell"]
+    rnames = [c for c in fort.children.values() if c.path == "round_name"]
+    check(len(cells) == 12 and [c.x for c in cells[:4]] == [144, 194, 244, 294] and len(rnames) == 3
+          and all(c.y == rnames[i // 4].y for i, c in enumerate(cells)) and cells[0].color == "dim"
+          and rnames[0].color == "dim" and cells[4].color is None,
+          "four columns beside each name, the header dim: %s" % [(c.x, c.y) for c in cells[:5]])
+    check("Hit power: 0.465" in texts and "Jam chance: 0.3% a shot, 1.7% once its parts wear below 80%" in texts
+          and texts.index("Hit power: 0.465") == texts.index("Fire modes: 1 / A (1 / 3 / A by upgrade)") + 1,
+          "hit power and jams under the fire modes, the engine's chance and with worn parts: %s"
+          % [t for t in texts if t.startswith("Hit") or t.startswith("Jam")])
     check(after("Parts:", 2) == ["Barrel", "Trigger"], "parts, a row each: %s" % after("Parts:", 2))
     check(after("Camos:", 7) == ["Base", "Tan", "Not discovered yet; on guns carried by Loner, Bandit", "Arctic",
                                  "Not discovered yet", "Woodland", "Discovered"],
@@ -680,18 +862,86 @@ def main():
             for c in seva.children.values() if c.path == "stats_box"]
     check(smax == [("fire_wound_protection", ["max 90 %"]), ("burn_protection", [])],
           "a suit's max where an upgrade raises a card value: %s" % smax)
-    check(after("Where to find:", 7) == ["Worn by:", "Ecologist", "Rookie \u2013 Professional", "Duty", "special squads",
+    check(after("Where to find:", 8) == ["Worn by:", "Ecologist", "Rookie \u2013 Professional", "Duty", "special squads",
                                           "Drops from a body 50% of the time once your rank reaches 1747 (Rookie)",
-                                          "In stashes, most often at Yantar"]
+                                          "In stashes: Yantar 5.0%", "The chance one stash there holds it."]
           and "Carried by:" not in texts,
-          "who wears it, how it drops, stashes; no carriers: %s" % after("Where to find:", 7))
-    check(after("In stashes, most often at Yantar", 4) == [
+          "who wears it, how it drops, stashes (none in rare ones); no carriers: %s" % after("Where to find:", 8))
+    check(after("Against bullets:", 3) == ["Stops rounds up to 5.45 FMJ (AP 27); 12x76 Dart (AP 42) and stronger pierce it.",
+                                           "Stops 23 of the 43 rounds that turn up.",
+                                           "A hit does 45% of its damage when stopped, 75% when it pierces."]
+          and texts.index("Against bullets:") < texts.index("Where to find:"),
+          "a suit against bullets: the strongest round it stops, the weakest that pierces, how many, what a hit "
+          "does either way: %s" % after("Against bullets:", 3))
+    check(after("The chance one stash there holds it.", 4) == [
               "Carried by Strelok", "Crafted at a workbench",
               "From Petrenko, for any of 12 suits and 10000 RU (Duty only)",
               "Sidorovich, Owl gives the Exoskeleton for it and 45000 RU (Loner only)"],
           "story characters (a name with no text left out), crafting, the Armor Exchange both ways: %s"
-          % after("In stashes, most often at Yantar", 4))
+          % after("The chance one stash there holds it.", 4))
     check(after("Repair kits:", 1) == ["Basic Sewing Kit"], "its repair kits: %s" % after("Repair kits:", 1))
+    # a suit that stops every round, one that stops none
+    def page(cat, row=0):
+        try:
+            ui.cat_list.sel = (cat + 1) % 5
+            ui.cb.cat_list()
+            ui.cat_list.sel = cat
+            ui.cb.cat_list()
+            if row:
+                ui.wpn_list.sel = row
+                ui.cb.wpn_list()
+        except L.LuaError as err:
+            return ["error: %s" % str(err)[:80]]
+        return texts_of(shown(ui))
+    g.PEN = "all"
+    t_all = page(3)
+    g.PEN = "none"
+    t_none = page(3)
+    g.PEN = None
+    check(after_in(t_all, "Against bullets:", 2) == ["Stops every round that turns up, the strongest 5.45 FMJ (AP 27).",
+                                                     "Stops 43 of the 43 rounds that turn up."]
+          and after_in(t_none, "Against bullets:", 2) == ["Every round pierces it, from 12x76 Dart (AP 42) up.",
+                                                          "Stops 0 of the 43 rounds that turn up."],
+          "a suit that stops every round, one that stops none: %s %s"
+          % (after_in(t_all, "Against bullets:", 2), after_in(t_none, "Against bullets:", 2)))
+
+    # traders by tier, with what unlocks each: a toolkit, toolkits, a drug kit or the story,
+    # goodwill or Heavy Pockets; a gun that never jams says so
+    ak = page(1)
+    check(after_in(ak, "Sold by traders:", 4) == ["Tier 1: Sidorovich, mechanics", "Tier 2, after a toolkit: Mechanic One",
+                                                  "Tier 3, after 2 toolkits, after a drug kit or later in the story: Beard",
+                                                  "Tier 4, goodwill 1500 or Heavy Pockets: Owl"]
+          and "Sold by traders" not in ak and "Jam chance: none" in ak,
+          "sold by, a row per tier with what unlocks it; never jams: %s" % after_in(ak, "Sold by traders:", 4))
+    g.TEXT["encyclopedia_achievements_heavy_pockets"] = "HEAVY POCKETS"
+    ak = page(1)
+    g.TEXT["encyclopedia_achievements_heavy_pockets"] = None
+    check("Tier 4, goodwill 1500 or Heavy Pockets: Owl" in ak, "Heavy Pockets in Arsenal's words, not the game's "
+          "capitalized achievement title: %s" % [t for t in ak if t.startswith("Tier 4")])
+    pm = page(0)
+    check("Sold by traders" in pm and "Sold by traders:" not in pm and "Hit power: 0.45" in pm
+          and "Jam chance: 1.7% a shot once its parts wear below 80%" in pm,
+          "a trader without tiers; hit power; jams with worn parts only: %s"
+          % [t for t in pm if t.startswith("Sold") or t.startswith("Hit") or t.startswith("Jam")])
+
+    # a round's page: its own values, the guns that fire it; no card, fire modes or weight
+    page(4)
+    rnd = shown(ui)
+    t_rnd = texts_of(rnd)
+    stats = [c.stat for c in rnd.children.values() if c.stat]
+    check(ui.sec == "ammo_545" and not stats and not any(t.startswith("Fire modes") or t.startswith("Weight")
+                                                         or t.startswith("Hit power") for t in t_rnd),
+          "a round: no card, fire modes, hit power or weight: %s" % t_rnd[:6])
+    check(after_in(t_rnd, "Not found yet", 8) == ["Damage", "x1.14", "Armor piercing", "27", "Bullet speed", "x1.5",
+                                                  "Left at 50/100/200 m", "97% / 93% / 87%"],
+          "its values, a row each: %s" % after_in(t_rnd, "Not found yet", 8))
+    rs = [c for c in rnd.children.values() if c.path == "round_stat"]
+    rv = [c for c in rnd.children.values() if c.path == "round_value"]
+    check(len(rs) == 4 and all(a.y == b.y for a, b in zip(rs, rv)) and rv[0].x == 154,
+          "a value beside its name: %s" % [(a.y, b.y) for a, b in zip(rs, rv)])
+    check(after_in(t_rnd, "Fired by:", 1) == ["AK-74 Tactical Modernized Carbine of the Northern Expedition Special Forces "
+                                              "Unit, Ghost"],
+          "the guns that fire it: %s" % after_in(t_rnd, "Fired by:", 1))
     g.DROP_OFF = True
     ui.cat_list.sel = 0
     ui.cb.cat_list()
@@ -715,7 +965,7 @@ def main():
     lua.execute("""
 KNOWN = { wpn_pm = true, wpn_fort = true, wpn_ak74 = true }
 STUDIED = {}
-NEW = { wpn_pm = true }
+NEW = { wpn_pm = true, wpn_ghost = true }
 FACTS = { wpn_pm = { stash = { l02_garbage = true }, sold = { Sidorovich = true } },
           wpn_fort = { carried = { bandit = { trainee = true }, stalker = { legend = true } }, ways = { kit = true } } }
 LEARNED = { wpn_pm = { at = { d = 3, mo = 6, y = 2012, lvl = "l01_escape" }, how = { kind = "pda" } } }
@@ -728,18 +978,47 @@ arsenal_intel = {
     describe = function(how) return "a Duty PDA" end,
     is_new = function(e) return NEW[e.sec] == true end,
     viewed = function(e) NEW[e.sec] = nil end,
+    count_new = function() local n = 0; for k in pairs(NEW) do if KNOWN[k] then n = n + 1 end end; return n end,
     player_faction = function() return "stalker" end,
 }
 """)
     ui.cat_list.sel = 0
     ui = m.get_ui()
-    check(ui.found_count.text == "Known 3 \u00b7 Found 1 of 5", "count line: %s" % ui.found_count.text)
-    cats = [r.name.text for r in ui.cat_list["items"].values()]
-    check(cats[0] == "Pistols <warn>*", "a category with something new is marked: %s" % cats)
+    check(ui.found_count.text == "Known 3 \u00b7 Found 1 of 6 \u00b7 1 new",
+          "count line, with what is new: %s" % ui.found_count.text)
+    cat = ui.cat_list["items"][1]
+    check(cat.name.text == "Pistols" and cat.name.color == "bright" and cat.glow is not None
+          and cat.glow.path == "cat_glow", "a category with something new glows: %s %s" % (cat.name.text, cat.name.color))
+    other = ui.cat_list["items"][2]
+    check(other.glow is None and other.name.color == "body", "one without does not: %s" % other.name.color)
+    def faction_rows():
+        ui.by_faction_check.checked = True
+        ui.cb.by_faction()
+        return {r.key: r for r in ui.cat_list["items"].values()}
+
+    def category_view():
+        ui.by_faction_check.checked = False
+        ui.cb.by_faction()
+    rows_by_key = faction_rows()
+    bandit, loner = rows_by_key.get("f:bandit"), rows_by_key.get("f:stalker")
+    check(bandit is not None and bandit.glow is not None and loner is not None and loner.glow is None,
+          "with the toggle, the faction whose gear holds the new PM glows; the other does not")
+    category_view()
+    cat = ui.cat_list["items"][1]
     ui.cat_list.sel = 0
     ui.cb.cat_list()
-    rows = [r.name.text for r in ui.wpn_list["items"].values()]
-    check(rows == ["PM <warn>*", "Fort-17"], "only what is known, the new one marked: %s" % rows)
+    rows = list(ui.wpn_list["items"].values())
+    check([r.name.text for r in rows] == ["PM", "Fort-17"] and rows[0].glow is not None
+          and rows[0].glow.path == "wpn_glow" and rows[0].name.color == "bright" and rows[1].glow is None,
+          "only what is known; the new one glows, brighter: %s" % [(r.name.text, r.name.color) for r in rows])
+    pulse = []
+    for t in (500, 1500):
+        g.TIME = t
+        ui.Update(ui)
+        pulse.append(rows[0].glow.tcolor)
+    check(pulse == ["heading@110", "heading@40"] and cat.glow.tcolor == "heading@40",
+          "the glow brightens and fades over two seconds: %s" % pulse)
+    check(lua.eval("NEW.wpn_pm") is True, "shown first by itself, it stays new until clicked")
     pm = shown(ui)
     texts = texts_of(pm)
     stats = [c.stat for c in pm.children.values() if c.stat]
@@ -749,8 +1028,43 @@ arsenal_intel = {
           "a known model not yet studied: how it was learned, no stats: %s %s" % (stats, texts[:5]))
     check(texts[i + 1:i + 3] == ["Seen in stashes at Garbage", "Seen for sale at Sidorovich"],
           "where to find it: only where it was seen: %s" % texts[i:i + 3])
-    rows = [r.name.text for r in m.get_ui().wpn_list["items"].values()]
-    check(rows[0] == "PM", "seen: no longer new: %s" % rows)
+    # a click on it, though it is shown already: read, like an opened letter
+    pm_glow, cat_glow = rows[0].glow, cat.glow
+    ui.wpn_list.sel = 0
+    click = ui.clk and ui.clk.wpn_list
+    check(click is not None, "a click on the gun list is heard")
+    if click is not None:
+        click()
+    check(lua.eval("NEW.wpn_pm") is None and rows[0].glow is None and pm_glow.shown is False
+          and rows[0].name.color != "bright", "clicked: read, its glow gone, its usual color: %s" % rows[0].name.color)
+    check(cat.glow is None and cat_glow.shown is False and cat.name.color == "body",
+          "nothing listed in it new any more: the category stops glowing")
+    bandit = faction_rows().get("f:bandit")
+    check(bandit is not None and bandit.glow is None and bandit.name.color == "body",
+          "and so does the faction it belongs to")
+    # a new gun two factions carry: both glow; read under one, both stop
+    lua.execute("NEW.wpn_fort = true")
+    category_view()
+    rows_by_key = faction_rows()
+    check(rows_by_key["f:stalker"].glow is not None and rows_by_key["f:bandit"].glow is not None,
+          "a new gun two factions carry: both glow")
+    keys = [r.key for r in ui.cat_list["items"].values()]
+    ui.cat_list.sel = keys.index("f:stalker")
+    ui.cb.cat_list()
+    names = [r.name.text for r in ui.wpn_list["items"].values()]
+    ui.wpn_list.sel = names.index("Fort-17") if "Fort-17" in names else 0
+    ui.clk.wpn_list()
+    check(lua.eval("NEW.wpn_fort") is None and rows_by_key["f:stalker"].glow is None
+          and rows_by_key["f:bandit"].glow is None, "read under one faction, read under both")
+    category_view()
+    ui.cat_list.sel = 0
+    ui.cb.cat_list()
+    check(ui.found_count.text == "Known 3 \u00b7 Found 1 of 6", "the count line drops the new count: %s" % ui.found_count.text)
+    ui = m.get_ui()
+    rows = list(ui.wpn_list["items"].values())
+    check(rows[0].glow is None and rows[0].name.color != "bright", "opened again: still read")
+    ui.cat_list.sel = 0
+    ui.cb.cat_list()
     ui.wpn_list.sel = 1
     ui.cb.wpn_list()
     fort = shown(ui)
@@ -773,8 +1087,66 @@ arsenal_intel = {
     i = texts.index("Where to find:") if "Where to find:" in texts else -1
     check(ui.sec == "wpn_ak74" and texts[i + 1] == "Nothing learned yet about where to find it",
           "nothing learned of where to find it says so, though traders sell it: %s" % texts[i:i + 2])
+    # a round the player knows: its page names only the guns he knows fire it
+    lua.execute("KNOWN.ammo_545 = true; STUDIED.ammo_545 = true")
+    ui = m.get_ui()
+    keys = [r.key for r in ui.cat_list["items"].values()]
+    ui.cat_list.sel = keys.index("ammo") if "ammo" in keys else 0
+    ui.cb.cat_list()
+    t = texts_of(shown(ui))
+    check(ui.sec == "ammo_545" and after_in(t, "Fired by:", 1) == ["AK-74 Tactical Modernized Carbine of the Northern "
+                                                                   "Expedition Special Forces Unit"],
+          "immersive: only the known guns that fire it: %s" % after_in(t, "Fired by:", 1))
     lua.execute("arsenal_intel = nil")
     ui = m.get_ui()
+
+    # other apps' buttons (ui_arsenal.add_action): none added, none shown; one shows where it
+    # applies and runs on the section shown; it hides on other pages and with nothing shown
+    btns = lambda: [ui.action_btns[i] for i in (1, 2, 3)]
+    check(all(b.shown is False for b in btns()), "no app added a button: none shows")
+    lua.execute("RAN = nil")
+    m.add_action("workbench", lua.eval('{ label = "st_wb", run = function(sec) RAN = sec end, '
+                                       'show = function(sec) return sec ~= "wpn_knife" end }'))
+    ui = m.get_ui()
+    ui.cat_list.sel = 0
+    ui.cb.cat_list()
+    ui.wpn_list.sel = 1
+    ui.cb.wpn_list()
+    b = btns()
+    check(ui.sec == "wpn_fort" and b[0].shown is True and b[0].text == "st_wb" and b[1].shown is False,
+          "added: its button shows on the page, labelled: %s %s" % (b[0].shown, b[0].text))
+    click = ui.cb.action_1 if ui.cb else None
+    if click is not None:
+        click()
+    check(g.RAN == "wpn_fort17", "a click runs it on the section shown, the found variant: %s" % g.RAN)
+    ui.cat_list.sel = 2
+    ui.cb.cat_list()
+    check(ui.sec == "wpn_knife" and btns()[0].shown is False, "a page it does not apply to: hidden")
+    ui.cat_list.sel = 1
+    ui.cb.cat_list()
+    ui.found_only.checked = True
+    ui.OnFoundOnly(ui)
+    check(ui.sec is None and btns()[0].shown is False, "nothing shown, no button: %s" % ui.sec)
+    ui.found_only.checked = False
+    m.add_action("workbench", lua.eval('{ label = "st_wb2", run = function(sec) end }'))
+    m.add_action("other", lua.eval('{ run = function(sec) error("boom") end }'))
+    ui = m.get_ui()
+    b = btns()
+    check(b[0].shown and b[0].text == "st_wb2" and b[1].shown and b[1].text == "other" and b[2].shown is False
+          and b[1].x == b[0].x - 126,
+          "added again, replaced; a second app's to its left: %s" % [(x.shown, x.text, x.x) for x in b])
+    g.logged = lua.table_from([])
+    try:
+        ui.cb.action_2()
+        ok = True
+    except L.LuaError:
+        ok = False
+    check(ok and len(g.logged) == 1 and "other" in g.logged[1], "a button that fails is logged, not raised: %s"
+          % list(g.logged.values()))
+    m.remove_action("workbench")
+    m.remove_action("other")
+    ui = m.get_ui()
+    check(all(x.shown is False for x in btns()), "removed: gone")
 
     ui.cb.btn_back()
     check(g.pda_section == "eptLauncher", "Back returns to the launcher")
@@ -785,13 +1157,21 @@ arsenal_intel = {
     g.actor_alive = False
     check(m.open_flat() is None, "no window while the player is dead")
     g.actor_alive = True
+    ui.by_faction_check.checked = True
+    ui.cb.by_faction()
     flat = m.open_flat()
+    check(flat is not None and flat.by_faction_check.checked is True
+          and all(str(r.key).startswith("f:") for r in flat.cat_list["items"].values()),
+          "the window opens on the view the page last had: %s"
+          % (flat and [r.key for r in flat.cat_list["items"].values()],))
+    ui.by_faction_check.checked = False
+    ui.cb.by_faction()
     check(flat is not None and flat.IsShown(flat), "the key opens the window")
     if flat is not None:
         kids = paths(flat)
         check(kids[:2] == ["flat_bezel", "flat_caption"], "the frame first, behind everything: %s" % kids[:3])
         check(list(flat.rect.values())[:2] == [112, 34], "placed as the PDA places its pages: %s" % list(flat.rect.values()))
-        check(flat.found_count.text == "Found 1 of 5" and flat.detail.content and flat.detail.content[1] is not None,
+        check(flat.found_count.text == "Found 1 of 6" and flat.detail.content and flat.detail.content[1] is not None,
               "the window fills like the page")
         ret = flat.OnKeyboard(flat, g.DIK_keys.DIK_A, g.ui_events.WINDOW_KEY_PRESSED)
         check(flat.IsShown(flat) and not ret, "another key leaves it open")

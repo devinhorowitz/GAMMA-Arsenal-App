@@ -17,6 +17,7 @@ SRC = io.open(os.path.join(HERE, "..", "gamedata", "scripts", "arsenal_data.scri
 # section -> fields; a stand-in for system.ltx after inheritance and DLTX
 SECTIONS = {
     "wpn_ak74": dict(kind="w_rifle", inv_name="st_ak74", inv_grid_x="10", repair_type="rifle_5", ammo_class="ammo_545, ammo_545_bad, ammo_545_alt, ammo_545_ap",
+                     hit_power="0.5, 0.5, 0.5, 0.5",
                      bullet_speed="900", condition_shot_dec="0.0005", zoom_cam_dispersion="0.5",
                      fire_modes="1, -1", inv_weight="3.3", description="st_ak74_descr", parent_section="wpn_ak74",
                      fire_dispersion_base="0.6", rpm="600", upgrades="up_gr_a, up_gr_b, risk_up_gr_wpn_fire_rate",
@@ -25,7 +26,8 @@ SECTIONS = {
                      grenade_launcher_status="2", grenade_launcher_name="wpn_gl", grenade_class="ammo_vog, ammo_vog_bad"),
     "wpn_ak74_pso": dict(kind="w_rifle", inv_name="st_ak74", inv_grid_x="10", parent_section="wpn_ak74"),
     "wpn_pm": dict(kind="w_pistol", inv_name="st_pm", inv_grid_x="1", ammo_class="ammo_9x18", upgrades="up_gr_pm",
-                   scopes="pm_kit, never_kit", repair_type="pistol"),
+                   scopes="pm_kit, never_kit", repair_type="pistol", misfire_start_condition="0.83",
+                   misfire_start_prob="0.003", misfire_end_condition="0.1", misfire_end_prob="0.1"),
     # a copy that plays as the PM (one variant), with the same kit: the gun the kit makes is
     # made of the PM once
     "wpn_pm_copy": dict(kind="w_pistol", inv_name="st_pm", inv_grid_x="1", ammo_class="ammo_9x18", scopes="pm_kit"),
@@ -46,29 +48,52 @@ SECTIONS = {
                       fire_dispersion_base="0.75", upgrades="up_gr_t", silencer_status="2", silencer_name="toz_sil"),
     "wpn_rpg7": dict(kind="w_explosive", weapon_class="rpg7", inv_name="st_rpg", inv_grid_x="4", scope_status="1"),
     "grenade_f1": dict(kind="w_explosive", inv_name="st_f1", inv_grid_x="5"),
-    "wpn_knife": dict(**{"class": "WP_KNIFE"}, inv_name="st_knife", inv_grid_x="6", ammo_class="ammo_knife",
+    "wpn_knife": dict(**{"class": "WP_KNIFE"}, kind="w_melee", inv_name="st_knife", inv_grid_x="6", ammo_class="ammo_knife",
                       repair_type="knife"),
     # repair kits: Weapon Parts Overhaul's pair for rifle_5 (the pistol's pair is not in the game),
     # sharpening stones for knives
     "cleaning_kit_r5": dict(inv_name="st_ck_r5"),
     "toolkit_r5": dict(inv_name="st_tk_r5"),
     "sharpening_stones": dict(inv_name="st_stones"),
-    "ammo_knife": dict(kind="w_ammo", fake_ammo="true"),
+    "ammo_knife": dict(kind="w_ammo", fake_ammo="true", inv_name="st_knife_ammo", inv_grid_x="1"),
     "mp_wpn_ak74": dict(kind="w_rifle", inv_name="st_ak74", inv_grid_x="10"),
     "wpn_addon_scope": dict(kind="w_rifle", inv_name="st_scope", inv_grid_x="7"),
     "wpn_no_name": dict(kind="w_smg", inv_grid_x="8"),
     "wpn_no_icon": dict(kind="w_smg", inv_name="st_noicon"),
     "wpn_untranslated": dict(kind="w_smg", inv_name="st_missing", inv_grid_x="9"),
-    "ammo_545": dict(kind="w_ammo", inv_name="st_545", inv_name_short="st_545_s", k_bullet_speed="1.1"),
-    "ammo_545_ap": dict(kind="w_ammo", inv_name="st_545ap"),
-    "ammo_545_bad": dict(kind="w_ammo", inv_name="st_545", inv_name_short="st_545_worn"),
-    "ammo_545_alt": dict(kind="w_ammo", inv_name="st_545", inv_name_short="st_545_s"),
-    "ammo_9x18": dict(kind="w_ammo", inv_name="st_918"),
+    "ammo_545": dict(kind="w_ammo", inv_name="st_545", inv_name_short="st_545_s", k_bullet_speed="1.1",
+                     inv_grid_x="1", k_hit="1.14", k_ap="0.027", k_air_resistance="0.25", **{"class": "AMMO"}),
+    "ammo_545_ap": dict(kind="w_ammo", inv_name="st_545ap", inv_grid_x="1", k_hit="1.1", k_ap="0.047",
+                        k_air_resistance="0.25", k_bullet_speed="1.5", **{"class": "AMMO"}),
+    "ammo_545_bad": dict(kind="w_ammo", inv_name="st_545", inv_name_short="st_545_worn", inv_grid_x="1",
+                         **{"class": "AMMO"}),
+    "ammo_545_alt": dict(kind="w_ammo", inv_name="st_545", inv_name_short="st_545_s", inv_grid_x="1", k_ap="0.03",
+                         **{"class": "AMMO"}),
+    "ammo_9x18": dict(kind="w_ammo", inv_name="st_918", inv_grid_x="1", k_hit="0.76", k_ap="0.014",
+                      k_air_resistance="0.8", k_bullet_speed="1.875", **{"class": "AMMO"}),
+    "ammo_unfired": dict(kind="w_ammo", inv_name="st_unfired", inv_grid_x="1", **{"class": "AMMO"}),
+    "ammo_drag": dict(kind="w_ammo", k_air_resistance="1.5"),
+    "ammo_12x70_buck_self": dict(kind="w_ammo", inv_name="st_buck_self", inv_grid_x="1", k_hit="0.3", buck_shot="11",
+                                 k_air_resistance="2.0", **{"class": "AMMO_S"}),
+    "wpn_device": dict(kind="w_base", inv_name="st_device", inv_grid_x="1", ammo_class="ammo_battery",
+                       **{"class": "WP_BINOC"}),
+    "ammo_battery": dict(kind="w_ammo", inv_name="st_battery", inv_grid_x="1", **{"class": "AMMO_S"}),
+    "wpn_saiga": dict(kind="w_shotgun", inv_name="st_saiga", inv_grid_x="2", hit_power="0.6, 0.6, 0.6, 0.6", bullet_speed="400",
+                      ammo_class="ammo_12x70_buck, ammo_12x76_dart, ammo_12x70_buck_self", condition_shot_dec="0.001",
+                      misfire_start_condition="0.7", misfire_start_prob="0.003"),
+    "ammo_12x70_buck": dict(kind="w_ammo", inv_name="st_buck", inv_grid_x="1", k_hit="0.42", k_ap="0.003",
+                            k_air_resistance="1.0", k_bullet_speed="1.425", buck_shot="9", **{"class": "AMMO_S"}),
+    "ammo_12x76_zhekan": dict(kind="w_ammo", inv_name="st_zhekan", inv_grid_x="1", k_hit="2.7", k_ap="0.024",
+                              k_air_resistance="0.8", k_bullet_speed="1.2", **{"class": "AMMO_S"}),
+    "ammo_12x76_dart": dict(kind="w_ammo", inv_name="st_dart", inv_grid_x="1", k_hit="1.52", k_ap="0.042",
+                            k_air_resistance="0.8", k_bullet_speed="1.25", **{"class": "AMMO"}),
     "actor": dict(),
     # guns that share a name: two that play the same, a magazine pair, a caliber pair, a pair
     # nothing tells apart (no recoil profile for the one difference), a mount pair where only
     # one has a recoil profile, and a knife's attack animation
     "wpn_fort": dict(kind="w_pistol", inv_name="st_fort", inv_grid_x="1", ammo_class="ammo_9x18", ammo_mag_size="13",
+                     misfire_start_condition="0.9", misfire_start_prob="0.003", misfire_end_condition="0.1",
+                     misfire_end_prob="0.1",
                      scopes="kit2"),
     # the gun the Fort-17's kit makes: the same name and play, so the same variant (a kit for looks)
     "wpn_fort_kit2": dict(kind="w_pistol", inv_name="st_fort", inv_grid_x="1", ammo_class="ammo_9x18", ammo_mag_size="13"),
@@ -76,7 +101,7 @@ SECTIONS = {
     "wpn_fort17": dict(kind="w_pistol", inv_name="st_fort", inv_grid_x="1", ammo_class="ammo_9x18", ammo_mag_size="13"),
     "wpn_usp": dict(kind="w_pistol", inv_name="st_usp", inv_grid_x="1", ammo_class="ammo_9x19", ammo_mag_size="12"),
     "wpn_usp_45": dict(kind="w_pistol", inv_name="st_usp", inv_grid_x="1", ammo_class="ammo_45", ammo_mag_size="12"),
-    "ammo_9x19": dict(kind="w_ammo", inv_name="st_919"),
+    "ammo_9x19": dict(kind="w_ammo", inv_name="st_919", inv_grid_x="1", k_ap="0.025", **{"class": "AMMO"}),
     "ammo_45": dict(kind="w_ammo", inv_name="st_45"),
     "wpn_mp5": dict(kind="w_smg", inv_name="st_mp5", inv_grid_x="1", ammo_class="ammo_9x19", ammo_mag_size="30",
                     scopes="kurtz", upgrades="up_gr_mp5", grenade_class="ammo_vog"),
@@ -127,8 +152,9 @@ SECTIONS = {
     "up_sect_t1": dict(fire_dispersion_base="-1.5"),
     "wpn_sil": dict(inv_name="st_sil"),
     "wpn_gl": dict(inv_name="st_gl"),
-    "ammo_vog": dict(inv_name="st_vog"),
-    "ammo_vog_bad": dict(inv_name="st_vog_bad"),
+    "ammo_vog": dict(kind="w_ammo", inv_name="st_vog", inv_grid_x="1", grenade_ammo="true", k_hit="0.8",
+                     k_ap="0.035", **{"class": "S_VOG25"}),
+    "ammo_vog_bad": dict(kind="w_ammo", inv_name="st_vog_bad", inv_grid_x="1", **{"class": "S_VOG25"}),
     "scope_toz": dict(scope_name="pu_scope"),
     "pu_scope": dict(inv_name="st_pu"),
     "prt_barrel": dict(inv_name="st_barrel"),
@@ -207,7 +233,7 @@ SECTIONS = {
     "sci_w": dict(**{"class": "EQU_STLK"}, kind="o_sci", repair_type="outfit_medium", inv_name="st_seva",
                   inv_grid_x="1"),
     "heavy_v": dict(**{"class": "EQU_STLK"}, kind="o_heavy", inv_name="st_heavy", inv_grid_x="1",
-                    bones_koeff_protection="prof_default"),
+                    bones_koeff_protection="prof_default", hit_fraction_actor="0.75"),
     "prof_default": dict(default="1, 0.5"),
     "outfit_base": dict(**{"class": "E_STLK"}, repair_type="outfit_medium", inv_name="st_seva", inv_grid_x="1"),
     "mp_exo_outfit": dict(**{"class": "E_STLK"}, kind="o_heavy", inv_name="st_exo", inv_grid_x="1"),
@@ -239,6 +265,7 @@ SECTIONS = {
     "wpn_home": dict(kind="w_rifle", inv_name="st_home", inv_grid_x="1"),
     "wpn_abakan": dict(kind="w_rifle", inv_name="st_abakan", inv_grid_x="1"),
     "helm_crafted": dict(**{"class": "E_HLMET"}, kind="o_helmet", inv_name="st_helm_crafted", inv_grid_x="1"),
+    "wpn_multi": dict(kind="w_rifle", max_uses="3", cost="3000"),
     "wpn_stash_sil": dict(kind="w_rifle", inv_name="st_stash_sil", inv_grid_x="1", silencer_status="2",
                           silencer_name="stash_sil", cost="5000"),
     "rk_kit": dict(inv_name="st_rk_kit"),
@@ -252,8 +279,13 @@ SECTIONS = {
 SECTIONS["novice_outfit"]["cost"] = "7290"
 SECTIONS["exo_z"]["cost"] = "176027"
 SECTIONS["helm_x"]["cost"] = "30000"
-PARTS = {"con_parts_list": dict(wpn_ak74="prt_barrel, prt_bolt, prt_gone")}
-TEXT = {"st_ak74": "AK-74", "st_pm": "PM", "st_aps": "Stechkin APS", "st_toz": "TOZ-34", "st_rpg": "RPG-7",
+PARTS = {"con_parts_list": dict(wpn_ak74="prt_barrel, prt_bolt, prt_gone", wpn_saiga="prt_barrel, prt_bolt")}
+TEXT = {"st_saiga": "Saiga-12", "st_buck": "12x70 Buckshot", "st_zhekan": "12x76 Slug", "st_dart": "12x76 Dart",
+        "st_knife_ammo": "Knife", "st_unfired": "Unfired Round", "st_buck_self": "Home-made Buckshot",
+        "st_device": "UPD", "st_battery": "Battery", "st_arsenal_tag_ap": "AP %s",
+        "st_arsenal_tag_hit": "Damage x%s", "st_trader_a": "Sidorovich", "st_trader_b": "Owl", "st_trader_c": "Beard",
+        "st_mech_1": "Mechanic One", "st_mech_2": "Mechanic Two",
+        "st_ak74": "AK-74", "st_pm": "PM", "st_aps": "Stechkin APS", "st_toz": "TOZ-34", "st_rpg": "RPG-7",
         "st_f1": "F1", "st_knife": "Knife", "st_scope": "Scope", "st_noicon": "No icon",
         "st_545": "5.45x39 FMJ", "st_545_s": "5.45 FMJ", "st_545_worn": "5.45 FMJ (worn)", "st_545ap": "5.45x39 AP", "st_918": "9x18",
         "st_ak74_descr": "A rifle.", "st_fort": "Fort-17", "st_usp": "USP", "st_919": "9x19 FMJ",
@@ -294,8 +326,9 @@ FACTIONS = ["stalker", "dolg", "freedom", "csky", "ecolog", "killer", "army", "b
 NPC = {
     "default": [("primary", "def_primary")],
     "def_primary": [("wpn_pm:0:r", "")],
-    "stalker": [("primary", "vet_primary")],
+    "stalker": [("primary", "vet_primary"), ("secondary", "vet_secondary")],
     "vet_primary": [("wpn_toz34:0:0:5", "")],
+    "vet_secondary": [("wpn_saiga:0:0:5", "")],
     "stalker_novice": [("primary", "st_primary"), ("secondary", "st_secondary")],
     "stalker_trainee": [("primary", "st_primary")],
     "stalker_legend": [("primary", "st_primary")],
@@ -312,10 +345,14 @@ NPC = {
     "scope_blacklist": [("lam", "true")],
 }
 # stashes: the PM barred at economy 2, the APS too cheap, the TOZ at a tier no roll beats, the
-# MP5's kind in no table, the RPG-7 in rare stashes only, the AK-74's scoped copy a tier up
+# MP5's kind in no table, the RPG-7 in rare stashes only, the AK-74's scoped copy a tier up, a
+# multi-use item with a use gone (tier 3.4 less half a use: 3) sharing the AK-74's pool
 TREASURE = {
+    "settings_common": [("min_weight", "1000"), ("max_weight", "1400")],
+    "settings_rare": [("min_weight", "2000"), ("max_weight", "2400")],
     "possible_items": [("wpn_ak74", ""), ("wpn_ak74_kobra", ""), ("wpn_pm", "2"), ("wpn_toz34", ""), ("wpn_mp5", ""),
-                       ("wpn_rpg7", ""), ("wpn_aps", ""), ("novice_outfit", ""), ("wpn_stash_sil", "")],
+                       ("wpn_rpg7", ""), ("wpn_aps", ""), ("novice_outfit", ""), ("wpn_stash_sil", ""),
+                       ("wpn_multi__2", "")],
     "kind_tier_effect_common": [("w_rifle", "7, 600, 1,1, 0.8,1, 0.75,1, 0.6,1, 0.05,1"),
                                 ("w_pistol", "5, 600, 1,1, 0.8,1, 0.75,1, 0.3,1, 0.01,1"),
                                 ("w_shotgun", "7, 600, 1,1, 0.8,1, 0.75,1, 0.6,1, 0.05,1")],
@@ -324,7 +361,7 @@ TREASURE = {
 }
 TIERS = {"wpn_ak74": [("tier", "3")], "wpn_ak74_kobra": [("tier", "3.6")], "wpn_pm": [("tier", "1")],
          "wpn_toz34": [("tier", "5")], "wpn_mp5": [("tier", "2")], "wpn_rpg7": [("tier", "2")], "wpn_aps": [("tier", "1")],
-         "wpn_stash_sil": [("tier", "2")]}
+         "wpn_stash_sil": [("tier", "2")], "wpn_multi": [("tier", "3.4")]}
 # new-game kits: a knife for everyone, the PM at two prices, the TOZ on the easiest economy only,
 # an MP5 that the injector adds for Loners, a USP it takes out, a gun the game lacks
 KITS = {f + "_loadout": [("wpn_knife", "false,1,0")] for f in FACTIONS}
@@ -341,7 +378,8 @@ CENSUS = {
     "sim_jacket_2": [("characters", "novice:4"), ("vis_jacket", "novice:1"), ("vis_none", "novice:3")],
     "sim_story": [("characters", "special:1"), ("vis_helm", "special:1")],
     # the trade configs some NPC uses (not trade_unused), and a story character's gear
-    "arsenal_trade": [("trade_a", "1")],
+    "arsenal_trade": [("trade_a", "st_trader_a"), ("trade_b", "st_trader_b, st_trader_c"),
+                      ("trade_generic_mechanic", "st_mech_1, st_mech_2"), ("trade_nobody", "-")],
     "arsenal_supplies": [("wpn_story", "st_strelok, GENERATE_NAME_x")],
     # who offers the Armor Exchange's dialogs: Duty's a named trader, the Loners' a name with no
     # text (so nobody), the Military's nobody at all
@@ -355,14 +393,31 @@ DEATH = {"outfit_by_visual": [("vis_jacket", "novice_outfit,helm_x"), ("vis_jack
                               ("vis_twice", "novice_outfit,novice_outfit_b")],
          "outfit_drop_settings": [("cost_start", "25000"), ("rank_multiplier", "20")],
          # bodies' item lists, and how many of an item a body may hold
-         "item_count": [("wpn_knife7", "1, 1"), ("wpn_knife8", "0, 0")],
+         "item_count": [("wpn_knife7", "1, 1"), ("wpn_knife8", "0, 0"), ("ammo_545", "0, 0"), ("ammo_545_ap", "0, 0"),
+                        ("ammo_545_bad", "1, 3"), ("ammo_12x76_dart", "1, 2"), ("ammo_12x76_zhekan", "1, 1"),
+                        ("ammo_12x70_buck", "0, 0"), ("ammo_9x19", "1, 2"), ("ammo_unfired", "1, 1")],
          "monolith_master": [("wpn_knife7", "0.01"), ("wpn_knife8", "0.5")],
-         "stalker": [("wpn_knife9", "0.3")]}
+         "stalker": [("wpn_knife9", "0.3"), ("ammo_unfired", "0.5")]}
 # a trader: what its sell filter hides (no value), its supplies (count, chance), by goodwill
 TRADE_A = {"trader": [("buy_supplies", "{+heavy_pockets} supplies_2, supplies_1"), ("sell_condition", "trade_sell")],
            "trade_sell": [("wpn_hidden", ""), ("wpn_knife2", "1, 1")],
            "supplies_1": [("wpn_knife2", "1, 1"), ("wpn_hidden", "1, 1"), ("wpn_zero", "0, 1"), ("pm_kit", "1, 0.5")],
-           "supplies_2": [("kobra", "2, 0.3")]}
+           "supplies_2": [("kobra", "2, 0.3"), ("ammo_vog", "1, 1")]}
+# a trader's tiers by goodwill (one tier for either of two factions, or Heavy Pockets); a
+# mechanic's by the toolkits brought; a config whose characters have no names, by a drug kit
+TRADE_B = {"trader": [("buy_supplies", "{=actor_goodwill_ge(stalker:1000)} supplies_3, {=heavy_pockets_functor()} "
+                       "supplies_3, {=actor_goodwill_ge(dolg:500)} supplies_2, {=actor_goodwill_ge(stalker:500)} "
+                       "supplies_2, supplies_1")],
+           "supplies_1": [("ammo_9x18", "10, 1")],
+           "supplies_2": [("ammo_9x18", "10, 1"), ("ammo_545", "5, 0.5")],
+           "supplies_3": [("ammo_9x18", "10, 1"), ("ammo_545", "5, 0.5"), ("ammo_545_ap", "2, 0.3"),
+                          ("ammo_545_alt", "5, 1")]}
+TRADE_MECH = {"trader": [("buy_supplies", "{=toolkit_task_done(2)} supplies_3, {=toolkit_task_done(1)} supplies_2, "
+                          "supplies_1")],
+              "supplies_1": [("wpn_knife2", "1, 1")], "supplies_2": [("ammo_545", "5, 1")],
+              "supplies_3": [("ammo_545", "5, 1")]}
+TRADE_NOBODY = {"trader": [("buy_supplies", "{=drugkit_task_done()} supplies_2, supplies_1")], "supplies_1": [],
+                "supplies_2": [("ammo_9x18", "1, 1")]}
 TRADE_UNUSED = {"trader": [("buy_supplies", "supplies_1")], "supplies_1": [("wpn_unused", "1, 1")]}
 # task configs: an item reward, a random one (one choice a section the game lacks), a spy squad's gun
 TASKS = {"task_a": [("on_complete", "%=reward_item(wpn_task) =give_money(100)%")],
@@ -372,7 +427,8 @@ CRAFT = {"1": [("title", "st_craft"), ("x_helm_crafted", "1, recipe_basic_0, prt
 FILES = {r"items\settings\npc_loadouts\npc_loadouts.ltx": NPC, r"items\settings\new_game_loadouts.ltx": KITS,
          "treasure": TREASURE, "tiers": TIERS, r"items\settings\outfit_speed.ltx": SPEED,
          r"plugins\arsenal_census.ltx": CENSUS, "death": DEATH, r"items\trade\trade_a.ltx": TRADE_A,
-         r"items\trade\trade_unused.ltx": TRADE_UNUSED, "tasks": TASKS, "craft": CRAFT}
+         r"items\trade\trade_unused.ltx": TRADE_UNUSED, r"items\trade\trade_b.ltx": TRADE_B,
+         r"items\trade\trade_generic_mechanic.ltx": TRADE_MECH, r"items\trade\trade_nobody.ltx": TRADE_NOBODY, "tasks": TASKS, "craft": CRAFT}
 
 STUBS = r"""
 local S, T, R, P, F = ...
@@ -380,6 +436,11 @@ local function ini(tbl)
     local o = {}
     function o:r_string_ex(sec, key) local s = tbl[sec]; return s and s[key] end
     function o:r_float_ex(sec, key) local v = self:r_string_ex(sec, key); return v and tonumber(v) end
+    function o:r_bool_ex(sec, key)
+        local v = self:r_string_ex(sec, key)
+        if v == nil then return nil end
+        return v == "true" or v == "1" or v == "on" or v == "yes"
+    end
     function o:section_exist(sec) return tbl[sec] ~= nil end
     function o:section_for_each(fn)
         local names = {}
@@ -491,6 +552,8 @@ end
 function z_3dss_gamma_camo_system.assign_drop_camo(weapon, faction)
     return { camo_can_drop_for, camo_rarity_weight }
 end
+RAG = false
+game_achievements = { has_achievement = function(a) return a == "rag_and_bone" and RAG end }
 game_difficulties = { get_eco_factor = function(k)
     if k == "outfit_drops" then return OUTFIT_DROPS end
     return k == "type" and ECO or nil
@@ -600,7 +663,13 @@ function grok_actor_damage_balancer.get_adb_constants(name)
     local a = ADB[name]
     grok_actor_damage_balancer.adjuster = a and a[1]
     grok_actor_damage_balancer.defense = a and a[2]
+    grok_actor_damage_balancer.limiter = LIMIT
 end
+LIMIT = 0.65
+-- the condition GAMMA keeps the player's guns at, and Weapon Parts Overhaul's MCM jam chance
+grok_gun_condition_fixed = { cond = 0.83 }
+JAM = 0.75
+arti_jamming = { get_config = function(k) return k == "jamchance" and JAM or nil end }
 function grok_actor_damage_balancer.get_outfit_value(obj, sec, name) return 999 end
 function grok_actor_damage_balancer.get_outfit_ap_res(obj) return nil end
 outfit_speed_mcm = { get_outfit_speed = function(obj, sec) return 1 end }
@@ -625,6 +694,7 @@ end
 """
 
 MUTANTS = {
+    "hit_power_field": ('    if key == "hit_power" then\n', "    if false then\n"),
     "variants": ("if parent and parent ~= sec then return nil end", "-- variants kept"),
     "armor_f32": ("        p[k] = f32(ini_sys:r_float_ex(sec, k) or 0)", "        p[k] = ini_sys:r_float_ex(sec, k) or 0"),
     "armor_light_burn": ("        v = p.light_burn", "        v = p.burn_protection"),
@@ -639,7 +709,8 @@ MUTANTS = {
                         'return is_helmet(sec) and "helmets" or ARMOR_KIND[kind]'),
     "armor_template": ("        if not (kind and ARMOR_KIND[kind]) then return nil end\n", ""),
     "armor_signature": ("    for _, k in ipairs(PROTECTIONS) do\n        t[#t + 1] = string.format(\"%.6g\", p[k])\n    end\n", ""),
-    "armor_taggers": ("label(g.name, vars, ARMOR[g.cat] and ARMOR_TAGGERS or TAGGERS)", "label(g.name, vars, TAGGERS)"),
+    "armor_taggers": ('label(g.name, vars, ARMOR[g.cat] and ARMOR_TAGGERS or (g.cat == "ammo" and AMMO_TAGGERS) or TAGGERS)',
+                      'label(g.name, vars, (g.cat == "ammo" and AMMO_TAGGERS) or TAGGERS)'),
     "armor_ap_res": ('    return 1 - (ini_sys:r_float_ex(sec, "hit_fraction_actor") or 1)', "    return nil"),
     "armor_speed": ("    return speeds[sec] or 1", "    return 1"),
     "armor_risk": ("    if is_armor(sec) then return out end\n    local p = params(sec)", "    local p = params(sec)"),
@@ -661,8 +732,8 @@ MUTANTS = {
     "up_count": ("if (tonumber(v[1]) or 0) > 0 and (tonumber(v[2]) or 0) > 0 and not hidden[x.k] then",
                  "if (tonumber(v[2]) or 0) > 0 and not hidden[x.k] then"),
     "up_story": ('mark_up(l.k, "story", n ~= "" and n or nil)', "-- no story gear"),
-    "up_corpse_count": ("if (tonumber(fields(x.v, \",\")[1]) or 0) > 0 and (most[x.k] or 0) >= 1 then",
-                        "if (tonumber(fields(x.v, \",\")[1]) or 0) > 0 then"),
+    "up_corpse_count": ("if (tonumber(fields(x.v, \",\")[1]) or 0) > 0 and (most[x.k] or 0) >= 1\n",
+                        "if (tonumber(fields(x.v, \",\")[1]) or 0) > 0\n"),
     "up_random_reward": ('"reward_item%(([^%)]*)%)", "reward_random_item%(([^%)]*)%)"', '"reward_item%(([^%)]*)%)"'),
     "up_spy": ('                    mark_up((x.v or ""):match("^%s*([%w_%.%-]+)"), "task")\n', ""),
     "up_guards": ('if type(g) == "table" and type(g[1]) == "string" then mark_up(g[1], "task") end', "-- no guards"),
@@ -684,24 +755,25 @@ MUTANTS = {
     "gear_worn": ("    for _, src in ipairs({ { carried, false }, { worn, true } }) do", "    for _, src in ipairs({ { carried, false } }) do"),
     "special_carried": ("        if #c.ranks > 0 then return false end\n    end\n    for _, c in ipairs(ARMOR[e.cat]",
                         "    end\n    for _, c in ipairs(ARMOR[e.cat]"),
-    "special_stash": ("    return stashes(e.sec) == nil\nend", "    return true\nend"),
+    "special_stash": ("    return not stashable(e.sec)\nend", "    return true\nend"),
     "kit_faction": ("            if k.faction == f then", "            if true then"),
     "exchange_exists": ("if v == true and ini_sys:section_exist(s) then", "if v == true then"),
     "exchange_model": ("if entry_for(s) == e then mine = true end", "if s == sec then mine = true end"),
     "grenades": ("not ini_sys:r_string_ex(sec, \"weapon_class\")", "false"),
-    "mp": ("sec:find(\"^mp_\")", "false"),
+    "mp": ('if SKIP[sec] or sec:find("^mp_") or', "if SKIP[sec] or"),
     "untranslated": ("return (s ~= key) and s or nil", "return s"),
     "standin": ("gr = live and gr or standin_row(gr, standin)", "gr = gr"),
     "order": ("table.sort(by_cat[c], by_name)", "-- unsorted"),
     "speed": ("bs = bs * 0.70", "bs = bs * 0.75"),
-    "worn": ('if not (r:find("_bad$") or r:find("_verybad$")) then', "if true then"),
+    "worn": ('if not (r:find("_bad$") or r:find("_verybad$") or HIDDEN_ROUNDS[r]) then', "if true then"),
     "dedupe": ("if n and not seen[n] then\n                seen[n] = true\n                out[#out + 1] = n",
                "if n then\n                seen[n] = true\n                out[#out + 1] = n"),
     "nimble_dedupe": ("if n and not seen[n] then\n                        seen[n] = true\n                        names",
                       "if n then\n                        seen[n] = true\n                        names"),
     "collapse": ("sg = okS and sg or sec", "sg = sec"),
     "shortest": ("table.sort(secs, shorter)", "table.sort(secs, function(a, b) return shorter(b, a) end)"),
-    "tags": ("label(g.name, vars, ARMOR[g.cat] and ARMOR_TAGGERS or TAGGERS)", "-- no labels"),
+    "tags": ('label(g.name, vars, ARMOR[g.cat] and ARMOR_TAGGERS or (g.cat == "ammo" and AMMO_TAGGERS) or TAGGERS)',
+             "-- no labels"),
     "variant_order": ("table.sort(vars, by_name)", "-- as found"),
     "unknown": ("if not ok or v == nil then", 'v = v or "" if not ok then'),
     "caliber_digit": ('if w:find("%d") then return w end', "-- any word"),
@@ -739,18 +811,108 @@ MUTANTS = {
                       "            if RANK_AT[r] then add(l.v, f, r) end"),
     "carry_order": ("if a.best ~= b.best then return a.best > b.best end\n        return FACTION_AT[a.faction]",
                     "if a.best ~= b.best then return a.best < b.best end\n        return FACTION_AT[a.faction]"),
-    "stash_rare": ('for _, t in ipairs({ "kind_tier_effect_common", "kind_tier_effect_rare" }) do',
-                   'for _, t in ipairs({ "kind_tier_effect_common" }) do'),
-    "stash_ceil": ("tier = math.max(1, math.min(5, math.ceil(tier)))", "tier = math.max(1, math.min(5, math.floor(tier)))"),
-    "stash_blacklist": ('if n > 0 and not (type(skip) == "table" and skip[lvl]) then', "if n > 0 then"),
+    "stash_rare": ('stash_types = { common = stash_settings(ini, "common"), rare = stash_settings(ini, "rare") }',
+                   'stash_types = { common = stash_settings(ini, "common"), rare = stash_settings(ini, "common") }'),
+    "stash_ceil": ("tier = math.max(1, math.min(5, math.ceil(tier - (max_uses - uses) / 2)))",
+                   "tier = math.max(1, math.min(5, math.floor(tier - (max_uses - uses) / 2)))"),
+    "stash_uses": ("math.ceil(tier - (max_uses - uses) / 2)", "math.ceil(tier)"),
+    "stash_multi": ('local base, uses = l.k:match("^(.*)__(%d)")', "local base, uses = nil, nil"),
+    "stash_blacklist": ('if type(list) == "table" and #list > 0 and not (type(skip) == "table" and skip[lvl]) then',
+                        'if type(list) == "table" and #list > 0 then'),
     "stash_eco": ("if tonumber(x) == eco then barred = true end", "-- not barred"),
-    "stash_price": ('(ini_sys:r_float_ex(sec, "cost") or 1000) > 1', "true"),
-    "stash_never": ("chance * multi > 1", "chance * multi > 0"),
+    "stash_price": ("if cost > 1 and kind and tier then", "if kind and tier then"),
+    "stash_never": ("if tv and k.chance and k.chance * (tv.cm or 1) > 1 then",
+                    "if tv and k.chance and k.chance * (tv.cm or 1) > 0 then"),
     "stash_rebuild": ("if not stashed or stashed_eco ~= eco then", "if not stashed then"),
-    "stash_order": ("if a.share ~= b.share then return a.share > b.share end",
-                    "if a.share ~= b.share then return a.share < b.share end"),
-    "stash_limit": ("for i = 1, math.min(STASH_LEVELS, #best) do", "for i = 1, #best do"),
+    "stash_sort": ("if a.common ~= b.common then return a.common > b.common end",
+                   "if a.common ~= b.common then return a.common < b.common end"),
+    "stash_limit": ("for i = #out, STASH_LEVELS + 1, -1 do", "for i = #out, 99, -1 do"),
     "stash_guard": ("    if not (ini and tiers) then return end\n", ""),
+    "stash_roll": ("return math.max(0, math.min(100, math.ceil(x) - 1)) / 100",
+                   "return math.max(0, math.min(100, math.ceil(x))) / 100"),
+    "stash_half": ("+ 0.5 + v / (2 * m * m)", "+ v / (2 * m * m)"),
+    "stash_var": ("+ 0.5 + v / (2 * m * m)", "+ 0.5"),
+    "stash_rag": ("(rag and 200 or 0)", "0"),
+    "stash_pool": ("q = q + f[x.tier] * roll(k.chance * (tv.cm or 1)) / n",
+                   "q = q + f[x.tier] * roll(k.chance * (tv.cm or 1))"),
+    "stash_model": ("local mine = stash_at[e] or {}", "local mine = { (stash_at[e] or {})[1] }"),
+    "stash_cache": ('local key = name .. "|" .. lvl .. "|" .. tostring(rag)', 'local key = name .. "|" .. lvl'),
+    "stash_weight": ("(st.min + st.max) / 2", "st.max"),
+    "stash_spend": ("local c = k.weight * (tv.wm or 1)", "local c = k.weight"),
+    "ammo_worn": ("if not (fired_set and fired_set[sec]) or worn_round(sec) or", "if not (fired_set and fired_set[sec]) or"),
+    "ammo_fired": ("if not (fired_set and fired_set[sec]) or worn_round(sec) or", "if worn_round(sec) or"),
+    "ammo_knife": ('if ok and cat and cat ~= "melee" and not ARMOR[cat] then', "if ok and cat and not ARMOR[cat] then"),
+    "ammo_device": ('if ok and cat and cat ~= "melee" and not ARMOR[cat] then', "if not ARMOR[cat or \"\"] then"),
+    "ammo_hidden": ("or worn_round(sec) or HIDDEN_ROUNDS[sec] then return nil end", "or worn_round(sec) then return nil end"),
+    "rounds_hidden": ("and not worn_round(a) and not HIDDEN_ROUNDS[a] and", "and not worn_round(a) and"),
+    "names_hidden": ('if not (r:find("_bad$") or r:find("_verybad$") or HIDDEN_ROUNDS[r]) then',
+                     'if not (r:find("_bad$") or r:find("_verybad$")) then'),
+    "damage_decimal": ("return math.floor(above0(hp / 1.5) * 100 + 1e-6)", "return math.floor(above0(hp / 1.5) * 100)"),
+    "ammo_launcher": ('for a in (ini_sys:r_string_ex(sec, "grenade_class") or ""):gmatch("[^,%s]+") do fired_set[a] = true end',
+                      "-- no grenades"),
+    "worn_fresh": ("v = by_var[fresh_round(sec)]", "v = nil"),
+    "worn_only_ammo": ('if v and v.entry.cat ~= "ammo" then v = nil end', "-- any category"),
+    "ammo_tag_ap": ('function(sec) return tag("st_arsenal_tag_ap", tostring(ap_of(sec))) end,', 'function(sec) return "" end,'),
+    "ap_scale": ('return math.floor((ini_sys:r_float_ex(ammo, "k_ap") or 0) * 1000 + 0.5)',
+                 'return math.floor((ini_sys:r_float_ex(ammo, "k_ap") or 0) * 100 + 0.5)'),
+    "rounds_worn": ("if not seen[a] and not worn_round(a) and", "if not seen[a] and"),
+    "rounds_damage": ("damage = hit_damage(sec, a)", "damage = hit_damage(sec, nil)"),
+    "rounds_speed": ("speed = math.ceil(bspeed(p, a) * 1000)", "speed = math.ceil(bspeed(p) * 1000)"),
+    "rounds_pellets": ('local pellets = math.floor(ini_sys:r_float_ex(a, "buck_shot") or 1)', "local pellets = 1"),
+    "kept_formula": ("return 1 / (1 + d / 200 * (air * 0.5 / (1 - air + 0.1)))",
+                     "return 1 / (1 + d / 100 * (air * 0.5 / (1 - air + 0.1)))"),
+    "kept_default": ('local air = ini_sys:r_float_ex(ammo, "k_air_resistance") or 0.05',
+                     'local air = ini_sys:r_float_ex(ammo, "k_air_resistance") or 1'),
+    "kept_guard": ("    if 1 - air + 0.1 <= 0 then return nil end\n", ""),
+    "stats_bullet": ("    if is_bullet(sec) then\n        out.speed", "    if true then\n        out.speed"),
+    "bullet_class": ('return c == "AMMO" or c == "AMMO_S"', 'return c == "AMMO"'),
+    "fired_gl": ('for _, g in ipairs(list_of(s, "grenade_class")) do rounds[#rounds + 1] = g end', "-- no grenades"),
+    "fired_order": ("if a.cat ~= b.cat then return order[a.cat] < order[b.cat] end\n                return by_name(a, b)",
+                    "if a.cat ~= b.cat then return order[a.cat] < order[b.cat] end\n                return by_name(b, a)"),
+    "fired_dupes": ("if not seen[m][e] then", "if true then"),
+    "hit_power": ('    return value(sec, "hit_power")\nend', "    return 1\nend"),
+    "jam_lock": ("    if not lock then return nil end\n", ""),
+    "jam_engine_off": ("if c <= s_cond then", "if true then"),
+    "jam_engine_formula": ("local p = (c < e_cond) and e_prob or (s_prob + (s_cond - c) * (e_prob - s_prob) / span)",
+                           "local p = s_prob"),
+    "jam_band": ('local jc = 30 * (ini_sys:r_float_ex(sec, "condition_shot_dec") or 0.0008) * 666 * j',
+                 'local jc = 60 * (ini_sys:r_float_ex(sec, "condition_shot_dec") or 0.0008) * 666 * j'),
+    "jam_cond": ("if c < 1 then jc = jc * (1 + ((1.0 - c) / 0.7 - 0.05)) end", "-- no condition factor"),
+    "jam_floor": ("out.worn = math.max(0, math.min(1000, math.floor(jc))) / 1000", "out.worn = jc / 1000"),
+    "jam_parts": ('if parts and j and parts:r_string_ex("con_parts_list", base) then', "if parts and j then"),
+    "jam_config": ("j = ok and tonumber(j)", "j = 0.75"),
+    "tier_number": ('local tier = tonumber(en.sec:match("_(%d+)$")) or 1', "local tier = 1"),
+    "tier_min": ("tier = math.min(t and t.tier or tier, tier)", "tier = math.max(t and t.tier or tier, tier)"),
+    "need_any": ("need = any_unlock(t and t.need, need) }", "need = need }"),
+    "any_least": ("u[k] = (a[k] and b[k]) and math.min(a[k], b[k]) or a[k] or b[k]", "u[k] = a[k] or b[k]"),
+    "unlock_none": ('if cond:match("^%s*$") then return false end', 'if cond:match("^%s*$") then return {} end'),
+    "unlock_heavy": ('if cond:find("=heavy_pockets_functor", 1, true) then', "if false then"),
+    "unlock_kits": ('local kits = cond:match("=toolkit_task_done%(%s*(%d+)")', "local kits = nil"),
+    "unlock_drugkit": ('if cond:find("=drugkit_task_done", 1, true) then', "if false then"),
+    "unlock_story": ("    if terms > known then u.story = true end\n", ""),
+    "trades_generic": ("if TRADES[cfg] or #names == 0 then", "if #names == 0 then"),
+    "sold_sort": ("if a.tier ~= b.tier then return a.tier < b.tier end", "if a.tier ~= b.tier then return a.tier > b.tier end"),
+    "sold_best": ("if not best[cfg] or t.tier < best[cfg].tier then best[cfg] = t end", "best[cfg] = t"),
+    "body_count": ('if (n or 0) > 0 then mark_up(fresh_round(a), "corpse") end', 'mark_up(fresh_round(a), "corpse")'),
+    "body_fresh": ('if (n or 0) > 0 then mark_up(fresh_round(a), "corpse") end', 'if (n or 0) > 0 then mark_up(a, "corpse") end'),
+    "body_swap": ("for _, alt in ipairs(ROUND_SWAP[fresh_round(a)] or {}) do", "for _, alt in ipairs({}) do"),
+    "body_grenade": ("body_round(g, most[g] or 2)", "body_round(g, most[g])"),
+    "body_list_skip": ('\n                            and not (is_bullet(x.k) or ini_sys:r_bool_ex(x.k, "grenade_ammo")) then', " then"),
+    "pen_tie": ("if class >= ap then", "if class > ap then"),
+    "pen_class": ('local class = math.ceil((1 - (ini_sys:r_float_ex(sec, "hit_fraction_actor") or 1)) * 1 * 100) / 100',
+                  'local class = math.floor((1 - (ini_sys:r_float_ex(sec, "hit_fraction_actor") or 1)) * 1 * 100) / 100'),
+    "pen_adjuster": ("local prot = math.ceil(p.armor * 1 * (adj or 0.80) * 100) / 100",
+                     "local prot = math.ceil(p.armor * 1 * 100) / 100"),
+    "pen_limit": ("local total = math.min(limit, math.ceil(prot * 100) / 100)", "local total = math.ceil(prot * 100) / 100"),
+    "pen_limiter": ("local limit = tonumber(g and g.limiter) or 0.65", "local limit = 0.65"),
+    "pen_premitigation": ("stopped = (1 - 0.40) * (1 - total)", "stopped = 1 - total"),
+    "pen_obtainable": ("if is_bullet(r) and obtainable(r) then", "if is_bullet(r) then"),
+    "pen_bullet": ("if is_bullet(r) and obtainable(r) then", "if obtainable(r) then"),
+    "pen_holds": ("if not out.holds or ap > out.holds.k", "if not out.holds or ap < out.holds.k"),
+    "pen_fails": ("elseif not out.fails or ap < out.fails.k", "elseif not out.fails or ap > out.fails.k"),
+    "pen_ap": ('local ap = (ini_sys:r_float_ex(r, "k_ap") or 0) * 10', 'local ap = (ini_sys:r_float_ex(r, "k_ap") or 0) * 100'),
+    "special_ammo": ('if not (e and e.cat ~= "ammo" and obtainable(e.sec)) then return false end',
+                     "if not (e and obtainable(e.sec)) then return false end"),
     "upvalue_wrap": ('if type(v) == "function" then held[#held + 1] = v end', "-- not followed"),
     "upvalue_depth": ("for _ = 0, WRAPS do", "for _ = 0, 1 do"),
     "made_model": ("local kit = m and m.entry ~= e and item_of(k)", "local kit = m and item_of(k)"),
@@ -817,7 +979,7 @@ def main():
     secs = lambda cat: [e.sec for e in m.list(cat).values()]
     names = lambda cat: [e.name for e in m.list(cat).values()]
     vnames = lambda e: [v.name for v in e.variants.values()] if e is not None else None
-    check(m.count() == 41, "thirty-four gun models and seven suits and helmets listed: %d" % m.count())
+    check(m.count() == 49, "thirty-five gun models, seven suits and helmets and seven rounds listed: %d" % m.count())
     check(m.get("wpn_ak74_pso") is None and m.entry_for("wpn_ak74_pso") is not None
           and same(m.entry_for("wpn_ak74_pso"), m.get("wpn_ak74")),
           "a scoped combination is not listed, and counts as its gun")
@@ -854,7 +1016,7 @@ def main():
     check(mount_a is not None and mount_b is not None and mount_a.name == "Mount (suppressor mount)" and mount_b.name == "Mount",
           "a value one gun lacks is no difference: %s" % [mount_a and mount_a.name, mount_b and mount_b.name])
     check(m.get("wpn_pm").name == "PM" and vnames(m.get("wpn_pm")) == ["PM"], "a model of one variant has the plain name")
-    check(m.entry_for("ammo_545") is None, "ammo is no weapon")
+    check(m.entry_for("ammo_545").cat == "ammo", "ammo is listed as ammo")
 
     # the values the card reads include the upgrades a gun ships with, and so do the tags
     check(m.params("wpn_ak74").rpm == 700, "a gun's values include the upgrades it ships with: rpm %s"
@@ -1006,7 +1168,8 @@ def main():
             return [(x.e.sec, sorted(x.ranks.keys()), x.armor) for x in m.faction_gear(f).values()]
         except Exception as err:
             return "error: %s" % str(err)[:60]
-    check(gear("stalker")[:5] == [("novice_outfit", ["novice", "trainee"], True), ("wpn_pm", ["novice"], None),
+    check(gear("stalker")[:6] == [("novice_outfit", ["novice", "trainee"], True), ("wpn_pm", ["novice"], None),
+                                  ("wpn_saiga", ["experienced", "expert", "master", "professional", "veteran"], None),
                                   ("wpn_toz34", ["experienced", "expert", "master", "professional", "veteran"], None),
                                   ("helm_x", ["novice", "trainee"], True), ("wpn_ak74", ["legend", "novice", "trainee"], None)]
           and "wpn_aps" not in [x[0] for x in gear("stalker")],
@@ -1093,38 +1256,175 @@ def main():
           "a faction without loadouts takes the default; ties in faction order: %s" % pm[:3])
     check(carriers("wpn_aps") == [], "a gun weighted 0 is carried by nobody: %s" % carriers("wpn_aps"))
 
-    # stashes: the levels whose stashes most often draw the model's tiers
+    # stashes: a model's odds of being in one stash, by level (golden values from the stash
+    # script's rules, worked out apart from arsenal_data: scratchpad stash_golden.py)
+    def odds(sec):
+        o = m.stash_odds(sec)
+        return None if o is None else [(r.lvl, r.common, r.rare) for r in o.values()]
+
+    def near(got, want):
+        return got is not None and len(got) == len(want) and all(
+            g[0] == w[0] and abs(g[1] - w[1]) < 1e-9 and abs(g[2] - w[2]) < 1e-9 for g, w in zip(got, want))
+
+    AK = [("l10_radar", 0.919968775539, 0.985295984571), ("l08_yantar", 0.886046180658, 0.972329854898),
+          ("l03_agroprom", 0.804411684155, 0.931823649029)]
+    check(near(odds("wpn_ak74_pso"), AK),
+          "a model's odds in one stash (its scoped copy's tier too, rounded up; a multi-use item with a use gone "
+          "in its pool), the likeliest common first, three at most, a level marked stashes skip left out: %s"
+          % odds("wpn_ak74_pso"))
+    RPG = [("l01_escape", 0.0, 0.712013464974), ("l02_garbage", 0.0, 0.522113752215)]
+    check(near(odds("wpn_rpg7"), RPG), "a kind only rare stashes hold: %s" % odds("wpn_rpg7"))
     lv = lambda sec: (None if m.stashes(sec) is None else list(m.stashes(sec).values()))
-    check(lv("wpn_ak74_pso") == ["l03_agroprom", "l08_yantar", "l02_garbage"],
-          "the levels that most often draw a model's tiers (a scoped copy's too, its tier rounded up), best "
-          "first, three at most, a level marked stashes skip left out: %s" % lv("wpn_ak74_pso"))
-    check(lv("wpn_rpg7") == ["l02_garbage", "l01_escape"], "a kind only rare stashes hold: %s" % lv("wpn_rpg7"))
-    never = [lv(s) for s in ("wpn_toz34", "wpn_mp5", "wpn_aps", "wpn_knife")]
+    check(lv("wpn_ak74_pso") == ["l10_radar", "l08_yantar", "l03_agroprom"], "stashes: the levels of the odds, "
+          "in order: %s" % lv("wpn_ak74_pso"))
+    never = [odds(s) for s in ("wpn_toz34", "wpn_mp5", "wpn_aps", "wpn_knife")]
     check(never == [None] * 4, "never: a tier no roll beats, a kind in no table, a gun too cheap, a gun not in "
           "the list: %s" % never)
-    check(lv("wpn_pm") is None, "not at an economy that bars it: %s" % lv("wpn_pm"))
+    check(m.stashable("wpn_ak74") and not m.stashable("wpn_toz34"), "stashable: whether stashes ever hold it")
+    check(odds("wpn_pm") is None, "not at an economy that bars it: %s" % odds("wpn_pm"))
     g = lua.globals()
     g.ECO = 1
-    check(lv("wpn_pm") == ["l01_escape"], "at another economy it is: %s" % lv("wpn_pm"))
+    check(near(odds("wpn_pm"), [("l01_escape", 0.791067449258, 0.0)]), "at another economy it is: %s"
+          % odds("wpn_pm"))
     g.ECO = 2
+    g.RAG = True
+    RAG = [("l10_radar", 0.942848532059, 0.989508663285), ("l08_yantar", 0.914697962655, 0.979233067489),
+           ("l03_agroprom", 0.842654149325, 0.945004842164)]
+    check(near(odds("wpn_ak74_pso"), RAG), "Rag and Bone: 200 more to fill: %s" % odds("wpn_ak74_pso"))
+    g.RAG = False
+    check(near(odds("wpn_ak74_pso"), AK), "and back without it: %s" % odds("wpn_ak74_pso"))
     tm = g.treasure_manager
     keep = tm.set_random_stash
     wrap = lua.eval("function(f) return function(...) return f(...) end end")
     tm.set_random_stash = wrap(wrap(keep))
-    check(lv("wpn_ak74_pso") == ["l03_agroprom", "l08_yantar", "l02_garbage"],
-          "the level lists behind mods' wrappers of the stash function: %s" % lv("wpn_ak74_pso"))
+    check(near(odds("wpn_ak74_pso"), AK), "the level lists behind mods' wrappers of the stash function: %s"
+          % odds("wpn_ak74_pso"))
     tm.set_random_stash = lua.eval("function() return nil end")
-    check(lv("wpn_ak74") == [], "in stashes, no levels named, when the level lists cannot be read: %s" % lv("wpn_ak74"))
+    check(odds("wpn_ak74") == [] and lv("wpn_ak74") == [], "in stashes, no levels named, when the level lists "
+          "cannot be read: %s" % odds("wpn_ak74"))
     tm.set_random_stash = keep
     g.treasure_manager = None
     m.reset()
     try:
-        none = lv("wpn_ak74")
+        none = odds("wpn_ak74")
     except Exception as err:  # the guard is gone
         none = "error: %s" % str(err)[:60]
     g.treasure_manager = tm
     m.reset()
     check(none is None, "nothing from stashes without the stash script: %s" % none)
+
+    # rounds: listed when a weapon fires them (a launcher's grenades with the launcher), not a
+    # worn copy, a knife's stand-in ammo or a cartridge no gun fires; a worn round found counts
+    # as the fresh one. Golden values: scratchpad rounds_golden.py, from the game's formulas.
+    secs = lambda c: [e.sec for e in m.list(c).values()]
+    check(secs("ammo") == ["ammo_12x70_buck", "ammo_12x76_dart", "ammo_545_ap", "ammo_545", "ammo_9x18",
+                           "ammo_9x19", "ammo_vog"], "rounds listed, by name: %s" % secs("ammo"))
+    unlisted = [s for s in ("ammo_545_bad", "ammo_vog_bad", "ammo_knife", "ammo_unfired", "ammo_12x70_buck_self",
+                            "ammo_battery") if m.get(s) is not None]
+    check(unlisted == [], "not a worn round, a knife's ammo, a cartridge no gun fires, a round the inventory hides, a "
+          "device's: %s" % unlisted)
+    check(list(m.ammo_names("wpn_saiga").values()) == ["12x70 Buckshot", "12x76 Dart"], "names: not the hidden round: %s"
+          % list(m.ammo_names("wpn_saiga").values()))
+    worn = [m.entry_for(s) and m.entry_for(s).sec for s in ("ammo_545_bad", "ammo_vog_bad", "wpn_ak74_bad")]
+    check(worn == ["ammo_545", "ammo_vog", None], "a worn round counts as the fresh one; only a round: %s" % worn)
+    check(vnames(m.get("ammo_545")) == ["5.45x39 FMJ (AP 27)", "5.45x39 FMJ (AP 30)"],
+          "rounds of one name told apart by AP: %s" % vnames(m.get("ammo_545")))
+
+    def rounds(sec):
+        return [(r.sec, r.name, r.damage, r.ap, r.speed, r.pellets, round(r.kept, 12) if r.kept else None)
+                for r in m.gun_rounds(sec).values()]
+    want = [("ammo_12x70_buck", "12x70 Buckshot", 16, 3, 399, 9, 0.285714285714),
+            ("ammo_12x76_dart", "12x76 Dart", 60, 42, 350, None, 0.6)]
+    check(rounds("wpn_saiga") == want, "a gun's rounds: damage (hit power x k_hit / 1.5), AP, the card's speed with "
+          "each, pellets, damage left at 100 m: %s" % rounds("wpn_saiga"))
+    check([r[0:3] for r in rounds("wpn_ak74")] == [("ammo_545", "5.45 FMJ", 38), ("ammo_545_alt", "5.45 FMJ", 33),
+                                                  ("ammo_545_ap", "5.45x39 AP", 36)],
+          "a gun's rounds leave the worn one out; 0.5 x 1.14 / 1.5 is 38, as the descriptions read: %s"
+          % [r[0:3] for r in rounds("wpn_ak74")])
+    rs = m.round_stats("ammo_12x70_buck")
+    kept = rs.kept and [round(rs.kept[d], 12) for d in (50, 100, 200)]
+    check((rs.damage, rs.ap, rs.pellets, rs.speed, kept) == (0.42, 3, 9, 1.425, [0.444444444444, 0.285714285714,
+                                                                                 0.166666666667]),
+          "a round's own values: %s" % ((rs.damage, rs.ap, rs.pellets, rs.speed, kept),))
+    check(round(m.kept_at("ammo_545_alt", 100), 12) == 0.988235294118 and m.kept_at("ammo_drag", 100) is None,
+          "falloff with GBO's 0.05 for a round without air resistance; none where its formula breaks down: %s %s"
+          % (m.kept_at("ammo_545_alt", 100), m.kept_at("ammo_drag", 100)))
+    gs = m.round_stats("ammo_vog")
+    check((gs.damage, gs.ap, gs.speed, gs.kept) == (0.8, 35, None, None), "a grenade's: no speed or falloff: %s"
+          % ((gs.damage, gs.ap, gs.speed, gs.kept),))
+    fb = lambda sec: [e.sec for e in m.fired_by(sec).values()]
+    check(fb("ammo_9x18") == ["wpn_fort", "wpn_pm", "wpn_pm_pm_kit"] and fb("ammo_vog") == ["wpn_ak74"]
+          and fb("ammo_545_bad") == ["wpn_ak74"], "fired by: the guns that chamber it, a launcher its grenade (not a "
+          "gun without one), by category then name: %s %s %s" % (fb("ammo_9x18"), fb("ammo_vog"), fb("ammo_545_bad")))
+    check(m.hit_power("wpn_saiga") == 0.6, "hit power: the first of its four values, which r_float_ex cannot read: %s"
+          % m.hit_power("wpn_saiga"))
+
+    # jams: the engine's misfire at the condition GAMMA keeps guns at (none when it is above
+    # misfire_start_condition), and Weapon Parts Overhaul's with parts at 60-79%
+    def jam(sec):
+        try:
+            j = m.jam_chance(sec)
+        except Exception as err:
+            return "error: %s" % str(err)[:60]
+        return None if j is None else (round(j.base, 6), j.worn)
+    check(jam("wpn_saiga") == (0, 0.017), "jams: none from the engine above its start condition; 1.7%% a shot with "
+          "worn parts: %s" % (jam("wpn_saiga"),))
+    check(jam("wpn_pm") == (0.003, None), "the engine's misfire at the start condition, no parts: %s" % (jam("wpn_pm"),))
+    check(jam("wpn_fort") == (0.011488, None), "below the start condition, toward the end chance: %s" % (jam("wpn_fort"),))
+    check(m.special("ammo_545") is False and m.special("ammo_vog") is False, "ammo is never special")
+    g = lua.globals()
+    g.JAM = 0.5
+    check(jam("wpn_saiga") == (0, 0.011), "the MCM's jam chance: %s" % (jam("wpn_saiga"),))
+    g.JAM = 0.75
+    aj = g.arti_jamming
+    g.arti_jamming = None
+    check(jam("wpn_saiga") == (0, None), "no parts' jams without WPO: %s" % (jam("wpn_saiga"),))
+    g.arti_jamming = aj
+    lock = g.grok_gun_condition_fixed
+    g.grok_gun_condition_fixed = None
+    check(jam("wpn_saiga") is None, "no number without the condition lock: %s" % (jam("wpn_saiga"),))
+    g.grok_gun_condition_fixed = lock
+
+    # traders by tier: per row the tier, what unlocks it (any of the entries that stock it), who
+    def sold(sec):
+        return [(r.tier, sorted((k, v) for k, v in r.need.items()) if r.need else r.need, list(r.traders.values()))
+                for r in m.sold_by(sec).values()]
+    check(sold("ammo_9x18") == [(1, False, ["Beard", "Owl"]), (2, [("drugkit", True)], ["other traders"])],
+          "sold by: a tier everyone gets; a config whose characters have no names: %s" % sold("ammo_9x18"))
+    check(sold("ammo_545") == [(2, [("goodwill", 500), ("heavy", True)], ["Beard", "Owl"]), (2, [("kits", 1)], ["mechanics"])],
+          "the least goodwill with any faction, or Heavy Pockets; a generic config by its trade, the fewest "
+          "toolkits: %s" % sold("ammo_545"))
+    check(sold("ammo_545_ap") == [(3, [("goodwill", 1000), ("heavy", True)], ["Beard", "Owl"])],
+          "a higher tier: %s" % sold("ammo_545_ap"))
+    check(sold("wpn_knife2") == [(1, False, ["Sidorovich", "mechanics"])] and sold("ammo_vog") == [(2, [("story", True)],
+                                                                                                ["Sidorovich"])],
+          "names, then trades; an info portion is story progress: %s %s" % (sold("wpn_knife2"), sold("ammo_vog")))
+
+    # bodies' rounds: for the guns fighters carry, by item_count
+    body = {s: bool(m.turns_up_as(s) and m.turns_up_as(s).corpse) for s in ("ammo_545", "ammo_545_ap", "ammo_12x76_dart",
+                                                               "ammo_12x76_zhekan", "ammo_12x70_buck", "ammo_vog",
+                                                               "ammo_9x19", "ammo_9x18", "ammo_unfired")}
+    check(body == {"ammo_545": True, "ammo_545_ap": False, "ammo_12x76_dart": True, "ammo_12x76_zhekan": True,
+                   "ammo_12x70_buck": False, "ammo_vog": True, "ammo_9x19": True, "ammo_9x18": False,
+                   "ammo_unfired": False},
+          "bodies' rounds: a carried gun's with an item_count (the FMJ through its worn copy), a dart's slug, a "
+          "launcher's grenade without one, not a round in a community's list: %s" % body)
+
+    # bullets against armor: class and protection as the damage balancer rounds them, what gets
+    # through stopped and pierced, the strongest round stopped and the weakest that pierces
+    def pen(sec):
+        p = m.penetration(sec)
+        return (p["class"], p.protection, round(p.stopped, 9), round(p.pierced, 9),
+                p.holds and (p.holds.sec, p.holds.ap), p.fails and (p.fails.sec, p.fails.ap), p.stops, p.of)
+    check(pen("novice_outfit") == (0.18, 0.04, 0.576, 0.96, ("ammo_9x18", 14), ("ammo_9x19", 25), 1, 5),
+          "a jacket: class 0.18 (1 - 0.83 rounded up), protection 0.04, stops 9x18 only: %s" % (pen("novice_outfit"),))
+    check(pen("helm_x") == (0.31, 0.25, 0.45, 0.75, ("ammo_545", 27), ("ammo_12x76_dart", 42), 3, 5),
+          "a helmet: its head armor: %s" % (pen("helm_x"),))
+    check(pen("heavy_v") == (0.25, 0.4, 0.36, 0.6, ("ammo_9x19", 25), ("ammo_545", 27), 2, 5),
+          "a tie stops a round: %s" % (pen("heavy_v"),))
+    g.LIMIT = 0.3
+    check(pen("heavy_v")[1:4] == (0.3, 0.42, 0.7), "protection at most the limit: %s" % (pen("heavy_v"),))
+    g.LIMIT = 0.65
 
     # a gun a kit makes of another model, and new-game kits
     made = [(x["from"], x.kit) for x in m.made_from("wpn_pm_copy_pm_kit").values()]

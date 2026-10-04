@@ -171,9 +171,6 @@
 	<string id="st_arsenal_stashes">
 		<text>In stashes</text>
 	</string>
-	<string id="st_arsenal_stashes_at">
-		<text>In stashes, most often at %s</text>
-	</string>
 	<string id="st_arsenal_no_source">
 		<text>No faction carries it and no stash holds it</text>
 	</string>
@@ -357,6 +354,12 @@
 	<string id="st_arsenal_known_count">
 		<text>Known %s · Found %s of %s</text>
 	</string>
+	<string id="st_arsenal_known_new_count">
+		<text>Known %s · Found %s of %s · %s new</text>
+	</string>
+	<string id="st_arsenal_by_faction">
+		<text>By faction</text>
+	</string>
 	<string id="st_arsenal_learned_on">
 		<text>Learned %s from %s</text>
 	</string>
@@ -410,5 +413,146 @@
 	</string>
 	<string id="ui_mcm_arsenal_jailbreak_desc">
 		<text>Arsenal lists what you have learned of: your faction's gear from the start, then what you find, see, loot, read on PDAs and hear from people. With the jailbreak it lists everything this game has, like a finished encyclopedia.</text>
+	</string>
+	<string id="st_arsenal_cat_ammo">
+		<text>Ammo</text>
+	</string>
+	<string id="st_arsenal_tag_ap">
+		<text>AP %s</text>
+	</string>
+	<string id="st_arsenal_tag_hit">
+		<text>damage x%s</text>
+	</string>
+	<string id="st_arsenal_times">
+		<text>x%s</text>
+	</string>
+	<string id="st_arsenal_hit_power">
+		<text>Hit power: %s</text>
+	</string>
+	<string id="st_arsenal_jam_worn">
+		<text>Jam chance: %s a shot once its parts wear below 80%%</text>
+	</string>
+	<string id="st_arsenal_jam_both">
+		<text>Jam chance: %s a shot, %s once its parts wear below 80%%</text>
+	</string>
+	<string id="st_arsenal_jam_base">
+		<text>Jam chance: %s a shot</text>
+	</string>
+	<string id="st_arsenal_jam_none">
+		<text>Jam chance: none</text>
+	</string>
+	<string id="st_arsenal_round_damage">
+		<text>Damage</text>
+	</string>
+	<string id="st_arsenal_round_ap">
+		<text>Armor piercing</text>
+	</string>
+	<string id="st_arsenal_round_speed">
+		<text>Bullet speed</text>
+	</string>
+	<string id="st_arsenal_round_pellets">
+		<text>Pellets</text>
+	</string>
+	<string id="st_arsenal_round_kept">
+		<text>Left at 50/100/200 m</text>
+	</string>
+	<string id="st_arsenal_fired_by">
+		<text>Fired by:</text>
+	</string>
+	<string id="st_arsenal_col_round">
+		<text>Round</text>
+	</string>
+	<string id="st_arsenal_col_damage">
+		<text>Damage</text>
+	</string>
+	<string id="st_arsenal_col_ap">
+		<text>AP</text>
+	</string>
+	<string id="st_arsenal_col_speed">
+		<text>m/s</text>
+	</string>
+	<string id="st_arsenal_col_kept">
+		<text>100 m</text>
+	</string>
+	<string id="st_arsenal_pellets">
+		<text>%s x %s</text>
+	</string>
+	<string id="st_arsenal_rounds_note">
+		<text>Damage from this gun, armor piercing (AP), bullet speed, and the damage left at 100 m.</text>
+	</string>
+	<string id="st_arsenal_ammo_other">
+		<text>Other variants: %s</text>
+	</string>
+	<string id="st_arsenal_vs_bullets">
+		<text>Against bullets:</text>
+	</string>
+	<string id="st_arsenal_pen_range">
+		<text>Stops rounds up to %s (AP %s); %s (AP %s) and stronger pierce it.</text>
+	</string>
+	<string id="st_arsenal_pen_all">
+		<text>Stops every round that turns up, the strongest %s (AP %s).</text>
+	</string>
+	<string id="st_arsenal_pen_none">
+		<text>Every round pierces it, from %s (AP %s) up.</text>
+	</string>
+	<string id="st_arsenal_pen_count">
+		<text>Stops %s of the %s rounds that turn up.</text>
+	</string>
+	<string id="st_arsenal_pen_damage">
+		<text>A hit does %s of its damage when stopped, %s when it pierces.</text>
+	</string>
+	<string id="st_arsenal_sold_tiers">
+		<text>Sold by traders:</text>
+	</string>
+	<string id="st_arsenal_tier">
+		<text>Tier %s: %s</text>
+	</string>
+	<string id="st_arsenal_tier_need">
+		<text>Tier %s, %s: %s</text>
+	</string>
+	<string id="st_arsenal_need_goodwill">
+		<text>goodwill %s</text>
+	</string>
+	<string id="st_arsenal_need_kit">
+		<text>after a toolkit</text>
+	</string>
+	<string id="st_arsenal_need_kits">
+		<text>after %s toolkits</text>
+	</string>
+	<string id="st_arsenal_need_drugkit">
+		<text>after a drug kit</text>
+	</string>
+	<string id="st_arsenal_need_story">
+		<text>later in the story</text>
+	</string>
+	<string id="st_arsenal_need_heavy">
+		<text>Heavy Pockets</text>
+	</string>
+	<string id="st_arsenal_or">
+		<text>or</text>
+	</string>
+	<string id="st_arsenal_trade_barman">
+		<text>barkeeps</text>
+	</string>
+	<string id="st_arsenal_trade_mechanic">
+		<text>mechanics</text>
+	</string>
+	<string id="st_arsenal_trade_medic">
+		<text>medics</text>
+	</string>
+	<string id="st_arsenal_trade_other">
+		<text>other traders</text>
+	</string>
+	<string id="st_arsenal_stashes_odds">
+		<text>In stashes: %s</text>
+	</string>
+	<string id="st_arsenal_stash_odds">
+		<text>%s %s</text>
+	</string>
+	<string id="st_arsenal_stash_odds_rare">
+		<text>%s %s (rare %s)</text>
+	</string>
+	<string id="st_arsenal_stash_odds_note">
+		<text>The chance one stash there holds it.</text>
 	</string>
 </string_table>

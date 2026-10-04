@@ -7,8 +7,10 @@ files (scripts\\**\\*.ltx) are read from the install, the way the game reads the
     [arsenal_dialogs]        who offers which dialog Arsenal names (the Armor Exchange's):
     armor_exchange_insider_duty = bar_petrenko_name          the givers' name strings
 
-    [arsenal_trade]          the trade configs some NPC's logic uses (items\\trade\\<name>.ltx);
-    trade_stalker_sidorovich = 1                             a config nobody uses sells nothing
+    [arsenal_trade]          the trade configs some NPC's logic uses (items\\trade\\<name>.ltx),
+    trade_stalker_sidorovich = escape_trader_name            each with its traders' name strings
+                                                             ("-" when none has a name of his own);
+                                                             a config nobody uses sells nothing
 
     [arsenal_supplies]       gear a story character carries (his <supplies>), for the story
     wpn_m24 = jup_..._name, ...                              characters a squad spawns; a trader,
@@ -210,16 +212,68 @@ def main():
         if total:
             out[sec] = (total, lines)
 
-    # the trade configs NPC logic names ("trade = items\trade\<name>.ltx")
-    trade = set()
+    # the trade configs NPC logic names ("trade = items\trade\<name>.ltx"), each with the name
+    # strings of the traders using it. A logic section's NPC: the spawn sections whose
+    # custom_data is its file ([logic]), the one its suitable line names (check_npc_name), the
+    # one a smart terrain job is named for ([logic@<npc section>]), or the one the file is
+    # named after. A generated name (a nameless NPC) is left out.
     rx = re.compile(r"^\s*trade\s*=\s*items\\trade\\([\w\-]+)\.ltx\s*$", re.I)
-    for rel in vfs.files:
-        if rel.startswith("configs\\scripts\\") and rel.endswith(".ltx"):
-            text, _ = vfs.read(rel)
-            for line in (text or "").splitlines():
-                m = rx.match(line.split(";")[0])
-                if m:
-                    trade.add(m.group(1).lower())
+    named = re.compile(r"check_npc_name\(([\w\-]+)\)", re.I)
+    npcs = [s for s, d in S.items() if d.get("character_profile")]
+    by_cd = collections.defaultdict(list)
+    for s in npcs:
+        by_cd[(S[s].get("custom_data") or "").strip().lower()].append(s)
+
+    def npc_sections(x):
+        x = (x or "").lower()
+        if not x:
+            return []
+        for c in (x, x + "_stalker", re.sub(r"_logic$", "", x)):
+            if c in S and S[c].get("character_profile"):
+                return [c]
+        found = [s for s in npcs if x in s.lower() and not s.endswith("_squad")]
+        return found if len(found) == 1 else []
+
+    def trader_name(sec):
+        prof = (S.get(sec) or {}).get("character_profile")
+        p = profiles.get(prof)
+        c = chars.get(p["char"]) if p and p["char"] else chars.get(prof)
+        n = c and c["name"]
+        return n if n and not n.startswith("GENERATE_NAME") else None
+
+    trade = collections.OrderedDict()
+    for rel in sorted(vfs.files):
+        if not (rel.startswith("configs\\scripts\\") and rel.endswith(".ltx")):
+            continue
+        text, _ = vfs.read(rel)
+        sections, cur = collections.OrderedDict(), None
+        for line in (text or "").splitlines():
+            line = line.split(";")[0]
+            m = re.match(r"^\s*\[([^\]]+)\]", line)
+            if m:
+                cur = m.group(1).split(":")[0].strip()
+                sections.setdefault(cur, [])
+            elif cur is not None:
+                sections[cur].append(line)
+        for sec, body in sections.items():
+            cfgs = [m.group(1).lower() for m in (rx.match(x) for x in body) if m]
+            if not cfgs:
+                continue
+            owners = list(by_cd.get(rel[len("configs\\"):].lower(), [])) if sec == "logic" else []
+            for x in body:
+                if x.strip().lower().startswith("suitable"):
+                    for n in named.findall(x):
+                        owners += npc_sections(n)
+            if not owners and "@" in sec:
+                owners = npc_sections(sec.split("@", 1)[1])
+            if not owners:
+                owners = npc_sections(os.path.splitext(os.path.basename(rel))[0])
+            for c in cfgs:
+                who = trade.setdefault(c, [])
+                for o in owners:
+                    n = trader_name(o)
+                    if n and n not in who:
+                        who.append(n)
 
     order = names + ["special"]
 
@@ -232,9 +286,10 @@ def main():
             "[arsenal_dialogs]"]
     for d, names_of in offers.items():
         text.append("%s = %s" % (d, ", ".join(names_of)))
-    text += ["", "; the trade configs some NPC's logic uses", "[arsenal_trade]"]
+    text += ["", "; the trade configs some NPC's logic uses: the name strings of the traders using it",
+             "[arsenal_trade]"]
     for t in sorted(trade):
-        text.append("%s = 1" % t)
+        text.append("%s = %s" % (t, ", ".join(trade[t]) or "-"))
     text += ["", "; gear a story character carries, for characters a squad spawns (not traders, technicians,",
              "; medics or barmen, who keep nothing): the characters' name strings", "[arsenal_supplies]"]
     for item in sorted(carried):
