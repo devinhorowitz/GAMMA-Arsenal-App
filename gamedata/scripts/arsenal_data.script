@@ -21,12 +21,21 @@
     stand-in here that reads the same values from the section alone.
 --]]
 
--- weapon kind -> category, in display order
-CATEGORIES = { "pistols", "smgs", "shotguns", "rifles", "snipers", "launchers", "melee" }
+-- categories in display order: weapons by kind, then armor by GAMMA's armor class (its repair
+-- type, which also picks the repair kits) and helmets
+CATEGORIES = { "pistols", "smgs", "shotguns", "rifles", "snipers", "launchers", "melee",
+    "light", "medium", "heavy", "exo", "helmets" }
+ARMOR = { light = true, medium = true, heavy = true, exo = true, helmets = true }
 local KIND = {
     w_pistol = "pistols", w_smg = "smgs", w_shotgun = "shotguns", w_rifle = "rifles",
     w_sniper = "snipers", w_explosive = "launchers", w_melee = "melee",
 }
+-- suits and helmets: their engine classes, and their kinds (a section of an armor class
+-- without one is a template)
+local ARMOR_CLASS = { E_STLK = true, EQU_STLK = true, E_HLMET = true }
+local ARMOR_KIND = { o_light = "light", o_medium = "medium", o_sci = "medium", o_heavy = "heavy", o_helmet = "helmets" }
+local ARMOR_REPAIR = { outfit_novice = "light", outfit_light = "light", outfit_medium = "medium",
+    outfit_heavy = "heavy", outfit_exo = "exo" }
 -- sections that look like weapons but are not items
 local SKIP = { wpn_addon_silencer = true, wpn_addon_scope = true }
 
@@ -38,10 +47,22 @@ local function translated(key)
     return (s ~= key) and s or nil
 end
 
+-- whether a suit or helmet section is a helmet
+function is_helmet(sec)
+    return ini_sys:r_string_ex(sec, "class") == "E_HLMET" or ini_sys:r_string_ex(sec, "kind") == "o_helmet"
+end
+
 -- the category a section is listed under, or nil
 function category_of(sec)
     if SKIP[sec] or sec:find("^mp_") or sec:find("^animation_") then return nil end
     local kind = ini_sys:r_string_ex(sec, "kind")
+    if ARMOR_CLASS[ini_sys:r_string_ex(sec, "class") or ""] then
+        if not (kind and ARMOR_KIND[kind]) then return nil end
+        if not translated(ini_sys:r_string_ex(sec, "inv_name")) then return nil end
+        if not ini_sys:r_float_ex(sec, "inv_grid_x") then return nil end
+        return is_helmet(sec) and "helmets" or ARMOR_REPAIR[ini_sys:r_string_ex(sec, "repair_type") or ""]
+            or ARMOR_KIND[kind]
+    end
     local cat = kind and KIND[kind]
     if not cat and ini_sys:r_string_ex(sec, "class") == "WP_KNIFE" then
         cat = "melee"
@@ -91,7 +112,8 @@ local SAME = { "ammo_mag_size", "rpm", "hit_power", "fire_dispersion_base", "PDM
     "control_inertion_factor", "bullet_speed", "condition_shot_dec", "zoom_cam_dispersion",
     "silencer_status", "scope_status", "grenade_launcher_status", "inv_weight" }
 
-function signature(sec)
+function signature(sec, cat)
+    if ARMOR[cat or ""] then return armor_signature(sec) end
     local t = { ammo_key(sec), ((ini_sys:r_string_ex(sec, "fire_modes") or ""):gsub("%s", "")) }
     for _, k in ipairs(SAME) do
         t[#t + 1] = num(sec, k)
@@ -304,6 +326,7 @@ end
 -- most, or none. Returns the maximum and the value as it is, or nil for a stat the card
 -- formulas here do not cover.
 function max_stat(sec, stat)
+    if is_armor(sec) then return armor_max(sec, stat) end
     local f = CARD[stat]
     if not f or stat == "damage" then return nil end
     local p = params(sec)
@@ -361,8 +384,9 @@ TAGGERS = {
     function(sec) return status(sec, "scope_status") == 2 and tag("st_arsenal_tag_scope_mount") or "" end,
 }
 
--- name the variants of one gun: a tag only where variants still clash, then numbers
-local function label(name, reps)
+-- name the variants of one gun (or suit, with its own taggers): a tag only where variants
+-- still clash, then numbers
+local function label(name, reps, taggers)
     local tags = {}
     for _, e in ipairs(reps) do
         tags[e] = {}
@@ -379,7 +403,7 @@ local function label(name, reps)
         end
         return out
     end
-    for _, f in ipairs(TAGGERS) do
+    for _, f in ipairs(taggers) do
         local groups = clashing()
         if #groups == 0 then break end
         for _, g in ipairs(groups) do
@@ -448,7 +472,7 @@ function build()
                 groups[key] = g
                 order[#order + 1] = key
             end
-            local okS, sg = pcall(signature, sec)
+            local okS, sg = pcall(signature, sec, cat)
             sg = okS and sg or sec
             if not g.buckets[sg] then
                 g.buckets[sg] = {}
@@ -466,7 +490,7 @@ function build()
         end
         if #vars > 1 then
             table.sort(vars, function(a, b) return a.sec < b.sec end)
-            label(g.name, vars)
+            label(g.name, vars, ARMOR[g.cat] and ARMOR_TAGGERS or TAGGERS)
             table.sort(vars, by_name)
         end
         local e = { sec = vars[1].sec, cat = g.cat, name = g.name, variants = vars }
@@ -565,9 +589,10 @@ function ammo_names(sec)
     return round_names(ok and list or {})
 end
 
--- whether the inventory shows a weapon's stat card: for a gun with real ammo, not for a knife,
--- whose ammo is fake (utils_ui's tooltip decides the same way, UIInfoItem:GetType)
+-- whether the inventory shows a stat card: for a suit or helmet, and for a gun with real ammo,
+-- not for a knife, whose ammo is fake (utils_ui's tooltip decides the same way, UIInfoItem:GetType)
 function has_stat_card(sec)
+    if is_armor(sec) then return true end
     return ini_sys:r_string_ex(sec, "ammo_class") ~= nil and not IsItem("fake_ammo_wpn", sec)
 end
 
@@ -876,13 +901,26 @@ local function lines(ini, sec)
     return out
 end
 
--- a local of another script, through a function of that script that uses it
+-- a local of another script, through a function of that script that uses it. Mods wrap such
+-- functions ("local f = tm.fn; function tm.fn(...) return f(...) end"; Descriptive Stash
+-- Coordinates wraps set_random_stash), so the functions a function holds are looked in too,
+-- nearest first, up to WRAPS deep.
+local WRAPS = 3
+
 local function upvalue(fn, name)
-    if type(fn) ~= "function" or not (debug and debug.getupvalue) then return nil end
-    for i = 1, 255 do
-        local n, v = debug.getupvalue(fn, i)
-        if n == nil then return nil end
-        if n == name then return v end
+    if not (debug and debug.getupvalue) then return nil end
+    local level = { fn }
+    for _ = 0, WRAPS do
+        local held = {}
+        for _, f in ipairs(level) do
+            for i = 1, type(f) == "function" and 255 or 0 do
+                local n, v = debug.getupvalue(f, i)
+                if n == nil then break end
+                if n == name then return v end
+                if type(v) == "function" then held[#held + 1] = v end
+            end
+        end
+        level = held
     end
 end
 
@@ -893,6 +931,10 @@ end
 -- (loadouts_per_name) count under their faction and rank, or as "special" when their spawn
 -- section names no rank (UNISG's black ops).
 local carried     -- gun model -> faction -> rank (or "special") -> the chance one fighter carries it
+-- A line's second field asks for attachments: bits 1 scope (one of the gun's scopes, or its
+-- scope mount), 2 launcher, 4 suppressor, rolled against the loadout's chances; "r" any the
+-- gun can take (xrs_rnd_npc_loadout.resolve_random_attachment)
+local npc_attach  -- gun section -> the attachment bits some loadout line asks for
 
 local function slot_chances(ini, slot)
     local weights, total = {}, 0
@@ -902,6 +944,10 @@ local function slot_chances(ini, slot)
             local w = tonumber(f[4]) or 10
             weights[f[1]] = (weights[f[1]] or 0) + w
             total = total + w
+            if w > 0 then
+                local bits = (f[2] == "r") and 7 or tonumber(f[2]) or 0
+                npc_attach[f[1]] = bit.bor(npc_attach[f[1]] or 0, bits)
+            end
         end
     end
     local out = {}
@@ -913,7 +959,7 @@ local function slot_chances(ini, slot)
 end
 
 local function build_carried()
-    carried = {}
+    carried, npc_attach = {}, {}
     local ok, ini = pcall(ini_file, "items\\settings\\npc_loadouts\\npc_loadouts.ltx")
     if not (ok and ini and ini:section_exist("default")) then return end
     local slots = {}
@@ -953,15 +999,12 @@ local function build_carried()
     end
 end
 
--- The factions whose fighters carry a gun model, the likeliest first:
+-- faction -> rank (or "special") -> chance, as rows, the likeliest first:
 --     { { faction, ranks = { rank, ... } lowest first, special = true when a special squad
 --     without a rank does }, ... }
-function carriers(sec)
-    local e = entry_for(sec)
-    if not e then return {} end
-    if not carried then build_carried() end
+local function faction_rows(t)
     local out = {}
-    for f, by in pairs(carried[e] or {}) do
+    for f, by in pairs(t or {}) do
         local ranks, best = {}, by.special or 0
         for _, r in ipairs(RANKS) do
             if (by[r] or 0) > 0 then
@@ -981,6 +1024,365 @@ function carriers(sec)
     return out
 end
 
+-- The factions whose fighters carry a gun model, the likeliest first (faction_rows)
+function carriers(sec)
+    local e = entry_for(sec)
+    if not e then return {} end
+    if not carried then build_carried() end
+    return faction_rows(carried[e])
+end
+
+-- Who wears a suit or helmet. A fighter's suit and helmet drop by his visual (death_manager's
+-- [outfit_by_visual] in items\settings\death_generic.ltx, read through itms_manager as
+-- death_manager reads it); which fighters wear which visual is plugins\arsenal_census.ltx,
+-- which tools/census.py writes from the NPC character files (a script cannot read them). A
+-- spawn section's faction is its community.
+local worn     -- armor model -> faction -> rank (or "special") -> the share of its fighters in it
+
+-- "rank:count, ..." -> { rank = count }
+local function rank_counts(v)
+    local out = {}
+    for _, x in ipairs(fields(v, ",")) do
+        local r, n = x:match("^(%w+)%s*:%s*(%d+)$")
+        if r then out[r] = tonumber(n) end
+    end
+    return out
+end
+
+local function build_worn()
+    worn = {}
+    local death = itms_manager and itms_manager.ini_death
+    local ok, census = pcall(ini_file, "plugins\\arsenal_census.ltx")
+    if not (death and ok and census) then return end
+    -- a faction's characters per rank, all its spawn sections together, and those in each item
+    -- (every visual that drops it): the share is the chance one of its fighters of that rank
+    -- wears it, a story character or a small special squad weighing as little as it spawns
+    local total, wearing = {}, {}
+    census:section_for_each(function(sec)
+        local f = ini_sys:r_string_ex(sec, "community")
+        if not (f and FACTION_AT[f]) then return end
+        total[f] = total[f] or {}
+        for r, n in pairs(rank_counts(census:r_string_ex(sec, "characters"))) do
+            total[f][r] = (total[f][r] or 0) + n
+        end
+        for _, l in ipairs(lines(census, sec)) do
+            local drop = l.k ~= "characters" and death:r_string_ex("outfit_by_visual", l.k)
+            local seen = {}
+            for _, item in ipairs(drop and fields(drop, ",") or {}) do
+                local e = item ~= "" and ini_sys:section_exist(item) and entry_for(item)
+                if e and not seen[e] then
+                    seen[e] = true
+                    wearing[e] = wearing[e] or {}
+                    wearing[e][f] = wearing[e][f] or {}
+                    for r, n in pairs(rank_counts(l.v)) do
+                        wearing[e][f][r] = (wearing[e][f][r] or 0) + n
+                    end
+                end
+            end
+        end
+    end)
+    for e, by_f in pairs(wearing) do
+        worn[e] = {}
+        for f, per in pairs(by_f) do
+            worn[e][f] = {}
+            for r, n in pairs(per) do
+                worn[e][f][r] = n / total[f][r]
+            end
+        end
+    end
+end
+
+-- The factions whose fighters wear a suit or helmet, the likeliest first (faction_rows)
+function worn_by(sec)
+    local e = entry_for(sec)
+    if not e then return {} end
+    if not worn then build_worn() end
+    return faction_rows(worn[e])
+end
+
+-- the rank a rating reaches (game_relations' "rating": name, upper bound, name, ...)
+function rank_at(value)
+    local r = fields(ini_sys:r_string_ex("game_relations", "rating"), ",")
+    for i = 1, #r, 2 do
+        local top = tonumber(r[i + 1])
+        if not top or value < top then return r[i] end
+    end
+    return r[#r - (#r % 2 == 0 and 1 or 0)]
+end
+
+-- How a fighter's suit or helmet drops, as GAMMA decides when his body is first searched
+-- (death_manager.validate_drop, wrapped by outfit_drop_mcm): its chance by repair type (MCM),
+-- a rare suit's own roll, and, with progressive drops, the player's rank it needs (cost below
+-- the outfit_drop_settings line in death_outfits.ltx: rank times its multiplier plus its start;
+-- GAMMA's helmet multiplier never applies, its check reads kind as a number):
+--     { chance = percent, rank = the rating it needs, or nil }, or { off = true } when this
+-- economy drops none
+local HALF = { helm_spartan = true }
+
+function armor_drop(sec)
+    local ok, mode = pcall(function() return game_difficulties.get_eco_factor("outfit_drops") end)
+    mode = ok and tonumber(mode) or 2
+    if mode ~= 2 and mode ~= 3 then return { off = true } end
+    local rt = ini_sys:r_string_ex(sec, "repair_type") or ""
+    rt = (rt == "outfit_novice" and "outfit_light") or (rt == "outfit" and "outfit_medium") or rt
+    local okc, c = pcall(function() return outfit_drop_mcm.get_config(rt .. "_chance") end)
+    local chance = okc and tonumber(c) or 50
+    local rare = death_manager and death_manager.rare_armors
+    if type(rare) == "table" and rare[sec] then chance = chance * 0.15 end
+    if HALF[sec] then chance = chance * 0.5 end
+    if mode == 3 then return { chance = chance } end
+    local cost = ini_sys:r_float_ex(sec, "cost")
+    if not cost then return { off = true } end
+    local death = itms_manager and itms_manager.ini_death
+    local start = death and death:r_float_ex("outfit_drop_settings", "cost_start") or 25000
+    local multi = death and death:r_float_ex("outfit_drop_settings", "rank_multiplier") or 20
+    local need = (cost - start) / multi
+    return { chance = chance, rank = need > 0 and math.ceil(need) or nil }
+end
+
+-- Grok's and Darkasleif's Armor Exchange: a faction's traders swap any one of a set of suits,
+-- plus money, for another suit, to members of that faction. Its dialogs (one a faction) run
+-- its tables, which hold the price, the suit given and the suits taken (grok_armor_convert's
+-- globals, read while its script runs); who offers each dialog is the census's
+-- [arsenal_dialogs]. Its renegade tables have no dialog and are left out.
+EXCHANGE = {
+    { dialog = "armor_exchange_insider_military", faction = "army",
+      tables = { "army_medium", "army_skat", "army_exolight", "army_exo", "army_noso" } },
+    { dialog = "armor_exchange_insider_cs", faction = "csky",
+      tables = { "cs_light", "cs_medium", "cs_sci", "cs_skat", "cs_exolight", "cs_exo" } },
+    { dialog = "armor_exchange_insider_duty", faction = "dolg",
+      tables = { "dolg_medium", "dolg_sci", "dolg_skat", "dolg_exolight", "dolg_exo", "dolg_noso" } },
+    { dialog = "armor_exchange_insider_bandit", faction = "bandit",
+      tables = { "bandit_light", "bandit_medium", "bandit_sci", "bandit_skat", "bandit_exolight", "bandit_exo" } },
+    { dialog = "armor_exchange_insider_mercenary", faction = "killer",
+      tables = { "merc_light", "merc_medium", "merc_sci", "merc_skat", "merc_exolight", "merc_exo", "merc_noso" } },
+    { dialog = "armor_exchange_insider_loner", faction = "stalker",
+      tables = { "loner_light", "loner_medium", "loner_sci", "loner_exolight", "loner_exo" } },
+    { dialog = "armor_exchange_insider_freedom", faction = "freedom",
+      tables = { "freedom_medium", "freedom_sci", "freedom_skat", "freedom_exolight", "freedom_exo", "freedom_noso" } },
+    { dialog = "armor_exchange_insider_monolith", faction = "monolith",
+      tables = { "mono_medium", "mono_sci", "mono_skat", "mono_exolight", "mono_exo", "mono_noso" } },
+    { dialog = "armor_exchange_insider_sin", faction = "greh", tables = { "greh_medium", "greh_exo" } },
+    { dialog = "armor_exchange_insider_ecolog", faction = "ecolog", tables = { "ecolog_medium", "ecolog_sci", "ecolog_exo" } },
+    { dialog = "armor_exchange_insider_isg", faction = "isg",
+      tables = { "isg_medium", "isg_sci", "isg_skat", "isg_exolight", "isg_exo", "isg_noso" } },
+}
+
+-- the census file (tools/census.py), or nil
+local function census()
+    local ok, ini = pcall(ini_file, "plugins\\arsenal_census.ltx")
+    return ok and ini or nil
+end
+
+-- the names of the characters that offer a dialog, as the census lists them
+local function givers(dialog)
+    local c = census()
+    local out = {}
+    for _, n in ipairs(fields(c and c:r_string_ex("arsenal_dialogs", dialog), ",")) do
+        local t = n ~= "" and translated(n)
+        if t then out[#out + 1] = t end
+    end
+    return out
+end
+
+-- The exchanges that concern a suit model: `gets` (what a trader takes for it: { traders,
+-- faction, cost, count = how many suits, any one }) and `takes` (what he gives for it:
+-- { traders, faction, cost, name }). None without the mod, or for a dialog nobody offers.
+function exchange(sec)
+    local out = { gets = {}, takes = {} }
+    local e = entry_for(sec)
+    local conv = grok_armor_convert
+    if not (e and conv) then return out end
+    for _, x in ipairs(EXCHANGE) do
+        local who = givers(x.dialog)
+        for _, name in ipairs(#who > 0 and x.tables or {}) do
+            local t = conv[name]
+            local cost = type(t) == "table" and tonumber(t.cost)
+            local reward = cost and t.reward
+            if reward and ini_sys:section_exist(reward) then
+                local n, mine = 0, false
+                for s, v in pairs(t) do
+                    if v == true and ini_sys:section_exist(s) then
+                        n = n + 1
+                        if entry_for(s) == e then mine = true end
+                    end
+                end
+                if entry_for(reward) == e and n > 0 then
+                    out.gets[#out.gets + 1] = { traders = who, faction = x.faction, cost = cost, count = n }
+                end
+                local rname = shown_name(reward)
+                if mine and rname then
+                    out.takes[#out.takes + 1] = { traders = who, faction = x.faction, cost = cost, name = rname }
+                end
+            end
+        end
+    end
+    return out
+end
+
+---------------------------------------------------------------------------------------------
+-- More ways gear turns up, each read from what does it while the game runs (what a script
+-- cannot read is in the census): traders, story characters, tasks and story gifts, corpses'
+-- extra loot, crafting. sources() and obtainable() put them together with the rest.
+---------------------------------------------------------------------------------------------
+
+-- the sections a condlist names ("{+info} supplies_2, supplies_1"), its conditions and effects
+-- dropped
+local function condlist_sections(s)
+    local out = {}
+    for _, part in ipairs(fields(s, ",")) do
+        local sec = part:gsub("{.-}", ""):gsub("%%.-%%", ""):match("^%s*([%w_%.%-]+)%s*$")
+        if sec then out[#out + 1] = sec end
+    end
+    return out
+end
+
+-- Story gifts: what a story dialog or quest hands over, in scripts that keep it in their
+-- function bodies (dialogs_jupiter, dialogs_zaton, dialogs_hidden_threat; Living Legend gives
+-- its gauss rifle back for good), so they are listed here, like Nimble's trade-ins
+GIFTS = { "wpn_wincheaster1300_trapper", "wpn_abakan", "helm_protective", "wpn_sig550", "wpn_groza", "wpn_fort_snag",
+    "helm_hardhat_snag", "wpn_spas12", "helm_tactic", "specops_outfit", "wpn_pkm_zulus", "wpn_gauss_quest" }
+
+-- the communities whose bodies GAMMA's death_manager fills from its item lists, and the ranks
+-- of its sections (<community>[_private][_<rank>])
+local CORPSE_COMMS = { "stalker", "dolg", "freedom", "bandit", "army", "zombied", "ecolog", "killer", "monolith", "csky",
+    "renegade", "greh", "isg", "greh_npc", "army_npc" }
+
+local turns_up     -- item section -> { trader, corpse, task, gift, craft, homestead = true; story = { name, ... } }
+
+local function mark_up(sec, kind, name)
+    if not (sec and sec ~= "" and ini_sys:section_exist(sec)) then return end
+    turns_up[sec] = turns_up[sec] or {}
+    local t = turns_up[sec]
+    if kind == "story" then
+        t.story = t.story or {}
+        if name then t.story[#t.story + 1] = name end
+    else
+        t[kind] = true
+    end
+end
+
+local function build_turns_up()
+    turns_up = {}
+    -- Traders: a config some NPC's logic names (the census's [arsenal_trade]) stocks what its
+    -- [trader] buy_supplies sections list with a count and a chance above zero, as trade_manager
+    -- and the engine do; its sell_condition sections hide what they list without a value (GAMMA's
+    -- presets hide every gun, suit and helmet that way, so traders sell knives and addons)
+    local c = census()
+    for _, l in ipairs(c and lines(c, "arsenal_trade") or {}) do
+        local ok, ini = pcall(ini_file, "items\\trade\\" .. l.k .. ".ltx")
+        if ok and ini and ini:section_exist("trader") then
+            local hidden
+            for _, s in ipairs(condlist_sections(ini:r_string_ex("trader", "sell_condition"))) do
+                local d = {}
+                for _, x in ipairs(lines(ini, s)) do
+                    if x.v == nil or x.v:match("^%s*$") then d[x.k] = true end
+                end
+                if hidden == nil then
+                    hidden = d
+                else
+                    for k in pairs(hidden) do
+                        if not d[k] then hidden[k] = nil end
+                    end
+                end
+            end
+            hidden = hidden or {}
+            for _, sup in ipairs(condlist_sections(ini:r_string_ex("trader", "buy_supplies"))) do
+                for _, x in ipairs(lines(ini, sup)) do
+                    local v = fields(x.v, ",")
+                    if (tonumber(v[1]) or 0) > 0 and (tonumber(v[2]) or 0) > 0 and not hidden[x.k] then
+                        mark_up(x.k, "trader")
+                    end
+                end
+            end
+        end
+    end
+    -- Story characters' gear (the census's [arsenal_supplies]: name strings)
+    for _, l in ipairs(c and lines(c, "arsenal_supplies") or {}) do
+        for _, n in ipairs(fields(l.v, ",")) do
+            mark_up(l.k, "story", n ~= "" and n or nil)
+        end
+    end
+    -- Corpses' extra loot (death_manager): an item of a community's lists with a chance above
+    -- zero, which [item_count] lets a body hold at least one of
+    local death = itms_manager and itms_manager.ini_death
+    if death then
+        local most = {}
+        for _, x in ipairs(lines(death, "item_count")) do
+            local v = fields(x.v, ",")
+            most[x.k] = tonumber(v[2] ~= "" and v[2] or v[1]) or 0
+        end
+        for _, comm in ipairs(CORPSE_COMMS) do
+            for _, pv in ipairs({ "", "_private" }) do
+                for _, r in ipairs({ "", "_novice", "_trainee", "_experienced", "_professional", "_veteran", "_expert",
+                    "_master", "_legend" }) do
+                    for _, x in ipairs(lines(death, comm .. pv .. r)) do
+                        if (tonumber(fields(x.v, ",")[1]) or 0) > 0 and (most[x.k] or 0) >= 1 then
+                            mark_up(x.k, "corpse")
+                        end
+                    end
+                end
+            end
+        end
+    end
+    -- Tasks: the items their effects reward (=reward_item, =reward_random_item), and the gun a
+    -- task gives its hostile squad (task_loadout_other), from task_manager's configs
+    local tasks = task_manager and task_manager.task_ini
+    if tasks then
+        tasks:section_for_each(function(sec)
+            for _, x in ipairs(lines(tasks, sec)) do
+                if x.k == "task_loadout_other" then
+                    mark_up((x.v or ""):match("^%s*([%w_%.%-]+)"), "task")
+                end
+                for _, effect in ipairs({ "reward_item%(([^%)]*)%)", "reward_random_item%(([^%)]*)%)" }) do
+                    for args in (x.v or ""):gmatch(effect) do
+                        for _, a in ipairs(fields(args, ":")) do
+                            mark_up(a, "task")
+                        end
+                    end
+                end
+            end
+        end)
+    end
+    -- the guns the pump station's guards carry ({ gun, ammo } in tasks_pump_station_defense's
+    -- _GUNS_FOR_GUARDS)
+    local ps = tasks_pump_station_defense
+    local guards = upvalue(ps and ps.spawn_and_set, "_GUNS_FOR_GUARDS")
+    for _, g in ipairs(type(guards) == "table" and guards or {}) do
+        if type(g) == "table" and type(g[1]) == "string" then mark_up(g[1], "task") end
+    end
+    -- story gifts
+    for _, g in ipairs(GIFTS) do
+        mark_up(g, "gift")
+    end
+    -- Homestead's stash loot when a treasure roll comes up empty (its gamma_yellow_loot: a list
+    -- of sections per tier)
+    local hs = stalker_camp_builder
+    local yl = upvalue(hs and hs.generate_gamma_stash_loot, "gamma_yellow_loot")
+    for _, tier in pairs(type(yl) == "table" and yl or {}) do
+        for _, s in ipairs(type(tier) == "table" and tier or {}) do
+            if type(s) == "string" then mark_up(s, "homestead") end
+        end
+    end
+    -- Crafting: a workshop recipe's result (x_<item> in items\settings\craft.ltx's sections)
+    local craft = itms_manager and itms_manager.ini_craft
+    if craft then
+        craft:section_for_each(function(sec)
+            for _, x in ipairs(lines(craft, sec)) do
+                local item = x.k:match("^x_(.+)$")
+                if item then mark_up(item, "craft") end
+            end
+        end)
+    end
+end
+
+-- how an item section turns up besides what the rest of this script reads: { trader, corpse,
+-- task, gift, craft, homestead = true; story = { name string, ... } }, or nil
+function turns_up_as(sec)
+    if not turns_up then build_turns_up() end
+    return turns_up[sec]
+end
+
 -- Stashes (Grok's stash overhaul, treasure_manager.script). An item in [possible_items] that
 -- this game's economy does not bar, with a kind, a tier (grok_items_tier.ltx) and a price,
 -- goes into a stash when math.random(1, 100) is below its kind's chance times the tier's
@@ -989,6 +1391,7 @@ end
 -- levels (its local blacklisted_maps).
 STASH_LEVELS = 3
 local stashed, stashed_eco     -- gun model -> { [tier] = true }, and the economy it was built for
+local stashed_secs             -- the sections stashes hold
 
 local function economy()
     local ok, eco = pcall(function() return game_difficulties.get_eco_factor("type") end)
@@ -996,7 +1399,7 @@ local function economy()
 end
 
 local function build_stashed(eco)
-    stashed, stashed_eco = {}, eco
+    stashed, stashed_eco, stashed_secs = {}, eco, {}
     local tm = treasure_manager
     local ini, tiers = tm and tm.ini_treasure, tm and tm.ini_tiers
     if not (ini and tiers) then return end
@@ -1016,10 +1419,17 @@ local function build_stashed(eco)
                 if chance and multi and chance * multi > 1 then
                     stashed[e] = stashed[e] or {}
                     stashed[e][tier] = true
+                    stashed_secs[sec] = true
                 end
             end
         end
     end
+end
+
+-- the stash table for this game's economy, built anew when the economy changed
+local function stash_ready()
+    local eco = economy()
+    if not stashed or stashed_eco ~= eco then build_stashed(eco) end
 end
 
 -- Whether stashes hold a gun model: nil if they never do, else the levels whose stashes
@@ -1028,8 +1438,7 @@ end
 function stashes(sec)
     local e = entry_for(sec)
     if not e then return nil end
-    local eco = economy()
-    if not stashed or stashed_eco ~= eco then build_stashed(eco) end
+    stash_ready()
     local tiers = stashed[e]
     if not tiers then return nil end
     local tm = treasure_manager
@@ -1058,7 +1467,7 @@ end
 
 -- Guns a kit makes of another gun model: a kit in a gun's scopes whose combination is a gun
 -- model of its own in the catalog (one that plays as the gun is in its Accessories already)
-local made     -- gun model -> { { from = the gun's name, kit = the kit's name }, ... }
+local made     -- gun model -> { { from = the gun's name, kit = the kit's name, base = the gun's model, kit_sec }, ... }
 
 local function build_made()
     made = {}
@@ -1075,7 +1484,7 @@ local function build_made()
                         if key and not seen[key] then
                             seen[key] = true
                             made[m.entry] = made[m.entry] or {}
-                            table.insert(made[m.entry], { from = v.name, kit = kit.name })
+                            table.insert(made[m.entry], { from = v.name, kit = kit.name, base = e, kit_sec = k })
                         end
                     end
                 end
@@ -1208,6 +1617,7 @@ RISK_FAMILIES = {
 -- the card's order; none without R.I.S.K. or for a stat the card formulas cannot compute
 function risk_enhancements(sec)
     local out = {}
+    if is_armor(sec) then return out end
     local p = params(sec)
     for _, f in ipairs(RISK_FAMILIES) do
         local g = "risk_up_gr_wpn_" .. f.family
@@ -1346,6 +1756,266 @@ function repair_kits(sec)
     return out
 end
 
+---------------------------------------------------------------------------------------------
+-- Armor: suits and helmets. Their stat card is utils_ui.stats_table.outfit as GAMMA sets it
+-- up (Accurate Defense Values' ish_item_stats): grok_actor_damage_balancer's protections and
+-- BR class, Outfits Affect Movespeed's speed, the game's own radiation, belt slots and carry
+-- weight. GAMMA's functions read a live suit, so stand-ins here read the same values from the
+-- section, kept as the engine keeps them (CustomOutfit.cpp, ActorHelmet.cpp): protections and
+-- bone armor are float32 and upgrades add to them in float32, or a value lands a point off;
+-- the card's burn is light burn, copied from burn when the suit loads, which no upgrade moves.
+---------------------------------------------------------------------------------------------
+
+-- a number as a float32: round to nearest, ties to even
+function f32(x)
+    if x == 0 or x ~= x then return x end
+    local m, e = math.frexp(x)
+    m = m * 16777216
+    local r = math.floor(m + 0.5)
+    if r - m == 0.5 and r % 2 == 1 then r = r - 1 end
+    return math.ldexp(r / 16777216, e)
+end
+
+PROTECTIONS = { "burn_protection", "shock_protection", "chemical_burn_protection", "radiation_protection",
+    "telepatic_protection", "wound_protection", "strike_protection", "explosion_protection" }
+
+-- the armor a bones profile gives a bone: the second number of its line ("koeff, armor, ..."),
+-- or of the profile's "default" line for a bone it does not list
+local function bone_armor(profile, bone)
+    if not (profile and ini_sys:section_exist(profile)) then return 0 end
+    local s = ini_sys:r_string_ex(profile, bone) or ini_sys:r_string_ex(profile, "default")
+    return tonumber(fields(s, ",")[2]) or 0
+end
+
+-- an upgrade's changes added to a suit's values, as the engine adds them: bones_koeff_protection_add
+-- adds its profile's armor bone by bone
+local function add_upgrade(p, ps)
+    local add = ini_sys:r_string_ex(ps, "bones_koeff_protection_add")
+    if add then
+        p.armor = f32(p.armor + f32(bone_armor(add, p.bone)))
+    end
+    for _, k in ipairs(PROTECTIONS) do
+        local d = ini_sys:r_float_ex(ps, k)
+        if d then p[k] = f32(p[k] + f32(d)) end
+    end
+    p.artefact_count = p.artefact_count + (ini_sys:r_float_ex(ps, "artefact_count") or 0)
+    p.additional_inventory_weight = p.additional_inventory_weight + (ini_sys:r_float_ex(ps, "additional_inventory_weight") or 0)
+end
+
+-- A suit's or helmet's values as the engine keeps them: its own, plus the upgrades it ships
+-- with (installed_upgrades). `armor` is the bone armor the card shows for bullets: the spine's,
+-- a helmet's head.
+function armor_params(sec)
+    local p = { sec = sec, bone = is_helmet(sec) and "bip01_head" or "bip01_spine" }
+    p.armor = f32(bone_armor(ini_sys:r_string_ex(sec, "bones_koeff_protection"), p.bone))
+    for _, k in ipairs(PROTECTIONS) do
+        p[k] = f32(ini_sys:r_float_ex(sec, k) or 0)
+    end
+    p.light_burn = p.burn_protection
+    p.artefact_count = ini_sys:r_float_ex(sec, "artefact_count") or 0
+    p.additional_inventory_weight = ini_sys:r_float_ex(sec, "additional_inventory_weight") or 0
+    for u in each_of(sec, "installed_upgrades") do
+        local ps = ini_sys:section_exist(u) and ini_sys:r_string_ex(u, "section")
+        if ps and ini_sys:section_exist(ps) then add_upgrade(p, ps) end
+    end
+    return p
+end
+
+-- grok_actor_damage_balancer's adjuster and ini key for a hit type, as its get_adb_constants
+-- sets them (it sets them for every card row it fills, the same way)
+local function adb(name)
+    local g = grok_actor_damage_balancer
+    if not (g and g.get_adb_constants) then return nil end
+    g.get_adb_constants(name)
+    return tonumber(g.adjuster), g.defense
+end
+
+-- get_outfit_value for a section, as it returns for a live suit or helmet at full condition:
+-- for bullets the bone armor, else the hit type's protection (burn: light burn), times the
+-- hit type's adjuster, in percent rounded up
+function standin_outfit_value(obj, sec, name)
+    local adj, key = adb(name)
+    if not adj then return nil end
+    local p = armor_params(sec)
+    local v
+    if name == "FireWound" then
+        v = p.armor
+    elseif name == "Burn" then
+        v = p.light_burn
+    else
+        v = key and p[key]
+    end
+    return v and math.ceil(v * adj * 100)
+end
+
+-- utils_item.get_outfit_protection, which the card uses for radiation: a live suit's protection
+-- of a hit type (GetDefHitTypeProtection: burn here is burn, upgrades in); its section path
+-- leaves out the upgrades a suit ships with
+local PROTECTION_OF = { Burn = "burn_protection", Shock = "shock_protection", ChemicalBurn = "chemical_burn_protection",
+    Radiation = "radiation_protection", Telepatic = "telepatic_protection", Wound = "wound_protection",
+    Strike = "strike_protection", Explosion = "explosion_protection" }
+
+function standin_outfit_protection(obj, sec, name, def)
+    local k = PROTECTION_OF[name or ""]
+    if not k then return def or 0 end
+    return armor_params(sec)[k]
+end
+
+-- get_outfit_ap_res: the BR class, 1 - the section's hit_fraction_actor (GAMMA reads the
+-- section, so upgrades leave it)
+function standin_ap_res(obj, sec)
+    return 1 - (ini_sys:r_float_ex(sec, "hit_fraction_actor") or 1)
+end
+
+-- Outfits Affect Movespeed's get_outfit_speed: the item's line in outfit_speed.ltx [speed], 1
+-- for one it does not list
+local speeds
+function standin_outfit_speed(obj, sec)
+    if not speeds then
+        speeds = {}
+        local ok, ini = pcall(ini_file, "items\\settings\\outfit_speed.ltx")
+        for _, l in ipairs((ok and ini) and lines(ini, "speed") or {}) do
+            speeds[l.k] = tonumber(l.v)
+        end
+    end
+    return speeds[sec] or 1
+end
+
+-- what makes two suits or helmets of one name play differently: the values of their card and
+-- their weight
+function armor_signature(sec)
+    local p = armor_params(sec)
+    local t = { string.format("%.6g", p.armor), num(sec, "hit_fraction_actor") }
+    for _, k in ipairs(PROTECTIONS) do
+        t[#t + 1] = string.format("%.6g", p[k])
+    end
+    t[#t + 1] = string.format("%.6g", p.artefact_count)
+    t[#t + 1] = string.format("%.6g", p.additional_inventory_weight)
+    t[#t + 1] = num(sec, "inv_weight")
+    t[#t + 1] = string.format("%.6g", standin_outfit_speed(nil, sec))
+    return table.concat(t, "|")
+end
+
+-- The card's value of an armor row, as the card shows it, from a suit's values: the row's
+-- function as the stand-ins compute it, times the row's magnitude, rounded up; nil for a row
+-- these formulas do not cover
+local ARMOR_VALUE = {
+    fire_wound_protection = function(p) local a = adb("FireWound"); return a and math.ceil(p.armor * a * 100) end,
+    burn_protection = function(p) local a = adb("Burn"); return a and math.ceil(p.light_burn * a * 100) end,
+    shock_protection = function(p) local a = adb("Shock"); return a and math.ceil(p.shock_protection * a * 100) end,
+    chemical_burn_protection = function(p)
+        local a = adb("ChemicalBurn"); return a and math.ceil(p.chemical_burn_protection * a * 100)
+    end,
+    telepatic_protection = function(p)
+        local a = adb("Telepatic"); return a and math.ceil(p.telepatic_protection * a * 100)
+    end,
+    wound_protection = function(p) local a = adb("Wound"); return a and math.ceil(p.wound_protection * a * 100) end,
+    strike_protection = function(p) local a = adb("Strike"); return a and math.ceil(p.strike_protection * a * 100) end,
+    explosion_protection = function(p)
+        local a = adb("Explosion"); return a and math.ceil(p.explosion_protection * a * 100)
+    end,
+    radiation_protection = function(p, gr) return gr and math.ceil(p.radiation_protection * gr.magnitude) end,
+    artefact_count = function(p) return math.ceil(p.artefact_count) end,
+    additional_inventory_weight = function(p) return math.ceil(p.additional_inventory_weight) end,
+}
+
+-- the card's row definition for an armor stat
+local function armor_row(stat)
+    utils_ui.prepare_stats_table()
+    local t = utils_ui.stats_table and utils_ui.stats_table.outfit
+    return t and t[stat]
+end
+
+-- An upgrade tree's best path for one value: per group, the upgrade whose own change plus the
+-- best of the groups it opens adds most, or none; a group the item ships an upgrade in keeps
+-- it (its change is in the item's values already) and counts only what it opens. Returns the
+-- total and the change sections on the path.
+local function best_path(sec, gain)
+    local installed = {}
+    for u in each_of(sec, "installed_upgrades") do installed[u] = true end
+    local busy = {}
+    local function group(g)
+        if busy[g] or not ini_sys:section_exist(g) then return 0, {} end
+        busy[g] = true
+        local best, path, fixed = 0, {}, false
+        for el in each_of(g, "elements") do
+            if installed[el] then fixed = el end
+        end
+        for el in each_of(g, "elements") do
+            if ini_sys:section_exist(el) and (not fixed or el == fixed) then
+                local ps = ini_sys:r_string_ex(el, "section")
+                local own = (not fixed and ps and ini_sys:section_exist(ps)) and gain(ps) or 0
+                local sum, sub = own, {}
+                if own ~= 0 then sub[1] = ps end
+                for nxt in each_of(el, "effects") do
+                    local n, p = group(nxt)
+                    sum = sum + n
+                    for _, x in ipairs(p) do sub[#sub + 1] = x end
+                end
+                if sum > best then best, path = sum, sub end
+            end
+        end
+        busy[g] = nil
+        return best, path
+    end
+    local total, out = 0, {}
+    for g in each_of(sec, "upgrades") do
+        if not g:find(NOT_UPGRADES) then
+            local n, p = group(g)
+            total = total + n
+            for _, x in ipairs(p) do out[#out + 1] = x end
+        end
+    end
+    return total, out
+end
+
+-- what one upgrade adds to the value an armor row shows (none to light burn, BR class, speed)
+local ARMOR_GAIN = {
+    fire_wound_protection = function(ps, bone)
+        local add = ini_sys:r_string_ex(ps, "bones_koeff_protection_add")
+        return add and bone_armor(add, bone) or 0
+    end,
+}
+for _, k in ipairs(PROTECTIONS) do
+    if k ~= "burn_protection" then
+        ARMOR_GAIN[k] = function(ps) return ini_sys:r_float_ex(ps, k) or 0 end
+    end
+end
+ARMOR_GAIN.artefact_count = function(ps) return ini_sys:r_float_ex(ps, "artefact_count") or 0 end
+ARMOR_GAIN.additional_inventory_weight = function(ps) return ini_sys:r_float_ex(ps, "additional_inventory_weight") or 0 end
+
+-- An armor stat fully upgraded: the item's values with the upgrades of the path that adds most
+-- to it, as the engine adds them. Returns the maximum and the value as it is, or nil for a
+-- row the formulas here do not cover.
+function armor_max(sec, stat)
+    local f = ARMOR_VALUE[stat]
+    if not f then return nil end
+    local gr = armor_row(stat)
+    local p = armor_params(sec)
+    local base = f(p, gr)
+    if base == nil then return nil end
+    local gain = ARMOR_GAIN[stat]
+    if not gain then return base, base end
+    local _, path = best_path(sec, function(ps) return gain(ps, p.bone) end)
+    for _, ps in ipairs(path) do
+        add_upgrade(p, ps)
+    end
+    return math.max(base, f(p, gr) or base), base
+end
+
+-- The tags that tell suits or helmets of one name apart: their card's values, as "name value",
+-- in the card's order, then weight
+local function plain(s)
+    return (s or ""):gsub("%%c%[[^%]]*%]", ""):match("^%s*(.-)[%s:]*$")
+end
+
+local ARMOR_STANDIN = {
+    get_outfit_value = "standin_outfit_value",
+    get_outfit_protection = "standin_outfit_protection",
+    get_outfit_ap_res = "standin_ap_res",
+    get_outfit_speed = "standin_outfit_speed",
+}
+
 local STANDIN = {
     get_weapon_bspeed = "standin_bspeed",
     get_weapon_range = "standin_range",
@@ -1354,30 +2024,307 @@ local STANDIN = {
     get_weapon_recoil = "standin_recoil",
 }
 
--- The weapon stat card's rows in the card's order: { stat = key, gr = row definition }. With
--- a live weapon the card's own functions apply; without one a stand-in replaces any function
--- that needs it.
-function stat_rows(live)
+-- a card row whose function needs a live item, with a stand-in from the table in its place (the
+-- function's own arguments kept); a row that needs none as it is
+local function standin_row(gr, standin)
+    local f = gr.value_functor
+    local alt = f and standin[f[2]]
+    if not alt then return gr end
+    local g = {}
+    for k, v in pairs(gr) do g[k] = v end
+    g.value_functor = { "arsenal_data", alt, unpack(f, 3) }
+    return g
+end
+
+ARMOR_TAGGERS = {}
+for _, stat in ipairs({ "fire_wound_protection", "apres_modifier", "burn_protection", "shock_protection",
+    "chemical_burn_protection", "radiation_protection", "telepatic_protection", "wound_protection",
+    "strike_protection", "explosion_protection", "artefact_count", "additional_inventory_weight", "speed_modifier" }) do
+    ARMOR_TAGGERS[#ARMOR_TAGGERS + 1] = function(sec)
+        local gr = armor_row(stat)
+        if not gr then return nil end
+        local s = utils_ui.get_stats_string_value(nil, sec, standin_row(gr, ARMOR_STANDIN), stat)
+        s = s and plain(s):gsub("^%+", ""):gsub("%s+%%", "%%") or "0"
+        return string.format("%s %s", plain(game.translate_string(gr.name)), s)
+    end
+end
+ARMOR_TAGGERS[#ARMOR_TAGGERS + 1] = function(sec)
+    return string.format("%s %s", tostring(kg(weight(sec))), game.translate_string("st_kg"))
+end
+
+-- whether a listed section is a suit or helmet
+function is_armor(sec)
+    local e = get(sec)
+    return e ~= nil and ARMOR[e.cat] == true
+end
+
+-- The stat card's rows for a section in the card's order: { stat = key, gr = row definition },
+-- the weapon card's for a gun, the outfit card's for a suit or helmet. With a live item the
+-- card's own functions apply; without one a stand-in replaces any function that needs it.
+function stat_rows(live, sec)
     utils_ui.prepare_stats_table()
+    local armor = sec and is_armor(sec)
+    local standin = armor and ARMOR_STANDIN or STANDIN
     local rows = {}
-    for stat, gr in pairs(utils_ui.stats_table and utils_ui.stats_table.weapon or {}) do
-        local f = gr.value_functor
-        local alt = f and STANDIN[f[2]]
-        if alt and not live then
-            local g = {}
-            for k, v in pairs(gr) do g[k] = v end
-            g.value_functor = { "arsenal_data", alt }
-            gr = g
-        end
-        rows[#rows + 1] = { stat = stat, gr = gr }
+    for stat, gr in pairs(utils_ui.stats_table and utils_ui.stats_table[armor and "outfit" or "weapon"] or {}) do
+        rows[#rows + 1] = { stat = stat, gr = live and gr or standin_row(gr, standin) }
     end
     table.sort(rows, function(a, b) return (a.gr.index or 0) < (b.gr.index or 0) end)
     return rows
+end
+
+---------------------------------------------------------------------------------------------
+-- Whether an item ever turns up in this game, short of a console command: fighters carry it
+-- (or wear it, where bodies drop armor), stashes hold it, a new-game kit has it, or it turns
+-- up another way (turns_up_as); or it comes of what does: a trade-in with Nimble for a gun that
+-- turns up, a kit that turns up on a gun that does, the Armor Exchange for a suit that does.
+-- The Wish Granter's riches wish, which hands out nearly every item at the end of the story,
+-- does not count.
+---------------------------------------------------------------------------------------------
+
+local addon_ok     -- addon section -> true when it turns up
+local rolled       -- a gun section a fighter's gun becomes with a kit fitted -> the gun's section
+local reach        -- model -> true when it turns up
+
+-- Addons: what turns up on its own (traders, crafting, story characters), what a new-game kit
+-- has, and what fighters' and stashes' guns carry. A loadout line that asks for a scope picks
+-- one of the gun's scopes but those npc_loadouts.ltx keeps off NPC guns ([scope_blacklist],
+-- [weapon_scope_blacklist]) and fits it when the gun has a combination with it (<gun>_<scope>):
+-- a scope comes off again, a kit does not (its combination is a gun of its own, its own parent),
+-- so the fighter carries that gun instead. A line that asks for a launcher or suppressor fits
+-- its mount's (xrs_rnd_npc_loadout); a stash gun may come with any mount's (treasure_manager).
+local function build_addons()
+    addon_ok, rolled = {}, {}
+    if not turns_up then build_turns_up() end
+    for s in pairs(turns_up) do
+        addon_ok[s] = true
+    end
+    local ok, kit_ini = pcall(ini_file, "items\\settings\\new_game_loadouts.ltx")
+    for _, f in ipairs((ok and kit_ini) and FACTIONS or {}) do
+        for _, l in ipairs(lines(kit_ini, f .. "_loadout")) do
+            addon_ok[l.k] = true
+        end
+    end
+    local okn, npc = pcall(ini_file, "items\\settings\\npc_loadouts\\npc_loadouts.ltx")
+    local black, per_gun = {}, {}
+    if okn and npc then
+        for _, x in ipairs(lines(npc, "scope_blacklist")) do
+            black[x.k] = true
+        end
+        for _, x in ipairs(lines(npc, "weapon_scope_blacklist")) do
+            per_gun[x.k] = per_gun[x.k] or {}
+            for _, s in ipairs(fields(x.v, ",")) do per_gun[x.k][s] = true end
+        end
+    end
+    if not carried then build_carried() end
+    stash_ready()
+    -- the mounts of a gun section whose attachment bits allow them (1 scope, 2 launcher, 4 suppressor)
+    local MOUNTS = { { 1, "scope_status", "scope_name" }, { 2, "grenade_launcher_status", "grenade_launcher_name" },
+        { 4, "silencer_status", "silencer_name" } }
+    local function mounts(s, bits)
+        for _, m in ipairs(MOUNTS) do
+            local n = bit.band(bits, m[1]) ~= 0 and status(s, m[2]) == 2 and ini_sys:r_string_ex(s, m[3])
+            if n then addon_ok[n] = true end
+        end
+    end
+    for s, bits in pairs(npc_attach) do
+        if bit.band(bits, 1) ~= 0 then
+            for k in each_of(s, "scopes") do
+                local combo = s .. "_" .. k
+                if not black[k] and not (per_gun[s] and per_gun[s][k]) and ini_sys:section_exist(combo) then
+                    local p = ini_sys:r_string_ex(combo, "parent_section")
+                    if p and p ~= combo then
+                        addon_ok[k] = true
+                    else
+                        rolled[combo] = s
+                    end
+                end
+            end
+        end
+        mounts(s, bits)
+    end
+    for s in pairs(stashed_secs) do
+        mounts(s, 7)
+    end
+end
+
+-- whether an addon (a scope, suppressor, launcher, laser module or kit) turns up
+function addon_turns_up(sec)
+    if not addon_ok then build_addons() end
+    return addon_ok[sec] == true
+end
+
+-- every way a model turns up besides its fighters, stashes and new-game kits:
+-- { trader, corpse, task, gift, craft, homestead = true; story = { name string, ... };
+-- rolled = { the guns fighters carry it as, with a kit fitted, ... } }
+local model_up
+function turns_up_model(sec)
+    local e = entry_for(sec)
+    if not e then return {} end
+    if not model_up then
+        model_up = {}
+        if not addon_ok then build_addons() end
+        for combo, base in pairs(rolled) do
+            local m, n = entry_for(combo), shown_name(base)
+            if m and n then
+                model_up[m] = model_up[m] or {}
+                model_up[m].rolled = model_up[m].rolled or {}
+                table.insert(model_up[m].rolled, n)
+            end
+        end
+        for s, t in pairs(turns_up) do
+            local m = entry_for(s)
+            if m then
+                model_up[m] = model_up[m] or {}
+                local u = model_up[m]
+                for k, v in pairs(t) do
+                    if k == "story" then
+                        u.story = u.story or {}
+                        for _, n in ipairs(v) do u.story[#u.story + 1] = n end
+                    else
+                        u[k] = true
+                    end
+                end
+            end
+        end
+    end
+    return model_up[e] or {}
+end
+
+local function build_reach()
+    reach = {}
+    build()
+    if not addon_ok then build_addons() end
+    for _, c in ipairs(CATEGORIES) do
+        for _, e in ipairs(by_cat[c]) do
+            local worn_drops = ARMOR[c] and #worn_by(e.sec) > 0 and not (armor_drop(e.sec) or {}).off
+            if #carriers(e.sec) > 0 or stashes(e.sec) or #starting_kits(e.sec) > 0 or worn_drops
+                or next(turns_up_model(e.sec)) then
+                reach[e] = true
+            end
+        end
+    end
+    -- what comes of what turns up, until nothing more does
+    local conv = grok_armor_convert
+    local more = true
+    while more do
+        more = false
+        local function add(e)
+            if e and not reach[e] then
+                reach[e] = true
+                more = true
+            end
+        end
+        for _, t in ipairs(NimbleTrade and NIMBLE or {}) do
+            if tonumber(NimbleTrade[t.cost]) and ini_sys:section_exist(t.gives) then
+                for _, s in ipairs(t.takes) do
+                    local m = ini_sys:section_exist(s) and entry_for(s)
+                    if m and reach[m] then add(entry_for(t.gives)) end
+                end
+            end
+        end
+        for _, c in ipairs(CATEGORIES) do
+            for _, e in ipairs(by_cat[c]) do
+                if reach[e] then
+                    for _, v in ipairs(e.variants) do
+                        for _, s in ipairs(v.members) do
+                            for k in each_of(s, "scopes") do
+                                local m = addon_ok[k] and variant_of(s .. "_" .. k)
+                                if m then add(m.entry) end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+        for _, x in ipairs(conv and EXCHANGE or {}) do
+            if #givers(x.dialog) > 0 then
+                for _, name in ipairs(x.tables) do
+                    local t = conv[name]
+                    local reward = type(t) == "table" and tonumber(t.cost) and t.reward
+                    local r = reward and ini_sys:section_exist(reward) and entry_for(reward)
+                    if r and not reach[r] then
+                        for s, v in pairs(t) do
+                            local m = v == true and ini_sys:section_exist(s) and entry_for(s)
+                            if m and reach[m] then
+                                add(r)
+                                break
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+end
+
+-- whether a model turns up in this game (any of its sections; a scoped or silenced combination
+-- counts as its gun)
+function obtainable(sec)
+    local e = entry_for(sec)
+    if not e then return false end
+    if not reach then build_reach() end
+    return reach[e] == true
+end
+
+-- The models a faction's fighters carry or wear, what turns up only: { { e, ranks = { [rank or
+-- "special"] = chance }, armor = true for a suit or helmet }, ... }, the likeliest first
+function faction_gear(f)
+    build()
+    if not carried then build_carried() end
+    if not worn then build_worn() end
+    local out = {}
+    for _, src in ipairs({ { carried, false }, { worn, true } }) do
+        for e, by in pairs(src[1]) do
+            local r = by[f]
+            if r and next(r) and obtainable(e.sec) and not (src[2] and (armor_drop(e.sec) or {}).off) then
+                local best = 0
+                for _, c in pairs(r) do best = math.max(best, c) end
+                out[#out + 1] = { e = e, ranks = r, armor = src[2] or nil, best = best }
+            end
+        end
+    end
+    table.sort(out, function(a, b)
+        if a.best ~= b.best then return a.best > b.best end
+        return a.e.name < b.e.name
+    end)
+    return out
+end
+
+-- the models a faction's new-game kit offers
+function kit_models(f)
+    if not kits then build_kits() end
+    local out = {}
+    for e, list in pairs(kits) do
+        for _, k in ipairs(list) do
+            if k.faction == f then
+                out[#out + 1] = e
+                break
+            end
+        end
+    end
+    return out
+end
+
+-- Whether a model is special: it turns up, but no ordinary fighter carries or wears it and no
+-- stash holds it (a kit, a trade-in, a special squad, a story character, a task or gift does):
+-- a gunsmith's word of mouth
+function special(sec)
+    local e = entry_for(sec)
+    if not (e and obtainable(e.sec)) then return false end
+    for _, c in ipairs(carriers(e.sec)) do
+        if #c.ranks > 0 then return false end
+    end
+    for _, c in ipairs(ARMOR[e.cat] and worn_by(e.sec) or {}) do
+        if #c.ranks > 0 then return false end
+    end
+    return stashes(e.sec) == nil
 end
 
 -- forget the catalog (a new game, or a test)
 function reset()
     by_var, by_cat, total = nil, nil, 0
     trees = {}
-    carried, stashed, stashed_eco, made, kits = nil, nil, nil, nil, nil
+    carried, stashed, stashed_eco, made, kits, worn = nil, nil, nil, nil, nil, nil
+    speeds, turns_up, addon_ok, rolled, reach, model_up = nil, nil, nil, nil, nil, nil
 end

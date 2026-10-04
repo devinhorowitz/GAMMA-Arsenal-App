@@ -96,10 +96,48 @@ function ArsenalPDA:__finalize()
     end
 end
 
--- every time the page is opened: found guns may have changed
+---------------------------------------------------------------------------------------------
+-- what the player knows (arsenal_intel): with the jailbreak, or without the module, everything
+---------------------------------------------------------------------------------------------
+local function immersive()
+    return arsenal_intel ~= nil and not arsenal_intel.jailbroken()
+end
+
+local function listed(e)
+    return not arsenal_intel or arsenal_intel.listed(e)
+end
+
+local function studied(e)
+    return not arsenal_intel or arsenal_intel.studied(e)
+end
+
+local function is_new(e)
+    return arsenal_intel ~= nil and arsenal_intel.is_new(e)
+end
+
+-- a mark after a name: something new is in it
+local function new_mark()
+    return " " .. theme.markup("warn") .. "*"
+end
+
+-- every time the page is opened: what is found and known may have changed. Counts go over what
+-- turns up in this game only.
 function ArsenalPDA:Reset()
-    local total, found = arsenal_data.count(), arsenal_collection.count_found(nil)
-    self.found_count:SetText(string.format(game.translate_string("st_arsenal_found_count"), found, total))
+    local total, found, known = 0, 0, 0
+    for _, c in ipairs(arsenal_data.CATEGORIES) do
+        for _, e in ipairs(arsenal_data.list(c)) do
+            if arsenal_data.obtainable(e.sec) then
+                total = total + 1
+                if arsenal_collection.entry_found(e) then found = found + 1 end
+                if listed(e) then known = known + 1 end
+            end
+        end
+    end
+    if immersive() then
+        self.found_count:SetText(string.format(game.translate_string("st_arsenal_known_count"), known, found, total))
+    else
+        self.found_count:SetText(string.format(game.translate_string("st_arsenal_found_count"), found, total))
+    end
     self:FillCategories()
     self:FillWeapons()
 end
@@ -141,15 +179,24 @@ function ArsenalPDA:OnFoundOnly()
     self:FillWeapons()
 end
 
+-- the categories with something that turns up (with the jailbreak, anything), each with how many
+-- of what turns up are found, and a mark when something listed in it is new
 function ArsenalPDA:FillCategories()
     self.cat_list:RemoveAll()
     local sel
     for _, c in ipairs(arsenal_data.CATEGORIES) do
         local list = arsenal_data.list(c)
-        if #list > 0 then
-            local count = string.format("%d/%d", arsenal_collection.count_found(list), #list)
-            self.cat_list:AddExistingItem(ArsenalRow(self.xml, c,
-                game.translate_string("st_arsenal_cat_" .. c), "body", count))
+        local n, f, fresh = 0, 0, false
+        for _, e in ipairs(list) do
+            if arsenal_data.obtainable(e.sec) then
+                n = n + 1
+                if arsenal_collection.entry_found(e) then f = f + 1 end
+            end
+            if listed(e) and is_new(e) then fresh = true end
+        end
+        if n > 0 or (#list > 0 and not immersive()) then
+            local name = game.translate_string("st_arsenal_cat_" .. c) .. (fresh and new_mark() or "")
+            self.cat_list:AddExistingItem(ArsenalRow(self.xml, c, name, "body", string.format("%d/%d", f, n)))
             if c == self.cat then
                 sel = self.cat_list:GetSize() - 1
             end
@@ -167,15 +214,18 @@ function ArsenalPDA:OnCategory()
     end
 end
 
--- the gun models of the category, by name; a model is found once any of its variants is
+-- the models of the category the player knows of (with the jailbreak, all), by name; a model is
+-- found once any of its variants is; one that never turns up (listed only with the jailbreak)
+-- is darker still; a new one is marked
 function ArsenalPDA:FillWeapons()
     self.wpn_list:RemoveAll()
     local only = self.found_only:GetCheck()
     local keep, first
     for _, e in ipairs(arsenal_data.list(self.cat)) do
         local found = arsenal_collection.entry_found(e) ~= nil
-        if found or not only then
-            self.wpn_list:AddExistingItem(ArsenalRow(self.xml, e.sec, e.name, found and "body" or "dim"))
+        if listed(e) and (found or not only) then
+            local role = (not arsenal_data.obtainable(e.sec) and "never") or (found and "body") or "dim"
+            self.wpn_list:AddExistingItem(ArsenalRow(self.xml, e.sec, e.name .. (is_new(e) and new_mark() or ""), role))
             local idx = self.wpn_list:GetSize() - 1
             if e.sec == self.sec then keep = idx end
             first = first or e.sec
@@ -251,7 +301,7 @@ local MAXED = { accuracy = true, handling = true, fire_rate = true, ammo_mag_siz
 -- a section and stat goes to the log.
 local warned = {}
 local function max_text(e, row, card)
-    if row.gr.track or not MAXED[row.stat] then return nil end
+    if row.gr.track or not (MAXED[row.stat] or arsenal_data.ARMOR[e.cat]) then return nil end
     local best, base
     for _, v in ipairs(e.variants) do
         local ok, m, b = pcall(arsenal_data.max_stat, v.sec, row.stat)
@@ -383,6 +433,13 @@ function ArsenalPDA:ShowEntry(sec)
     local xml = self.xml
     local e = arsenal_data.get(sec)
     if not e then return end
+    -- what the player knows of it (arsenal_intel): its stats and what fits it once studied;
+    -- where to find it as far as he has learned, or all of it with the jailbreak or once a
+    -- technician has told him
+    local know, imm = studied(e), immersive()
+    local fx = imm and arsenal_intel.facts(e) or {}
+    local full = not imm or (fx.ways and fx.ways.gunsmith) or false
+    if arsenal_intel then arsenal_intel.viewed(e) end
     local shown = e.variants[1]
     for _, v in ipairs(e.variants) do
         if arsenal_collection.is_found(v.sec) then
@@ -405,10 +462,14 @@ function ArsenalPDA:ShowEntry(sec)
     local line = xml:InitTextWnd("entry_found", entry)
     line:SetWndPos(vector2():set(0, name:GetWndPos().y + math.max(name:GetHeight(), NAME_H)))
     local at = arsenal_collection.entry_found(e)
+    local learned = imm and not at and arsenal_intel.learned(e)
     if at then
         local d, where = date_place(at)
         line:SetText(string.format(game.translate_string("st_arsenal_found_on"), d, where))
         line:SetTextColor(theme.argb("good"))
+    elseif learned and learned.at then
+        line:SetText(string.format(game.translate_string("st_arsenal_learned_on"), (date_place(learned.at)),
+            arsenal_intel.describe(learned.how)))
     else
         line:SetText(game.translate_string("st_arsenal_not_found"))
     end
@@ -451,10 +512,15 @@ function ArsenalPDA:ShowEntry(sec)
     end
     up_calibres, up_modes = distinct(up_calibres), distinct(up_modes)
 
-    -- the game's own stat card, row by row, where the inventory shows one (a knife has none)
+    -- the game's own stat card, row by row, where the inventory shows one (a knife has none);
+    -- a suit or helmet has the outfit card and no fire modes
+    local armor = arsenal_data.ARMOR[e.cat] == true
     rule()
-    if arsenal_data.has_stat_card(shown.sec) then
-        for _, row in ipairs(arsenal_data.stat_rows(false)) do
+    if not know then
+        text("entry_line", game.translate_string("st_arsenal_not_studied"), "dim")
+    end
+    if know and arsenal_data.has_stat_card(shown.sec) then
+        for _, row in ipairs(arsenal_data.stat_rows(false, shown.sec)) do
             local st = self:StatRow(entry, e, shown, row)
             if st then
                 st:SetWndPos(vector2():set(0, y))
@@ -462,6 +528,8 @@ function ArsenalPDA:ShowEntry(sec)
             end
         end
         y = y + GAP
+    end
+    if know and not armor and arsenal_data.has_stat_card(shown.sec) then
         local modes = each(arsenal_data.fire_modes)
         local line_modes = game.translate_string("st_arsenal_fire_modes") .. ": " .. table.concat(modes, "; ")
         local has = {}
@@ -476,18 +544,20 @@ function ArsenalPDA:ShowEntry(sec)
         end
         text("entry_line", line_modes)
     end
-    text("entry_line", string.format("%s: %s %s", game.translate_string("st_prop_weight"),
-        joined(each(function(s) return tostring(arsenal_data.kg(arsenal_data.weight(s))) end)),
-        game.translate_string("st_kg")))
+    if know then
+        text("entry_line", string.format("%s: %s %s", game.translate_string("st_prop_weight"),
+            joined(each(function(s) return tostring(arsenal_data.kg(arsenal_data.weight(s))) end)),
+            game.translate_string("st_kg")))
+    end
 
     -- R.I.S.K. enhancements, when it runs: per family, the stat with one enhancement on the
     -- shown variant as it ships, weakest to strongest, the worst bad roll after; a card stat
     -- only where the card formulas here give the card's own value, as for the max
-    local risk = safe(arsenal_data.risk_enhancements, shown.sec) or {}
+    local risk = know and safe(arsenal_data.risk_enhancements, shown.sec) or {}
     local risk_rows = {}
     if #risk > 0 then
         local card_rows = {}
-        for _, row in ipairs(arsenal_data.has_stat_card(shown.sec) and arsenal_data.stat_rows(false) or {}) do
+        for _, row in ipairs(arsenal_data.has_stat_card(shown.sec) and arsenal_data.stat_rows(false, shown.sec) or {}) do
             card_rows[row.stat] = row
         end
         for _, r in ipairs(risk) do
@@ -536,7 +606,7 @@ function ArsenalPDA:ShowEntry(sec)
     end
 
     -- the variants, each with when and where it was found
-    if #e.variants > 1 then
+    if know and #e.variants > 1 then
         y = y + GAP
         text("entry_heading", game.translate_string("st_arsenal_variants"))
         rule()
@@ -552,17 +622,27 @@ function ArsenalPDA:ShowEntry(sec)
         end
     end
 
-    -- where to find it: the factions whose fighters carry it (a row each, with their ranks,
-    -- the likeliest first), stashes, Nimble's trade-ins, a kit that makes it of another gun,
-    -- new-game kits
+    -- where to find it: the factions whose fighters carry or wear it (a row each, with their
+    -- ranks, the likeliest first; a suit's drop chance after), stashes, traders, story
+    -- characters, fighters' kit rolls, bodies' loot, tasks, story gifts, crafting, Homestead, the
+    -- Armor Exchange, Nimble's trade-ins, a kit that makes it of another gun, new-game kits. With
+    -- the jailbreak, or once a technician has told the player of it, all of it; else only what he
+    -- has learned: the factions and ranks he has seen carry it, the stashes and traders he has
+    -- seen it at, his own faction's new-game kit
     y = y + GAP
     text("entry_heading", game.translate_string("st_arsenal_where"))
     rule()
-    local carriers = safe(arsenal_data.carriers, shown.sec) or {}
-    local levels = safe(arsenal_data.stashes, shown.sec)
-    if #carriers > 0 then
-        text("entry_line", game.translate_string("st_arsenal_carried_by"), "dim")
-        for _, c in ipairs(carriers) do
+    local any = false
+    local function line(s, role)
+        text("entry_line", s, role)
+        any = true
+    end
+    if not arsenal_data.obtainable(e.sec) then
+        line(game.translate_string("st_arsenal_never"), "warn")
+    end
+    -- a row per faction: its name, and the ranks of its fighters that carry (or wear) it
+    local function faction_rows(rows)
+        for _, c in ipairs(rows) do
             local f = xml:InitTextWnd("where_faction", entry)
             f:SetWndPos(vector2():set(f:GetWndPos().x, y))
             f:SetText(game.translate_string("st_faction_" .. c.faction))
@@ -574,47 +654,142 @@ function ArsenalPDA:ShowEntry(sec)
             y = y + math.max(f:GetHeight(), r:GetHeight()) + 2
         end
     end
+    -- the rows the player knows of: a faction's, with the ranks he has seen carry it
+    local function known_rows(rows, seen)
+        if full then return rows end
+        local out = {}
+        for _, c in ipairs(rows) do
+            local by = seen and seen[c.faction]
+            if by then
+                local ranks = {}
+                for _, r in ipairs(c.ranks) do
+                    if by[r] then ranks[#ranks + 1] = r end
+                end
+                local special = (c.special and by.special) or nil
+                if #ranks > 0 or special then
+                    out[#out + 1] = { faction = c.faction, ranks = ranks, special = special }
+                end
+            end
+        end
+        return out
+    end
+    local carriers = known_rows((not armor) and safe(arsenal_data.carriers, shown.sec) or {}, fx.carried)
+    local worn = known_rows(armor and safe(arsenal_data.worn_by, shown.sec) or {}, fx.worn)
+    if #carriers > 0 then
+        line(game.translate_string("st_arsenal_carried_by"), "dim")
+        faction_rows(carriers)
+    end
+    -- a suit or helmet: who wears it, then how it drops (GAMMA's chance, and the player's
+    -- rank it needs with progressive drops)
+    if #worn > 0 then
+        line(game.translate_string("st_arsenal_worn_by"), "dim")
+        faction_rows(worn)
+        local d = safe(arsenal_data.armor_drop, shown.sec)
+        if d and d.off then
+            text("entry_line", game.translate_string("st_arsenal_drop_off"), "dim")
+        elseif d and d.chance then
+            local pct = (d.chance == math.floor(d.chance)) and string.format("%d%%", d.chance)
+                or string.format("%.1f%%", d.chance)
+            local rank = d.rank and safe(arsenal_data.rank_at, d.rank)
+            text("entry_line", rank and string.format(game.translate_string("st_arsenal_drop_rank"), pct,
+                tostring(d.rank), game.translate_string("st_rank_" .. rank))
+                or string.format(game.translate_string("st_arsenal_drop_chance"), pct), "dim")
+        end
+    end
+    -- stashes: the levels whose stashes most often draw it; else those the player has seen it at
+    local levels = full and safe(arsenal_data.stashes, shown.sec)
     if levels then
         local names = {}
         for _, l in ipairs(levels) do names[#names + 1] = game.translate_string(l) end
-        text("entry_line", #names > 0
-            and string.format(game.translate_string("st_arsenal_stashes_at"), table.concat(names, ", "))
+        line(#names > 0 and string.format(game.translate_string("st_arsenal_stashes_at"), table.concat(names, ", "))
             or game.translate_string("st_arsenal_stashes"))
+    elseif fx.stash then
+        local names = {}
+        for l in pairs(fx.stash) do names[#names + 1] = game.translate_string(l) end
+        table.sort(names)
+        line(string.format(game.translate_string("st_arsenal_stashes_seen"), table.concat(names, ", ")))
     end
-    if #carriers == 0 and not levels then
-        text("entry_line", game.translate_string("st_arsenal_no_source"), "dim")
+    -- the other ways it turns up
+    local up = full and safe(arsenal_data.turns_up_model, shown.sec) or {}
+    if up.trader then line(game.translate_string("st_arsenal_sold_by")) end
+    if fx.sold then
+        local names = {}
+        for n in pairs(fx.sold) do names[#names + 1] = n end
+        table.sort(names)
+        line(string.format(game.translate_string("st_arsenal_sold_at"), table.concat(names, ", ")))
     end
-    -- Nimble: what he takes for this gun first, then what he gives for it
-    local from, gets = {}, {}
-    for _, v in ipairs(e.variants) do
-        local nb = safe(arsenal_data.nimble, v.sec)
-        for _, t in ipairs(nb and nb.from or {}) do
-            from[#from + 1] = string.format(game.translate_string("st_arsenal_nimble_from"),
-                table.concat(t.names, " / "), tostring(t.cost))
+    if up.story then
+        local names = {}
+        for _, n in ipairs(up.story) do
+            local t = game.translate_string(n)
+            if t ~= n then names[#names + 1] = t end
         end
-        for _, t in ipairs(nb and nb.gets or {}) do
-            gets[#gets + 1] = string.format(game.translate_string("st_arsenal_nimble_gets"), t.name,
-                tostring(t.cost))
+        names = distinct(names)
+        line(#names > 0 and string.format(game.translate_string("st_arsenal_carried_story"), table.concat(names, ", "))
+            or game.translate_string("st_arsenal_carried_story_some"))
+    end
+    if up.rolled then
+        line(string.format(game.translate_string("st_arsenal_rolled"), table.concat(distinct(up.rolled), " / ")))
+    end
+    for _, w in ipairs({ { "corpse", "st_arsenal_in_bodies" }, { "task", "st_arsenal_from_tasks" },
+        { "gift", "st_arsenal_from_gift" }, { "craft", "st_arsenal_from_craft" },
+        { "homestead", "st_arsenal_from_homestead" } }) do
+        if up[w[1]] then line(game.translate_string(w[2])) end
+    end
+    if full then
+        -- the Armor Exchange: what its traders take for this suit first, then what they give for it
+        local ex = armor and safe(arsenal_data.exchange, shown.sec)
+        for _, x in ipairs(ex and ex.gets or {}) do
+            line(string.format(game.translate_string("st_arsenal_exchange_gets"), table.concat(x.traders, ", "),
+                tostring(x.count), tostring(x.cost), game.translate_string("st_faction_" .. x.faction)))
+        end
+        for _, x in ipairs(ex and ex.takes or {}) do
+            line(string.format(game.translate_string("st_arsenal_exchange_takes"), table.concat(x.traders, ", "),
+                x.name, tostring(x.cost), game.translate_string("st_faction_" .. x.faction)))
+        end
+        -- Nimble: what he takes for this gun first, then what he gives for it
+        local from, gets = {}, {}
+        for _, v in ipairs(e.variants) do
+            local nb = safe(arsenal_data.nimble, v.sec)
+            for _, t in ipairs(nb and nb.from or {}) do
+                from[#from + 1] = string.format(game.translate_string("st_arsenal_nimble_from"),
+                    table.concat(t.names, " / "), tostring(t.cost))
+            end
+            for _, t in ipairs(nb and nb.gets or {}) do
+                gets[#gets + 1] = string.format(game.translate_string("st_arsenal_nimble_gets"), t.name,
+                    tostring(t.cost))
+            end
+        end
+        for _, list in ipairs({ distinct(from), distinct(gets) }) do
+            for _, s in ipairs(list) do
+                line(s)
+            end
+        end
+        for _, mf in ipairs(safe(arsenal_data.made_from, shown.sec) or {}) do
+            line(string.format(game.translate_string("st_arsenal_made_from"), mf.from, mf.kit))
         end
     end
-    for _, list in ipairs({ distinct(from), distinct(gets) }) do
-        for _, s in ipairs(list) do
-            text("entry_line", s)
+    -- new-game kits: every faction's, or the player's own faction's as he knows it
+    local mine = (not full) and fx.ways and fx.ways.kit and arsenal_intel.player_faction()
+    for _, k in ipairs((full or mine) and safe(arsenal_data.starting_kits, shown.sec) or {}) do
+        local has = full
+        for _, f in ipairs(k.factions) do
+            if f == mine then has = true end
+        end
+        if has then
+            local who = factions_text(full and k.factions or { mine })
+            local s = k.points and string.format(game.translate_string("st_arsenal_start_kit"), tostring(k.points), who)
+                or string.format(game.translate_string("st_arsenal_start_free"), who)
+            if k.economies then
+                local ecos = {}
+                for _, n in ipairs(k.economies) do ecos[#ecos + 1] = game.translate_string("st_econ_" .. n) end
+                s = string.format(game.translate_string("st_arsenal_start_eco"), s, table.concat(ecos, ", "))
+            end
+            line(s)
         end
     end
-    for _, mf in ipairs(safe(arsenal_data.made_from, shown.sec) or {}) do
-        text("entry_line", string.format(game.translate_string("st_arsenal_made_from"), mf.from, mf.kit))
-    end
-    for _, k in ipairs(safe(arsenal_data.starting_kits, shown.sec) or {}) do
-        local who = factions_text(k.factions)
-        local s = k.points and string.format(game.translate_string("st_arsenal_start_kit"), tostring(k.points), who)
-            or string.format(game.translate_string("st_arsenal_start_free"), who)
-        if k.economies then
-            local ecos = {}
-            for _, n in ipairs(k.economies) do ecos[#ecos + 1] = game.translate_string("st_econ_" .. n) end
-            s = string.format(game.translate_string("st_arsenal_start_eco"), s, table.concat(ecos, ", "))
-        end
-        text("entry_line", s)
+    if not any then
+        line(game.translate_string(full and "st_arsenal_no_source" or "st_arsenal_where_unknown"), "dim")
     end
 
     -- ammo of every variant, shown variant's first
@@ -659,7 +834,12 @@ function ArsenalPDA:ShowEntry(sec)
         if ok and a then
             for kind, list in pairs(fit) do
                 for _, it in ipairs(a[kind] or {}) do
-                    add(list, kind, it)
+                    -- an addon that never turns up: left out while immersive, marked with the jailbreak
+                    local up = not arsenal_data.addon_turns_up or arsenal_data.addon_turns_up(it.sec)
+                    if up or not imm then
+                        if not up then it.never = true end
+                        add(list, kind, it)
+                    end
                 end
             end
             for k, names in pairs(builtin) do
@@ -698,10 +878,14 @@ function ArsenalPDA:ShowEntry(sec)
             t:SetText(it.name)
             t:AdjustHeightToText()
             h = h + t:GetHeight()
-            if it.note and it.note ~= "" then
+            local note = it.note
+            if it.never then
+                note = ((note and note ~= "") and (note .. "\\n") or "") .. game.translate_string("st_arsenal_addon_never")
+            end
+            if note and note ~= "" then
                 local n = xml:InitTextWnd("tile_note", entry)
                 n:SetWndPos(vector2():set(x, y + h))
-                n:SetText(it.note)
+                n:SetText(note)
                 n:AdjustHeightToText()
                 h = h + n:GetHeight()
             end
@@ -714,134 +898,137 @@ function ArsenalPDA:ShowEntry(sec)
         end
     end
 
-    -- magazines, when Mags Redux runs, each with its rounds
-    local mags = {}
-    for _, v in ipairs(order) do
-        local ok, list = pcall(arsenal_data.mags, v.sec)
-        for _, it in ipairs(ok and list or {}) do
-            add(mags, "mags", it)
+    -- what fits it, its camos, parts and repair kits, once it is studied
+    if know then
+        -- magazines, when Mags Redux runs, each with its rounds
+        local mags = {}
+        for _, v in ipairs(order) do
+            local ok, list = pcall(arsenal_data.mags, v.sec)
+            for _, it in ipairs(ok and list or {}) do
+                add(mags, "mags", it)
+            end
         end
-    end
-    if #mags > 0 then
-        heading("st_arsenal_magazines")
-        local mt = {}
-        for _, it in ipairs(mags) do
-            mt[#mt + 1] = { sec = it.sec, name = it.name,
-                note = string.format(game.translate_string("st_arsenal_rounds"), tostring(it.rounds)) }
+        if #mags > 0 then
+            heading("st_arsenal_magazines")
+            local mt = {}
+            for _, it in ipairs(mags) do
+                mt[#mt + 1] = { sec = it.sec, name = it.name,
+                    note = string.format(game.translate_string("st_arsenal_rounds"), tostring(it.rounds)) }
+            end
+            tiles(mt)
         end
-        tiles(mt)
-    end
 
-    if #fit.scopes > 0 or #builtin.scope > 0 then
-        heading("st_arsenal_scopes")
-        builtin_note(builtin.scope, "st_arsenal_builtin", "st_arsenal_builtin_on")
-        tiles(fit.scopes)
-    end
-    -- a mount an upgrade adds says so under the item's name ("\\n": a line break in a text)
-    local after = game.translate_string("st_arsenal_after_upgrade")
-    if #fit.suppressors > 0 or #builtin.suppressor > 0 then
-        heading("st_arsenal_suppressors")
-        builtin_note(builtin.suppressor, "st_arsenal_builtin", "st_arsenal_builtin_on")
-        local sup = {}
-        for _, it in ipairs(fit.suppressors) do
-            sup[#sup + 1] = { sec = it.sec, name = it.name, note = it.upgrade and after or nil }
+        if #fit.scopes > 0 or #builtin.scope > 0 then
+            heading("st_arsenal_scopes")
+            builtin_note(builtin.scope, "st_arsenal_builtin", "st_arsenal_builtin_on")
+            tiles(fit.scopes)
         end
-        tiles(sup)
-    end
-    -- launchers with the grenades they fire, laser modules, kits with the gun they make
-    local acc = {}
-    for _, it in ipairs(fit.launchers) do
-        local note = table.concat(it.ammo or {}, ", ")
-        if it.upgrade then
-            note = (note ~= "" and (note .. "\\n") or "") .. after
+        -- a mount an upgrade adds says so under the item's name ("\\n": a line break in a text)
+        local after = game.translate_string("st_arsenal_after_upgrade")
+        if #fit.suppressors > 0 or #builtin.suppressor > 0 then
+            heading("st_arsenal_suppressors")
+            builtin_note(builtin.suppressor, "st_arsenal_builtin", "st_arsenal_builtin_on")
+            local sup = {}
+            for _, it in ipairs(fit.suppressors) do
+                sup[#sup + 1] = { sec = it.sec, name = it.name, note = it.upgrade and after or nil, never = it.never }
+            end
+            tiles(sup)
         end
-        acc[#acc + 1] = { sec = it.sec, name = it.name, note = note }
-    end
-    for _, it in ipairs(fit.lasers) do
-        acc[#acc + 1] = { sec = it.sec, name = it.name }
-    end
-    for _, it in ipairs(fit.kits) do
-        acc[#acc + 1] = { sec = it.sec, name = it.name,
-            note = it.makes and string.format(game.translate_string("st_arsenal_makes"), it.makes) }
-    end
-    if #acc > 0 or #builtin.launcher > 0 or #builtin.laser > 0 then
-        heading("st_arsenal_accessories")
-        builtin_note(builtin.launcher, "st_arsenal_builtin_gl", "st_arsenal_builtin_gl_on")
-        builtin_note(builtin.laser, "st_arsenal_builtin_laser", "st_arsenal_builtin_laser_on")
-        tiles(acc)
-    end
-    -- camos (3DSS's camo wheel), a row each: the swatch on a panel, the name (green once
-    -- discovered, dim while not), and what it takes
-    local camo_list = safe(arsenal_data.camos, shown.sec) or {}
-    if #camo_list > 0 then
-        heading("st_arsenal_camos")
-        local ok, ratio = pcall(utils_xml.screen_ratio)
-        ratio = ok and tonumber(ratio) or 1
-        for _, c in ipairs(camo_list) do
-            local panel = xml:InitStatic("part_icon_frame", entry)
-            panel:SetWndPos(vector2():set(0, y))
-            if c.icon then
-                local sw = xml:InitStatic("camo_swatch", entry)
-                local h = panel:GetHeight() - 2 * CAMO_PAD
-                local w = h * ratio
-                sw:InitTexture(c.icon)
-                sw:SetStretchTexture(true)
-                sw:SetWndSize(vector2():set(w, h))
-                sw:SetWndPos(vector2():set((panel:GetWidth() - w) / 2, y + CAMO_PAD))
+        -- launchers with the grenades they fire, laser modules, kits with the gun they make
+        local acc = {}
+        for _, it in ipairs(fit.launchers) do
+            local note = table.concat(it.ammo or {}, ", ")
+            if it.upgrade then
+                note = (note ~= "" and (note .. "\\n") or "") .. after
             end
-            local note
-            if c.locked then
-                note = #c.factions > 0
-                    and string.format(game.translate_string("st_arsenal_camo_locked_on"), factions_text(c.factions))
-                    or game.translate_string("st_arsenal_camo_locked")
-            elseif c.required then
-                note = game.translate_string("st_arsenal_camo_found")
-            end
-            local t = xml:InitTextWnd("part_name", entry)
-            t:SetWndPos(vector2():set(t:GetWndPos().x, y + (note and 0 or PART_TEXT_DY)))
-            t:SetText(c.name)
-            if c.locked then
-                t:SetTextColor(theme.argb("dim"))
-            elseif c.required then
-                t:SetTextColor(theme.argb("good"))
-            end
-            t:AdjustHeightToText()
-            local h = t:GetHeight() + (note and 0 or PART_TEXT_DY)
-            if note then
-                local n = xml:InitTextWnd("camo_note", entry)
-                n:SetWndPos(vector2():set(n:GetWndPos().x, y + h))
-                n:SetText(note)
-                n:AdjustHeightToText()
-                h = h + n:GetHeight()
-            end
-            y = y + math.max(panel:GetHeight(), h) + 4
+            acc[#acc + 1] = { sec = it.sec, name = it.name, note = note, never = it.never }
         end
-    end
+        for _, it in ipairs(fit.lasers) do
+            acc[#acc + 1] = { sec = it.sec, name = it.name, never = it.never }
+        end
+        for _, it in ipairs(fit.kits) do
+            acc[#acc + 1] = { sec = it.sec, name = it.name,
+                note = it.makes and string.format(game.translate_string("st_arsenal_makes"), it.makes), never = it.never }
+        end
+        if #acc > 0 or #builtin.launcher > 0 or #builtin.laser > 0 then
+            heading("st_arsenal_accessories")
+            builtin_note(builtin.launcher, "st_arsenal_builtin_gl", "st_arsenal_builtin_gl_on")
+            builtin_note(builtin.laser, "st_arsenal_builtin_laser", "st_arsenal_builtin_laser_on")
+            tiles(acc)
+        end
+        -- camos (3DSS's camo wheel), a row each: the swatch on a panel, the name (green once
+        -- discovered, dim while not), and what it takes
+        local camo_list = safe(arsenal_data.camos, shown.sec) or {}
+        if #camo_list > 0 then
+            heading("st_arsenal_camos")
+            local ok, ratio = pcall(utils_xml.screen_ratio)
+            ratio = ok and tonumber(ratio) or 1
+            for _, c in ipairs(camo_list) do
+                local panel = xml:InitStatic("part_icon_frame", entry)
+                panel:SetWndPos(vector2():set(0, y))
+                if c.icon then
+                    local sw = xml:InitStatic("camo_swatch", entry)
+                    local h = panel:GetHeight() - 2 * CAMO_PAD
+                    local w = h * ratio
+                    sw:InitTexture(c.icon)
+                    sw:SetStretchTexture(true)
+                    sw:SetWndSize(vector2():set(w, h))
+                    sw:SetWndPos(vector2():set((panel:GetWidth() - w) / 2, y + CAMO_PAD))
+                end
+                local note
+                if c.locked then
+                    note = #c.factions > 0
+                        and string.format(game.translate_string("st_arsenal_camo_locked_on"), factions_text(c.factions))
+                        or game.translate_string("st_arsenal_camo_locked")
+                elseif c.required then
+                    note = game.translate_string("st_arsenal_camo_found")
+                end
+                local t = xml:InitTextWnd("part_name", entry)
+                t:SetWndPos(vector2():set(t:GetWndPos().x, y + (note and 0 or PART_TEXT_DY)))
+                t:SetText(c.name)
+                if c.locked then
+                    t:SetTextColor(theme.argb("dim"))
+                elseif c.required then
+                    t:SetTextColor(theme.argb("good"))
+                end
+                t:AdjustHeightToText()
+                local h = t:GetHeight() + (note and 0 or PART_TEXT_DY)
+                if note then
+                    local n = xml:InitTextWnd("camo_note", entry)
+                    n:SetWndPos(vector2():set(n:GetWndPos().x, y + h))
+                    n:SetText(note)
+                    n:AdjustHeightToText()
+                    h = h + n:GetHeight()
+                end
+                y = y + math.max(panel:GetHeight(), h) + 4
+            end
+        end
 
-    -- parts, a row each: the icon on a panel, the name beside it
-    if #parts > 0 then
-        heading("st_arsenal_parts")
-        for _, it in ipairs(parts) do
-            local panel = xml:InitStatic("part_icon_frame", entry)
-            panel:SetWndPos(vector2():set(0, y))
-            put_icon(xml, entry, panel, it.sec, TILE_PAD)
-            local t = xml:InitTextWnd("part_name", entry)
-            t:SetWndPos(vector2():set(t:GetWndPos().x, y + PART_TEXT_DY))
-            t:SetText(it.name)
-            t:AdjustHeightToText()
-            y = y + math.max(panel:GetHeight(), t:GetHeight() + PART_TEXT_DY) + 4
+        -- parts, a row each: the icon on a panel, the name beside it
+        if #parts > 0 then
+            heading("st_arsenal_parts")
+            for _, it in ipairs(parts) do
+                local panel = xml:InitStatic("part_icon_frame", entry)
+                panel:SetWndPos(vector2():set(0, y))
+                put_icon(xml, entry, panel, it.sec, TILE_PAD)
+                local t = xml:InitTextWnd("part_name", entry)
+                t:SetWndPos(vector2():set(t:GetWndPos().x, y + PART_TEXT_DY))
+                t:SetText(it.name)
+                t:AdjustHeightToText()
+                y = y + math.max(panel:GetHeight(), t:GetHeight() + PART_TEXT_DY) + 4
+            end
         end
-    end
-    -- the kits that repair it, every variant's
-    local kits = {}
-    for _, v in ipairs(order) do
-        for _, it in ipairs(safe(arsenal_data.repair_kits, v.sec) or {}) do
-            add(kits, "repair", it)
+        -- the kits that repair it, every variant's
+        local kits = {}
+        for _, v in ipairs(order) do
+            for _, it in ipairs(safe(arsenal_data.repair_kits, v.sec) or {}) do
+                add(kits, "repair", it)
+            end
         end
-    end
-    if #kits > 0 then
-        heading("st_arsenal_repair_kits")
-        tiles(kits)
+        if #kits > 0 then
+            heading("st_arsenal_repair_kits")
+            tiles(kits)
+        end
     end
 
     local descr = arsenal_data.description(shown.sec)

@@ -1,15 +1,84 @@
 --[[
-    DXML: an invisible PDA tab button for Arsenal's section. The PDA shows its tab bar, clock
-    and caption only for a section that has a button (CUIPdaWnd::SetActiveCaption), so without
-    one they would vanish while Arsenal is open. Parked off screen, zero wide, like MAC's own.
+    DXML: an invisible PDA tab button for Arsenal's section, and Arsenal's talks.
+
+    The PDA shows its tab bar, clock and caption only for a section that has a button
+    (CUIPdaWnd::SetActiveCaption), so without one they would vanish while Arsenal is open.
+    Parked off screen, zero wide, like MAC's own.
+
+    The talks (arsenal_intel): asking anyone about gear they have seen, and asking a technician
+    or trader about special guns. Their dialogs go into gameplay\dialogs.xml, and every
+    character gets the first; a character with a technician's or trader's dialog
+    (dm_tech_repair, dm_init_trader) gets the second.
 --]]
+
+local DIALOGS = [[
+<dialog id="arsenal_rumor">
+    <precondition>arsenal_intel.rumor_ok</precondition>
+    <phrase_list>
+        <phrase id="0">
+            <text>st_arsenal_rumor_ask</text>
+            <next>1</next>
+        </phrase>
+        <phrase id="1">
+            <script_text>arsenal_intel.rumor_text</script_text>
+            <action>arsenal_intel.rumor_told</action>
+        </phrase>
+    </phrase_list>
+</dialog>
+<dialog id="arsenal_gunsmith">
+    <precondition>arsenal_intel.gunsmith_ok</precondition>
+    <phrase_list>
+        <phrase id="0">
+            <text>st_arsenal_gunsmith_ask</text>
+            <next>1</next>
+        </phrase>
+        <phrase id="1">
+            <script_text>arsenal_intel.gunsmith_offer</script_text>
+            <next>2</next>
+            <next>3</next>
+        </phrase>
+        <phrase id="2">
+            <precondition>arsenal_intel.gunsmith_can_pay</precondition>
+            <text>st_arsenal_gunsmith_yes</text>
+            <action>arsenal_intel.gunsmith_pay</action>
+            <next>4</next>
+        </phrase>
+        <phrase id="3">
+            <text>st_arsenal_gunsmith_no</text>
+        </phrase>
+        <phrase id="4">
+            <script_text>arsenal_intel.gunsmith_told</script_text>
+        </phrase>
+    </phrase_list>
+</dialog>
+]]
+
+local GUNSMITHS = { "dm_tech_repair", "dm_init_trader" }
 
 function on_xml_read()
     RegisterScriptCallback("on_xml_read", function(name, xml)
+        if name == [[gameplay\dialogs.xml]] or name == [[gameplay/dialogs.xml]] then
+            if #xml:query("dialog[id=arsenal_rumor]") == 0 then
+                xml:insertFromXMLString(DIALOGS)
+            end
+            return
+        end
         if not name:match("^ui[\\/]pda_?%d*%.xml$") then return end
         local tab = xml:query("tab")[1]
         if not tab or #xml:query("tab > button[id=eptArsenal]") > 0 then return end
         xml:insertFromXMLString([[<button x="1000" y="0" width="0" height="0" id="eptArsenal" frame_mode="0">]]
             .. [[<text align="c" vert_align="c" x="0" y="0" font="letterica16">st_arsenal_title</text></button>]], tab)
+    end)
+end
+
+function on_game_start()
+    RegisterScriptCallback("on_specific_character_dialog_list", function(character_id, list)
+        if not list:has("arsenal_rumor") then list:add("arsenal_rumor") end
+        for _, d in ipairs(GUNSMITHS) do
+            if list:has(d) then
+                if not list:has("arsenal_gunsmith") then list:add("arsenal_gunsmith") end
+                break
+            end
+        end
     end)
 end

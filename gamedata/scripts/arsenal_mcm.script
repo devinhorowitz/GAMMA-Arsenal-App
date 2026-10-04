@@ -1,9 +1,11 @@
 --[[
-    Arsenal's MCM page: a key that opens Arsenal flat, in a window of its own (ui_arsenal), and
-    whether guns the player only sees count. With the 3D PDA on, the PDA's pages are drawn onto
-    the in-hand screen, which softens them; the flat window is drawn straight to the screen, as
-    sharp as the inventory. The key is unbound (-1) until the player picks one; the PDA tile
-    works either way. Seen guns are off until the player turns them on.
+    Arsenal's MCM page: a key that opens Arsenal flat, in a window of its own (ui_arsenal),
+    whether guns the player only sees count, and the jailbreak, which lists everything the game
+    has (Arsenal otherwise lists what the player has learned of: arsenal_intel). With the 3D PDA
+    on, the PDA's pages are drawn onto the in-hand screen, which softens them; the flat window is
+    drawn straight to the screen, as sharp as the inventory. The key is unbound (-1) until the
+    player picks one; the PDA tile works either way. Seen guns and the jailbreak are off until
+    the player turns them on.
 --]]
 
 function on_mcm_load()
@@ -15,6 +17,7 @@ function on_mcm_load()
               size = { 512, 50 }, spacing = 20 },
             { id = "flat_key", type = "key_bind", val = 2, def = -1 },
             { id = "count_seen", type = "check", val = 1, def = false },
+            { id = "jailbreak", type = "check", val = 1, def = false },
             { id = "about", type = "desc", text = "ui_mcm_arsenal_about" },
         },
     }
@@ -32,6 +35,12 @@ end
 function count_seen()
     local ok, v = pcall(function() return ui_mcm and ui_mcm.get("arsenal/count_seen") end)
     return ok and v == true
+end
+
+-- whether the jailbreak is on: Arsenal lists everything; false while it is off or MCM is missing
+function jailbreak()
+    local ok, v = pcall(function() return ui_mcm and ui_mcm.get("arsenal/jailbreak") end)
+    return (ok and v == true) or false
 end
 
 local function on_key_press(key)

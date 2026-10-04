@@ -267,4 +267,148 @@
 	<string id="st_arsenal_tag_scope_mount">
 		<text>под прицел</text>
 	</string>
+	<string id="st_arsenal_cat_light">
+		<text>Лёгкая броня</text>
+	</string>
+	<string id="st_arsenal_cat_medium">
+		<text>Средняя броня</text>
+	</string>
+	<string id="st_arsenal_cat_heavy">
+		<text>Тяжёлая броня</text>
+	</string>
+	<string id="st_arsenal_cat_exo">
+		<text>Экзоскелеты</text>
+	</string>
+	<string id="st_arsenal_cat_helmets">
+		<text>Шлемы</text>
+	</string>
+	<string id="st_arsenal_worn_by">
+		<text>Носят:</text>
+	</string>
+	<string id="st_arsenal_drop_chance">
+		<text>Выпадает с тела в %s случаев</text>
+	</string>
+	<string id="st_arsenal_drop_rank">
+		<text>Выпадает с тела в %s случаев, если ваш ранг не ниже %s (%s)</text>
+	</string>
+	<string id="st_arsenal_drop_off">
+		<text>В этой экономике броня с тел не выпадает</text>
+	</string>
+	<string id="st_arsenal_exchange_gets">
+		<text>У %s: за любой из %s костюмов и %s руб. (только %s)</text>
+	</string>
+	<string id="st_arsenal_exchange_takes">
+		<text>%s отдаёт за него %s и %s руб. (только %s)</text>
+	</string>
+	<string id="st_arsenal_rumor_ask">
+		<text>Не видел в последнее время чего-нибудь стоящего из снаряжения?</text>
+	</string>
+	<string id="st_arsenal_rumor">
+		<text>Видел недавно: у бойцов группировки «%s» есть %s.</text>
+	</string>
+	<string id="st_arsenal_rumor_specs">
+		<text>Видел недавно: у бойцов группировки «%s» есть %s. Хорошая вещь, расскажу, на что она способна.</text>
+	</string>
+	<string id="st_arsenal_rumor_none">
+		<text>Ничего такого, о чём стоит рассказать.</text>
+	</string>
+	<string id="st_arsenal_gunsmith_ask">
+		<text>Знаешь какие-нибудь особенные стволы?</text>
+	</string>
+	<string id="st_arsenal_gunsmith_offer">
+		<text>Есть один, о котором ты ещё не слышал. Что это и как его достать: %s руб.</text>
+	</string>
+	<string id="st_arsenal_gunsmith_yes">
+		<text>Договорились.</text>
+	</string>
+	<string id="st_arsenal_gunsmith_no">
+		<text>Не сейчас.</text>
+	</string>
+	<string id="st_arsenal_gunsmith_told">
+		<text>Это %s. Подробности скинул тебе на КПК.</text>
+	</string>
+	<string id="st_arsenal_learned">
+		<text>Узнано (%s): %s</text>
+	</string>
+	<string id="st_arsenal_by_kill">
+		<text>боец группировки «%s»</text>
+	</string>
+	<string id="st_arsenal_by_body">
+		<text>тело бойца группировки «%s»</text>
+	</string>
+	<string id="st_arsenal_by_pda">
+		<text>КПК группировки «%s»</text>
+	</string>
+	<string id="st_arsenal_by_tally">
+		<text>бои с группировкой «%s»</text>
+	</string>
+	<string id="st_arsenal_by_stash">
+		<text>тайник</text>
+	</string>
+	<string id="st_arsenal_by_start">
+		<text>своя группировка</text>
+	</string>
+	<string id="st_arsenal_by_found">
+		<text>находка</text>
+	</string>
+	<string id="st_arsenal_by_someone">
+		<text>кто-то</text>
+	</string>
+	<string id="st_arsenal_known_count">
+		<text>Известно %s · Найдено %s из %s</text>
+	</string>
+	<string id="st_arsenal_learned_on">
+		<text>Узнано %s: %s</text>
+	</string>
+	<string id="st_arsenal_not_studied">
+		<text>Ещё не изучено: найдите экземпляр или узнайте его характеристики у знающих, чтобы увидеть параметры и совместимость</text>
+	</string>
+	<string id="st_arsenal_where_unknown">
+		<text>Пока ничего не известно о том, где его найти</text>
+	</string>
+	<string id="st_arsenal_never">
+		<text>В этой игре не встречается</text>
+	</string>
+	<string id="st_arsenal_sold_by">
+		<text>Продаётся у торговцев</text>
+	</string>
+	<string id="st_arsenal_sold_at">
+		<text>Видели в продаже: %s</text>
+	</string>
+	<string id="st_arsenal_stashes_seen">
+		<text>Видели в тайниках: %s</text>
+	</string>
+	<string id="st_arsenal_in_bodies">
+		<text>Иногда попадается на телах бойцов</text>
+	</string>
+	<string id="st_arsenal_from_tasks">
+		<text>За задания</text>
+	</string>
+	<string id="st_arsenal_from_gift">
+		<text>Сюжетная награда</text>
+	</string>
+	<string id="st_arsenal_from_craft">
+		<text>Изготавливается на верстаке</text>
+	</string>
+	<string id="st_arsenal_from_homestead">
+		<text>В вылазках за тайниками (Homestead)</text>
+	</string>
+	<string id="st_arsenal_carried_story">
+		<text>Носит: %s</text>
+	</string>
+	<string id="st_arsenal_carried_story_some">
+		<text>Носят сюжетные персонажи</text>
+	</string>
+	<string id="st_arsenal_rolled">
+		<text>У некоторых бойцов %s приходит уже переделанным в него</text>
+	</string>
+	<string id="st_arsenal_addon_never">
+		<text>не встречается</text>
+	</string>
+	<string id="ui_mcm_arsenal_jailbreak">
+		<text>Взлом: показать всё</text>
+	</string>
+	<string id="ui_mcm_arsenal_jailbreak_desc">
+		<text>Арсенал показывает то, о чём вы узнали: снаряжение своей группировки с самого начала, затем найденное, увиденное, добытое, прочитанное в КПК и услышанное от людей. Со взломом он показывает всё, что есть в этой игре, как законченная энциклопедия.</text>
+	</string>
 </string_table>

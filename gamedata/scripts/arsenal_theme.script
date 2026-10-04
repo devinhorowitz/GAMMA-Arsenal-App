@@ -4,7 +4,7 @@
     different look is a change to this file and to the matching values in ui_arsenal.xml.
 
     The look is the vanilla PDA's: amber for headings and names, light gray for body text,
-    dim gray for what is off, the PDA's own green, orange and red for good, warning and
+    dim gray for what is off, darker gray for what never turns up, the PDA's own green, orange and red for good, warning and
     danger, and the base game's widgets (ui_button_ordinary and friends), so whatever UI pack
     restyles those restyles Arsenal too. It is the palette of the Homestead reskin and of
     Seasons of the Zone's pages.
@@ -19,6 +19,7 @@ local colors = {
     body    = { 200, 200, 200 },
     bright  = { 255, 255, 255 },
     dim     = { 140, 140, 140 },
+    never   = { 95, 95, 95 },
     good    = { 56, 209, 115 },
     warn    = { 238, 155, 23 },
     danger  = { 238, 28, 36 },

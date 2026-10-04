@@ -1,0 +1,597 @@
+--[[
+    Arsenal intel: what the player knows about the Zone's gear. Arsenal starts immersive: the
+    catalog lists what the player has come to know of, and a page shows what he has learned,
+    until MCM > Arsenal > Jailbreak opens everything.
+
+    From the start he knows his own faction's gear: what its fighters carry and wear, and what
+    its new-game kit offers. He learns the rest as he plays:
+      - a fighter he kills: the gun and suit he had, and who carries them (faction and rank);
+        every TALLY kills of a faction bring word of more of its gear, and at STUDY kills the
+        gear he knows it by is studied
+      - a body, stash or trader's stock he opens: what is in it, and where
+      - a PDA he picks up: a data package, its owner's word on his own faction's gear or that of
+        a faction his is allied with or at war with (the game's relations as they stand), up to
+        the owner's rank; an encrypted one keeps it until a technician decrypts it, a rare one
+        carries specs too
+      - a talk: anyone willing passes on one thing his faction, an ally or an enemy carries, up
+        to his own rank, once a day; an expert, master or legend knows its specs; a technician
+        or trader sells word of a special gun (one no ordinary fighter carries, arsenal_data.special)
+    A model is studied once the player handles one (it enters his inventory), or from the specs
+    above; its page shows its stats and what fits it only then. Only what turns up in this game
+    (arsenal_data.obtainable) is ever learned.
+
+    Saved with the game (m_data.arsenal_intel), keyed by model (its first variant's section);
+    a save from another catalog moves its keys to the models that hold them now, on load.
+--]]
+
+local VERSION = 1
+TALLY = 10
+STUDY = 25
+-- a corpse's PDA and the size of the package it carries; a rare one is always encrypted
+PDA_SIZE = { itm_pda_common = 1, itm_pda_uncommon = 2, itm_pda_rare = 3 }
+local SPECS = { itm_pda_rare = true }
+local KNOWS_SPECS = { expert = true, master = true, legend = true }
+
+local function fresh()
+    return { v = VERSION, known = {}, studied = {}, facts = {}, new = {}, tally = {}, pdas = {}, talked = {} }
+end
+local st = fresh()
+local pending = {}     -- news to send: { e, how }
+local scheduled = false
+local talks = {}       -- npc id -> the rumor or offer picked for this talk
+
+-- whether the jailbreak is on: everything listed and shown
+function jailbroken()
+    return arsenal_mcm and arsenal_mcm.jailbreak and arsenal_mcm.jailbreak() == true or false
+end
+
+local function stamp()
+    local y, mo, d, h, mi = game.get_game_time():get()
+    return { y = y, mo = mo, d = d, h = h, mi = mi, lvl = level.name() }
+end
+
+local function day()
+    local y, mo, d = game.get_game_time():get()
+    return y * 10000 + mo * 100 + d
+end
+
+local function model(x)
+    if type(x) == "table" then return x end
+    return x and arsenal_data.entry_for(x) or nil
+end
+
+local function is_faction(f)
+    for _, x in ipairs(arsenal_data.FACTIONS) do
+        if x == f then return true end
+    end
+    return false
+end
+
+local function rank_at(r)
+    for i, x in ipairs(arsenal_data.RANKS) do
+        if x == r then return i end
+    end
+    return nil
+end
+
+---------------------------------------------------------------------------------------------
+-- what is known
+---------------------------------------------------------------------------------------------
+
+-- a fact on how a model turns up: { carried | worn = { faction, rank }, stash = level, sold =
+-- trader, ways = { way = true } }
+local function add_fact(k, fact)
+    if not fact then return end
+    local f = st.facts[k] or {}
+    st.facts[k] = f
+    for kind, v in pairs(fact) do
+        if kind == "carried" or kind == "worn" then
+            f[kind] = f[kind] or {}
+            local by = f[kind][v.faction] or {}
+            f[kind][v.faction] = by
+            by[v.rank or "special"] = true
+        elseif kind == "stash" or kind == "sold" then
+            f[kind] = f[kind] or {}
+            f[kind][v] = true
+        elseif kind == "ways" then
+            f.ways = f.ways or {}
+            for w in pairs(v) do f.ways[w] = true end
+        end
+    end
+end
+
+-- the news line for what was just learned: one per source, up to three names, then how many more
+local function flush()
+    scheduled = false
+    if not db.actor or #pending == 0 then
+        pending = {}
+        return true
+    end
+    local groups, order = {}, {}
+    for _, p in ipairs(pending) do
+        local key = describe(p.how)
+        if not groups[key] then
+            groups[key] = {}
+            order[#order + 1] = key
+        end
+        table.insert(groups[key], p.e.name)
+    end
+    pending = {}
+    for _, key in ipairs(order) do
+        local names = groups[key]
+        local text = table.concat(names, ", ", 1, math.min(3, #names))
+        if #names > 3 then
+            text = string.format(game.translate_string("st_arsenal_and_more"), text, tostring(#names - 3))
+        end
+        db.actor:give_game_news(game.translate_string("st_arsenal_title"),
+            string.format(game.translate_string("st_arsenal_learned"), key, text), "ui_inGame2_Predmet_poluchen", 0, 5000, 0)
+    end
+    return true
+end
+
+local function news_soon()
+    if scheduled then return end
+    scheduled = true
+    if CreateTimeEvent then
+        CreateTimeEvent("arsenal_intel", "news", 1, flush)
+    else
+        flush()
+    end
+end
+
+-- learn of a model (a section or a model): it is known from now on, with the fact it came
+-- with; `study` studies it too; `quiet` sends no news and leaves it unmarked. Returns the
+-- model when it is new, else nil. What never turns up is never learned.
+function reveal(x, how, fact, study, quiet)
+    local e = model(x)
+    if not (e and arsenal_data.obtainable(e.sec)) then return nil end
+    local k = e.sec
+    local new = not st.known[k]
+    if new then
+        st.known[k] = { at = stamp(), how = how }
+        if not quiet then
+            st.new[k] = true
+            pending[#pending + 1] = { e = e, how = how }
+            news_soon()
+        end
+    end
+    if study then st.studied[k] = true end
+    add_fact(k, fact)
+    return new and e or nil
+end
+
+-- whether a model is listed: with the jailbreak, everything; else what turns up and is known
+function listed(e)
+    if jailbroken() then return true end
+    return known(e) and arsenal_data.obtainable(e.sec)
+end
+
+-- whether the player knows a model (a found one he does)
+function known(e)
+    if jailbroken() then return true end
+    return st.known[e.sec] ~= nil or (arsenal_collection and arsenal_collection.entry_found(e) ~= nil) or false
+end
+
+-- whether a model's stats and what fits it show
+function studied(e)
+    if jailbroken() then return true end
+    return st.studied[e.sec] == true or (arsenal_collection and arsenal_collection.entry_found(e) ~= nil) or false
+end
+
+-- what is known of how a model turns up (add_fact's shape), or nil
+function facts(e)
+    return st.facts[e.sec]
+end
+
+-- how the player first learned of a model: { at = stamp, how = { kind, faction, rank, who, level } }
+function learned(e)
+    return st.known[e.sec]
+end
+
+function is_new(e)
+    return not jailbroken() and st.new[e.sec] == true
+end
+
+-- a model's page was opened: no longer new
+function viewed(e)
+    st.new[e.sec] = nil
+end
+
+-- how many models of a list are known
+function count_known(list)
+    local n = 0
+    for _, e in ipairs(list) do
+        if known(e) and arsenal_data.obtainable(e.sec) then n = n + 1 end
+    end
+    return n
+end
+
+---------------------------------------------------------------------------------------------
+-- how things are learned
+---------------------------------------------------------------------------------------------
+
+local function faction_name(f)
+    return game.translate_string("st_faction_" .. f)
+end
+
+-- a source in words, for news and a page: "a Duty fighter", "a Duty PDA", "Sidorovich", ...
+function describe(how)
+    local k = how and how.kind
+    if k == "kill" or k == "body" then
+        return string.format(game.translate_string("st_arsenal_by_" .. k), faction_name(how.faction))
+    elseif k == "pda" or k == "tally" then
+        return string.format(game.translate_string("st_arsenal_by_" .. k), faction_name(how.faction))
+    elseif k == "talk" or k == "gunsmith" or k == "trade" then
+        return how.who or game.translate_string("st_arsenal_by_someone")
+    elseif k == "stash" then
+        return game.translate_string("st_arsenal_by_stash")
+    elseif k == "start" then
+        return game.translate_string("st_arsenal_by_start")
+    end
+    return game.translate_string("st_arsenal_by_found")
+end
+
+-- the gear a faction carries or wears that the player does not know yet, up to a rank:
+-- { { e, rank (the lowest it is carried at), armor }, ... }, the likeliest first
+local function unknown_gear(f, top)
+    local out = {}
+    for _, g in ipairs(arsenal_data.faction_gear(f)) do
+        if not st.known[g.e.sec] then
+            local low
+            for i, r in ipairs(arsenal_data.RANKS) do
+                if i <= top and g.ranks[r] and not low then low = r end
+            end
+            if not low and g.ranks.special then low = "special" end
+            if low then out[#out + 1] = { e = g.e, rank = low, armor = g.armor, best = g.best } end
+        end
+    end
+    return out
+end
+
+-- one of a list, the likelier ones more often
+local function pick(list)
+    if #list == 0 then return nil end
+    local total = 0
+    for _, g in ipairs(list) do total = total + math.max(g.best or 0, 0.001) end
+    local r = math.random() * total
+    for _, g in ipairs(list) do
+        r = r - math.max(g.best or 0, 0.001)
+        if r <= 0 then return g end
+    end
+    return list[#list]
+end
+
+local function gear_fact(g, f)
+    return { [g.armor and "worn" or "carried"] = { faction = f, rank = g.rank ~= "special" and g.rank or nil } }
+end
+
+-- the factions a faction knows of: itself, then its allies and enemies as the game's relations
+-- stand now; a faction is neutral to the rest
+local function circle(f)
+    local own, others = { f }, {}
+    local gr = game_relations
+    for _, x in ipairs(arsenal_data.FACTIONS) do
+        if x ~= f and gr and ((gr.is_factions_friends and gr.is_factions_friends(f, x))
+            or (gr.is_factions_enemies and gr.is_factions_enemies(f, x))) then
+            others[#others + 1] = x
+        end
+    end
+    return own, others
+end
+
+-- word of one model: of the owner's own faction half the time, else of an ally or enemy, up
+-- to the owner's rank; nil when there is nothing left he would know
+local function word_of(f, rank)
+    local top = rank_at(rank) or #arsenal_data.RANKS
+    local own, others = circle(f)
+    local first, second = own, others
+    if #others > 0 and math.random() >= 0.5 then first, second = others, own end
+    for _, set in ipairs({ first, second }) do
+        local fs = {}
+        for _, x in ipairs(set) do fs[#fs + 1] = x end
+        while #fs > 0 do
+            local i = math.random(#fs)
+            local g = pick(unknown_gear(fs[i], top))
+            if g then return g, fs[i] end
+            table.remove(fs, i)
+        end
+    end
+    return nil
+end
+
+-- his own faction's gear and its new-game kit, known and studied; on every load, so what a
+-- faction he joins carries, or what a mod update gives his, is known too
+local function seed(f)
+    if not f or not is_faction(f) then return end
+    local how = { kind = "start", faction = f }
+    for _, g in ipairs(arsenal_data.faction_gear(f)) do
+        for r in pairs(g.ranks) do
+            reveal(g.e, how, { [g.armor and "worn" or "carried"] = { faction = f, rank = r ~= "special" and r or nil } },
+                true, true)
+        end
+    end
+    for _, e in ipairs(arsenal_data.kit_models(f)) do
+        reveal(e, how, { ways = { kit = true } }, true, true)
+    end
+end
+
+local function actor_faction()
+    local c = db.actor and db.actor:character_community() or ""
+    return (c:gsub("^actor_", ""))
+end
+
+-- the player's faction ("dolg"), or nil
+function player_faction()
+    local f = actor_faction()
+    return is_faction(f) and f or nil
+end
+
+-- a found gun or suit: known and studied (the collection sends its own news)
+function found(sec)
+    reveal(sec, { kind = "found" }, nil, true, true)
+end
+
+-- the gear on a fighter or in a box: known, with who carries it or where it lies
+local function learn_items(owner, how, fact_of)
+    local seen = {}
+    local function one(_, item)
+        local e = item and arsenal_data.entry_for(item:section())
+        if e and not seen[e] then
+            seen[e] = true
+            reveal(e, how, fact_of(e))
+        end
+    end
+    if how.kind == "stash" then
+        owner:iterate_inventory_box(one, owner)
+    else
+        owner:iterate_inventory(one, owner)
+    end
+end
+
+-- kills: what the fighter had (his visual's suit and helmet too), and the faction's tally
+local function on_kill(victim, who)
+    if not (victim and who and who:id() == AC_ID) then return end
+    local f = victim:character_community()
+    if not is_faction(f) then return end
+    local r = ranks.get_obj_rank_name(victim)
+    local how = { kind = "kill", faction = f, rank = r }
+    local fact = function(e) return { [arsenal_data.ARMOR[e.cat] and "worn" or "carried"] = { faction = f, rank = r } } end
+    learn_items(victim, how, fact)
+    local ok, suit = pcall(death_manager.get_outfit_by_npc_visual, victim:get_visual_name())
+    for _, s in ipairs(ok and type(suit) == "table" and suit or {}) do
+        local e = s ~= "" and model(s)
+        if e then reveal(e, how, fact(e)) end
+    end
+    local t = st.tally[f] or { kills = 0, top = 0 }
+    st.tally[f] = t
+    t.kills = t.kills + 1
+    t.top = math.max(t.top, rank_at(r) or 1)
+    if t.kills % TALLY == 0 then
+        local g = pick(unknown_gear(f, t.top))
+        if g then reveal(g.e, { kind = "tally", faction = f }, gear_fact(g, f)) end
+    end
+    if t.kills >= STUDY then
+        for k, fc in pairs(st.facts) do
+            if (fc.carried and fc.carried[f]) or (fc.worn and fc.worn[f]) then st.studied[k] = true end
+        end
+    end
+end
+
+-- a PDA: its owner's data package, once (an encrypted one when it is decrypted)
+local function on_pda(obj)
+    local id = obj and obj:id()
+    local size = id and PDA_SIZE[obj:section()]
+    if not size or st.pdas[id] then return end
+    local info = se_load_var(id, obj:name(), "info")
+    local c = type(info) == "table" and info.contact
+    if not (c and c.comm and is_faction(c.comm)) then
+        st.pdas[id] = true
+        return
+    end
+    if info.state == "encrypted" then return end
+    st.pdas[id] = true
+    for _ = 1, size do
+        local g, f = word_of(c.comm, c.rank)
+        if not g then break end
+        reveal(g.e, { kind = "pda", faction = c.comm }, gear_fact(g, f), SPECS[obj:section()] == true)
+    end
+end
+
+local function scan_pdas()
+    if not db.actor then return end
+    db.actor:iterate_inventory(function(_, obj)
+        if obj and PDA_SIZE[obj:section()] then on_pda(obj) end
+    end, db.actor)
+end
+
+local function actor_on_item_take(obj)
+    if obj and PDA_SIZE[obj:section()] then on_pda(obj) end
+end
+
+-- a body, stash or trader's stock, when its window opens (ui_inventory's partner)
+local function GUI_on_show(name)
+    if name ~= "UIInventory" then return end
+    local gui = ui_inventory and ui_inventory.GUI
+    if not (gui and (gui.mode == "loot" or gui.mode == "trade")) then return end
+    local ok, partner = pcall(gui.GetPartner, gui)
+    if not (ok and partner) then return end
+    if gui.mode == "trade" then
+        local who = partner:character_name()
+        learn_items(partner, { kind = "trade", who = who }, function() return { sold = who } end)
+    elseif gui.npc_is_box then
+        local lvl = level.name()
+        learn_items(partner, { kind = "stash", level = lvl }, function() return { stash = lvl } end)
+    elseif IsStalker(partner) then
+        local f = partner:character_community()
+        if is_faction(f) then
+            local r = ranks.get_obj_rank_name(partner)
+            learn_items(partner, { kind = "body", faction = f, rank = r }, function(e)
+                return { [arsenal_data.ARMOR[e.cat] and "worn" or "carried"] = { faction = f, rank = r } }
+            end)
+        end
+    end
+end
+
+---------------------------------------------------------------------------------------------
+-- talks (dialogs in ui\..\gameplay\dialogs.xml, added by modxml_arsenal)
+---------------------------------------------------------------------------------------------
+
+local function npc_of(a, b)
+    return (a and a:id() == AC_ID) and b or a
+end
+
+local function willing(npc)
+    return npc and npc:alive() and not jailbroken() and is_faction(npc:character_community())
+        and not (npc.relation and npc:relation(db.actor) == game_object.enemy)
+end
+
+-- anyone willing: one thing his faction, an ally or an enemy carries, once a day
+function rumor_ok(a, b)
+    local npc = npc_of(a, b)
+    if not willing(npc) or st.talked[npc:id()] == day() then return false end
+    local t = talks[npc:id()]
+    if not (t and t.kind == "rumor") then
+        local rank = ranks.get_obj_rank_name(npc)
+        local g, f = word_of(npc:character_community(), rank)
+        t = g and { kind = "rumor", g = g, f = f, specs = KNOWS_SPECS[rank] == true } or nil
+        talks[npc:id()] = t
+    end
+    return t ~= nil
+end
+
+function rumor_text(a, b)
+    local t = talks[npc_of(a, b):id()]
+    if not t then return game.translate_string("st_arsenal_rumor_none") end
+    return string.format(game.translate_string(t.specs and "st_arsenal_rumor_specs" or "st_arsenal_rumor"),
+        faction_name(t.f), t.g.e.name)
+end
+
+function rumor_told(a, b)
+    local npc = npc_of(a, b)
+    local t = talks[npc:id()]
+    talks[npc:id()] = nil
+    st.talked[npc:id()] = day()
+    if t then
+        reveal(t.g.e, { kind = "talk", who = npc:character_name() }, gear_fact(t.g, t.f), t.specs)
+    end
+end
+
+-- the price of a technician's word on a special gun: a tenth of its price, in hundreds, at
+-- least a thousand
+local function price_of(e)
+    local c = ini_sys:r_float_ex(e.sec, "cost") or 10000
+    return math.max(1000, math.floor(c / 1000 + 0.5) * 100)
+end
+
+-- a technician or trader: word of a special gun the player has not heard of
+function gunsmith_ok(a, b)
+    local npc = npc_of(a, b)
+    if not willing(npc) then return false end
+    local t = talks[npc:id()]
+    if not (t and t.kind == "gunsmith") then
+        local list = {}
+        for _, c in ipairs(arsenal_data.CATEGORIES) do
+            for _, e in ipairs(arsenal_data.list(c)) do
+                if not st.known[e.sec] and arsenal_data.special(e.sec) then list[#list + 1] = e end
+            end
+        end
+        t = #list > 0 and { kind = "gunsmith", e = list[math.random(#list)] } or nil
+        if t then t.price = price_of(t.e) end
+        talks[npc:id()] = t
+    end
+    return t ~= nil
+end
+
+function gunsmith_offer(a, b)
+    local t = talks[npc_of(a, b):id()]
+    return string.format(game.translate_string("st_arsenal_gunsmith_offer"), tostring(t and t.price or 0))
+end
+
+function gunsmith_can_pay(a, b)
+    local t = talks[npc_of(a, b):id()]
+    return t ~= nil and db.actor:money() >= t.price
+end
+
+function gunsmith_pay(a, b)
+    local npc = npc_of(a, b)
+    local t = talks[npc:id()]
+    if not t then return end
+    dialogs.relocate_money_from_actor(a, b, t.price)
+    local ways = { gunsmith = true }
+    reveal(t.e, { kind = "gunsmith", who = npc:character_name() }, { ways = ways }, true)
+    t.told = true
+end
+
+function gunsmith_told(a, b)
+    local npc = npc_of(a, b)
+    local t = talks[npc:id()]
+    talks[npc:id()] = nil
+    return string.format(game.translate_string("st_arsenal_gunsmith_told"), t and t.e.name or "")
+end
+
+---------------------------------------------------------------------------------------------
+-- saving, and the game's callbacks
+---------------------------------------------------------------------------------------------
+
+-- move what is kept under a section to the model that holds it now (a save from another
+-- catalog, mod list or language)
+function regroup()
+    local function key(k)
+        local e = arsenal_data.get(k) or arsenal_data.entry_for(k)
+        return e and e.sec or k
+    end
+    for _, field in ipairs({ "known", "studied", "facts", "new" }) do
+        local out = {}
+        for k, v in pairs(st[field]) do
+            local nk = key(k)
+            if out[nk] == nil or field ~= "known" then out[nk] = out[nk] or v end
+        end
+        st[field] = out
+    end
+end
+
+local function save_state(m_data)
+    m_data.arsenal_intel = st
+end
+
+local function load_state(m_data)
+    local d = m_data.arsenal_intel
+    st = (type(d) == "table" and d.v == VERSION) and d or fresh()
+    for _, field in ipairs({ "known", "studied", "facts", "new", "tally", "pdas", "talked" }) do
+        st[field] = st[field] or {}
+    end
+    pending, talks = {}, {}
+end
+
+local function actor_on_first_update()
+    regroup()
+    seed(actor_faction())
+    scan_pdas()
+end
+
+-- the PDA decryption a technician sells (ui_pda_npc_tab): the packages of what it unlocks
+local function hook_decrypt()
+    local t = ui_pda_npc_tab
+    if not (t and t.unlock_encrypted_pda) or t.arsenal_hooked then return end
+    local orig = t.unlock_encrypted_pda
+    t.unlock_encrypted_pda = function(...)
+        local r = orig(...)
+        scan_pdas()
+        return r
+    end
+    t.arsenal_hooked = true
+end
+
+-- for tests: the whole state, and a fresh one
+function state() return st end
+function reset() st, pending, talks, scheduled = fresh(), {}, {}, false end
+
+function on_game_start()
+    RegisterScriptCallback("actor_on_first_update", actor_on_first_update)
+    RegisterScriptCallback("npc_on_death_callback", on_kill)
+    RegisterScriptCallback("actor_on_item_take", actor_on_item_take)
+    RegisterScriptCallback("GUI_on_show", GUI_on_show)
+    RegisterScriptCallback("save_state", save_state)
+    RegisterScriptCallback("load_state", load_state)
+    hook_decrypt()
+end

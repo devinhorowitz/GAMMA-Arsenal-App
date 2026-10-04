@@ -267,4 +267,148 @@
 	<string id="st_arsenal_risk_same">
 		<text>no change on the card</text>
 	</string>
+	<string id="st_arsenal_cat_light">
+		<text>Light armor</text>
+	</string>
+	<string id="st_arsenal_cat_medium">
+		<text>Medium armor</text>
+	</string>
+	<string id="st_arsenal_cat_heavy">
+		<text>Heavy armor</text>
+	</string>
+	<string id="st_arsenal_cat_exo">
+		<text>Exoskeletons</text>
+	</string>
+	<string id="st_arsenal_cat_helmets">
+		<text>Helmets</text>
+	</string>
+	<string id="st_arsenal_worn_by">
+		<text>Worn by:</text>
+	</string>
+	<string id="st_arsenal_drop_chance">
+		<text>Drops from a body %s of the time</text>
+	</string>
+	<string id="st_arsenal_drop_rank">
+		<text>Drops from a body %s of the time once your rank reaches %s (%s)</text>
+	</string>
+	<string id="st_arsenal_drop_off">
+		<text>Bodies drop no armor in this game's economy</text>
+	</string>
+	<string id="st_arsenal_exchange_gets">
+		<text>From %s, for any of %s suits and %s RU (%s only)</text>
+	</string>
+	<string id="st_arsenal_exchange_takes">
+		<text>%s gives the %s for it and %s RU (%s only)</text>
+	</string>
+	<string id="st_arsenal_rumor_ask">
+		<text>Seen any gear worth knowing about lately?</text>
+	</string>
+	<string id="st_arsenal_rumor">
+		<text>Seen %s fighters with the %s lately.</text>
+	</string>
+	<string id="st_arsenal_rumor_specs">
+		<text>Seen %s fighters with the %s lately. Good piece, here's what it can do.</text>
+	</string>
+	<string id="st_arsenal_rumor_none">
+		<text>Nothing worth telling.</text>
+	</string>
+	<string id="st_arsenal_gunsmith_ask">
+		<text>Know of any special guns?</text>
+	</string>
+	<string id="st_arsenal_gunsmith_offer">
+		<text>There's one you haven't heard of. What it is and how to get it: %s RU.</text>
+	</string>
+	<string id="st_arsenal_gunsmith_yes">
+		<text>Deal.</text>
+	</string>
+	<string id="st_arsenal_gunsmith_no">
+		<text>Not now.</text>
+	</string>
+	<string id="st_arsenal_gunsmith_told">
+		<text>It's the %s. I've sent the details to your PDA.</text>
+	</string>
+	<string id="st_arsenal_learned">
+		<text>Learned from %s: %s</text>
+	</string>
+	<string id="st_arsenal_by_kill">
+		<text>a %s fighter</text>
+	</string>
+	<string id="st_arsenal_by_body">
+		<text>a %s fighter's body</text>
+	</string>
+	<string id="st_arsenal_by_pda">
+		<text>a %s PDA</text>
+	</string>
+	<string id="st_arsenal_by_tally">
+		<text>fighting %s</text>
+	</string>
+	<string id="st_arsenal_by_stash">
+		<text>a stash</text>
+	</string>
+	<string id="st_arsenal_by_start">
+		<text>your faction</text>
+	</string>
+	<string id="st_arsenal_by_found">
+		<text>finding one</text>
+	</string>
+	<string id="st_arsenal_by_someone">
+		<text>someone</text>
+	</string>
+	<string id="st_arsenal_known_count">
+		<text>Known %s · Found %s of %s</text>
+	</string>
+	<string id="st_arsenal_learned_on">
+		<text>Learned %s from %s</text>
+	</string>
+	<string id="st_arsenal_not_studied">
+		<text>Not studied yet: find one, or get its specs from someone who knows, to see its stats and what fits it</text>
+	</string>
+	<string id="st_arsenal_where_unknown">
+		<text>Nothing learned yet about where to find it</text>
+	</string>
+	<string id="st_arsenal_never">
+		<text>Never turns up in this game</text>
+	</string>
+	<string id="st_arsenal_sold_by">
+		<text>Sold by traders</text>
+	</string>
+	<string id="st_arsenal_sold_at">
+		<text>Seen for sale at %s</text>
+	</string>
+	<string id="st_arsenal_stashes_seen">
+		<text>Seen in stashes at %s</text>
+	</string>
+	<string id="st_arsenal_in_bodies">
+		<text>Now and then on fighters' bodies</text>
+	</string>
+	<string id="st_arsenal_from_tasks">
+		<text>From tasks</text>
+	</string>
+	<string id="st_arsenal_from_gift">
+		<text>A story reward</text>
+	</string>
+	<string id="st_arsenal_from_craft">
+		<text>Crafted at a workbench</text>
+	</string>
+	<string id="st_arsenal_from_homestead">
+		<text>In Homestead's stash runs</text>
+	</string>
+	<string id="st_arsenal_carried_story">
+		<text>Carried by %s</text>
+	</string>
+	<string id="st_arsenal_carried_story_some">
+		<text>Carried by story characters</text>
+	</string>
+	<string id="st_arsenal_rolled">
+		<text>Some fighters' %s come converted to it</text>
+	</string>
+	<string id="st_arsenal_addon_never">
+		<text>never turns up</text>
+	</string>
+	<string id="ui_mcm_arsenal_jailbreak">
+		<text>Jailbreak: show everything</text>
+	</string>
+	<string id="ui_mcm_arsenal_jailbreak_desc">
+		<text>Arsenal lists what you have learned of: your faction's gear from the start, then what you find, see, loot, read on PDAs and hear from people. With the jailbreak it lists everything this game has, like a finished encyclopedia.</text>
+	</string>
 </string_table>

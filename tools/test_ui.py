@@ -145,7 +145,7 @@ utils_ui = {
         return "75 %", false
     end,
 }
-arsenal_theme = { argb = function(role) return role end }
+arsenal_theme = { argb = function(role) return role end, markup = function(role) return "<" .. role .. ">" end }
 logged = {}
 function printf(fmt, ...) logged[#logged + 1] = string.format(fmt, ...) end
 
@@ -158,12 +158,15 @@ end
 local guns = {
     pistols = { model("PM", { { sec = "wpn_pm", name = "PM" } }),
                 model("Fort-17", { { sec = "wpn_fort", name = "Fort-17 (reliability 89%)" },
-                                   { sec = "wpn_fort17", name = "Fort-17 (reliability 91%)" } }) },
+                                   { sec = "wpn_fort17", name = "Fort-17 (reliability 91%)" } }),
+                model("Ghost", { { sec = "wpn_ghost", name = "Ghost" } }) },
     rifles = { model("AK-74 Tactical Modernized Carbine of the Northern Expedition Special Forces Unit",
                      { { sec = "wpn_ak74", name = "AK-74" } }) },
     smgs = {},
     melee = { model("Knife", { { sec = "wpn_knife", name = "Knife" } }) },
+    medium = { model("SEVA", { { sec = "sci_suit", name = "SEVA" } }) },
 }
+for c, l in pairs(guns) do for _, e in ipairs(l) do e.cat = c end end
 found = { wpn_fort17 = { y = 2012, mo = 5, d = 14, lvl = "l01_escape" } }
 -- what fits the Fort-17s: four scopes (one shared), a kit, a suppressor (built into the other
 -- variant), a launcher
@@ -182,24 +185,33 @@ FIT = {
 }
 icons = {}
 arsenal_data = {
-    CATEGORIES = { "pistols", "smgs", "rifles", "melee" },
+    CATEGORIES = { "pistols", "smgs", "rifles", "melee", "medium" },
+    ARMOR = { medium = true },
     has_stat_card = function(sec) return sec ~= "wpn_knife" end,
     list = function(c) return guns[c] or {} end,
-    count = function() return 4 end,
+    count = function() return 5 end,
     get = function(sec)
         for _, l in pairs(guns) do for _, e in ipairs(l) do
             for _, v in ipairs(e.variants) do if v.sec == sec then return e end end
         end end
     end,
     icon = function(sec) icons[#icons + 1] = sec; return "ui\\ui_icon_equipment", { x1 = 0, y1 = 0, w = 250, h = 100 } end,
-    stat_rows = function() return { { stat = "accuracy", gr = { name = "ui_inv_accuracy", icon_p = "a", unit = "st_perc" } },
-                                    { stat = "fire_rate", gr = { name = "ui_inv_rate_of_fire", icon_p = "r", unit = "st_stat_rpm" } } } end,
+    -- a gun's card rows; a suit's are the outfit card's
+    stat_rows = function(live, sec)
+        if sec == "sci_suit" then
+            return { { stat = "fire_wound_protection", gr = { name = "ui_inv_outfit_fire_wound_protection", icon_p = "b", unit = "st_perc" } },
+                     { stat = "burn_protection", gr = { name = "ui_inv_outfit_burn_protection", icon_p = "t", unit = "st_perc" } } }
+        end
+        return { { stat = "accuracy", gr = { name = "ui_inv_accuracy", icon_p = "a", unit = "st_perc" } },
+                 { stat = "fire_rate", gr = { name = "ui_inv_rate_of_fire", icon_p = "r", unit = "st_stat_rpm" } } }
+    end,
     -- fully upgraded: the Fort-17s' accuracy rises (the better variant's counts), nothing raises fire rate
     max_stat = function(sec, stat)
         if stat == "accuracy" and (sec == "wpn_fort" or sec == "wpn_fort17") then
             return (sec == "wpn_fort17") and 82 or 80, 75
         end
         if stat == "accuracy" and sec == "wpn_pm" then return 90, 70 end
+        if sec == "sci_suit" then return (stat == "fire_wound_protection") and 90 or 75, 75 end
         if stat == "fire_rate" then
             local r = ({ wpn_fort = 400, wpn_fort17 = 450 })[sec] or 600
             return r, r
@@ -233,6 +245,8 @@ arsenal_data.FACTIONS = { "stalker", "dolg", "freedom", "csky", "ecolog", "kille
     "zombied", "renegade", "greh", "isg" }
 local FORT = { wpn_fort = true, wpn_fort17 = true }
 function arsenal_data.carriers(sec)
+    -- a loadout naming the suit: a suit's page shows who wears it, not this
+    if sec == "sci_suit" then return { { faction = "ecolog", ranks = ALL } } end
     if not FORT[sec] then return {} end
     return { { faction = "bandit", ranks = { "novice", "trainee", "professional", "expert", "legend" } },
              { faction = "stalker", ranks = { "experienced", "professional", "veteran", "legend" } },
@@ -241,6 +255,7 @@ function arsenal_data.carriers(sec)
 end
 function arsenal_data.stashes(sec)
     if FORT[sec] then return { "l01_escape", "l02_garbage" } end
+    if sec == "sci_suit" then return { "l08_yantar" } end
     if sec == "wpn_pm" then return {} end
 end
 -- both Fort-17s trade for the same gun; Nimble's own Fort-17 comes for either Fort-12
@@ -250,7 +265,36 @@ function arsenal_data.nimble(sec)
              from = sec == "wpn_fort17" and { { names = { "Fort-12", "Fort-12 (old)" }, cost = 45000 } } or {} }
 end
 function arsenal_data.repair_kits(sec)
+    if sec == "sci_suit" then return { { sec = "sew_b", name = "Basic Sewing Kit" } } end
     return FORT[sec] and { { sec = "ck_p", name = "Type A Cleaning Kit" }, { sec = "tk_p", name = "Type A Repair Kit" } } or {}
+end
+-- who wears the SEVA: Ecologists of four ranks, a Duty story character; it drops half the time
+-- from rating 1747 on (Rookie), or not at all when DROP_OFF is set
+function arsenal_data.worn_by(sec)
+    if sec ~= "sci_suit" then return {} end
+    return { { faction = "ecolog", ranks = { "novice", "trainee", "experienced", "professional" } },
+             { faction = "dolg", ranks = {}, special = true } }
+end
+function arsenal_data.armor_drop(sec)
+    if DROP_OFF then return { off = true } end
+    return { chance = 50, rank = 1747 }
+end
+function arsenal_data.rank_at(v) return v < 3999 and "novice" or "trainee" end
+-- the Armor Exchange: Petrenko gives the SEVA for one of 12 suits; Sidorovich and the Owl give an
+-- exoskeleton for it
+-- what turns up: the Ghost never does, nor the PSO-1; the SEVA also turns up on Strelok (and a
+-- story character whose name has no text) and from a workbench
+function arsenal_data.obtainable(sec) return sec ~= "wpn_ghost" end
+function arsenal_data.addon_turns_up(sec) return sec ~= "ps01" end
+function arsenal_data.turns_up_model(sec)
+    if sec == "sci_suit" then return { story = { "st_strelok_name", "GENERATE_NAME_x" }, craft = true } end
+    if sec == "wpn_ak74" then return { trader = true } end
+    return {}
+end
+function arsenal_data.exchange(sec)
+    if sec ~= "sci_suit" then return { gets = {}, takes = {} } end
+    return { gets = { { traders = { "Petrenko" }, faction = "dolg", cost = 10000, count = 12 } },
+             takes = { { traders = { "Sidorovich", "Owl" }, faction = "stalker", cost = 45000, name = "Exoskeleton" } } }
 end
 -- the Fort-17s' camos: the base, one to discover (two factions drop it), one to discover (none
 -- does), one discovered
@@ -285,7 +329,8 @@ for k, v in pairs({ st_faction_stalker = "Loner", st_faction_bandit = "Bandit", 
         st_faction_army = "Military", st_faction_dolg = "Duty", st_rank_novice = "Rookie", st_rank_trainee = "Trainee",
         st_rank_experienced = "Experienced", st_rank_professional = "Professional", st_rank_veteran = "Veteran",
         st_rank_expert = "Expert", st_rank_master = "Master", st_rank_legend = "Legend", st_econ_1 = "Tourist (Easy)",
-        st_econ_2 = "Scavenger (Medium)", l02_garbage = "Garbage" }) do
+        st_econ_2 = "Scavenger (Medium)", l02_garbage = "Garbage", l08_yantar = "Yantar", st_faction_ecolog = "Ecologist",
+        st_strelok_name = "Strelok" }) do
     T[k] = v
 end
 local function first(e)
@@ -307,15 +352,15 @@ MUTANTS = {
     "layout_name": ('xml:InitListBox("wpn_list", self)', 'xml:InitListBox("weapon_list", self)'),
     "name_wrap": ("line:SetWndPos(vector2():set(0, name:GetWndPos().y + math.max(name:GetHeight(), NAME_H)))",
                   "-- found line where the layout puts it"),
-    "dim": ('found and "body" or "dim"', '"body"'),
+    "dim": ('(found and "body") or "dim"', '"body"'),
     "model_found": ("local found = arsenal_collection.entry_found(e) ~= nil",
                     "local found = arsenal_collection.is_found(e.sec)"),
-    "card_always": ("if arsenal_data.has_stat_card(shown.sec) then", "if true then"),
-    "filter": ("if found or not only then", "if true then"),
+    "card_always": ("if know and arsenal_data.has_stat_card(shown.sec) then", "if know then"),
+    "filter": ("if listed(e) and (found or not only) then", "if listed(e) then"),
     "add_after": ("self.detail:AddWindow(entry, true)", "-- not added"),
     "no_combine": ("if #values < 2 then", "if true then"),
     "first_variant": ("            shown = v\n            break", "            break"),
-    "no_variants": ("if #e.variants > 1 then", "if false then"),
+    "no_variants": ("if know and #e.variants > 1 then", "if false then"),
     "unsorted": ("table.sort(nums, function(a, b) return (tonumber(a) or 0) < (tonumber(b) or 0) end)", "-- as found"),
     "no_max": ("    if mx then\n", "    if false then\n"),
     "max_always": ("if not best or best <= base then return nil end", "if not best then return nil end"),
@@ -329,8 +374,8 @@ MUTANTS = {
     "modes_extra": ("if not has[m] then extra[#extra + 1] = m end", "extra[#extra + 1] = m"),
     "no_conversions": ('text("entry_line", string.format(game.translate_string("st_arsenal_ammo_by_upgrade"), c), "dim")',
                        "-- not shown"),
-    "no_after": ("sup[#sup + 1] = { sec = it.sec, name = it.name, note = it.upgrade and after or nil }",
-                 "sup[#sup + 1] = { sec = it.sec, name = it.name }"),
+    "no_after": ("sup[#sup + 1] = { sec = it.sec, name = it.name, note = it.upgrade and after or nil, never = it.never }",
+                 "sup[#sup + 1] = { sec = it.sec, name = it.name, never = it.never }"),
     "flat_offset": ("local x, y = self.flat and PDA_X or 0, self.flat and PDA_Y or 0", "local x, y = 0, 0"),
     "no_bezel": ('xml:InitStatic("flat_bezel", self)', "-- no frame"),
     "no_escape": ("if dik == DIK_keys.DIK_ESCAPE or dik == arsenal_mcm.flat_key() then",
@@ -342,9 +387,9 @@ MUTANTS = {
     "camo_none": ("    if #camo_list > 0 then", "    if false then"),
     "camo_on": ("and string.format(game.translate_string(\"st_arsenal_camo_locked_on\"), factions_text(c.factions))",
                 "and game.translate_string(\"st_arsenal_camo_locked\")"),
-    "camo_found": ("            elseif c.required then\n                note = game.translate_string(\"st_arsenal_camo_found\")\n",
+    "camo_found": ("                elseif c.required then\n                    note = game.translate_string(\"st_arsenal_camo_found\")\n",
                    ""),
-    "camo_green": ("            elseif c.required then\n                t:SetTextColor(theme.argb(\"good\"))\n", ""),
+    "camo_green": ("                elseif c.required then\n                    t:SetTextColor(theme.argb(\"good\"))\n", ""),
     "camo_ratio": ("                local w = h * ratio", "                local w = h"),
     "risk_check": ("agrees = ok and type(s) == \"string\" and tonumber(s:match(\"[-+]?%d+%.?%d*\")) == r.base",
                    "agrees = true"),
@@ -363,13 +408,50 @@ MUTANTS = {
                       "-- no special"),
     "where_every_faction": ('if #list == #arsenal_data.FACTIONS then return game.translate_string("st_arsenal_every_faction") end',
                             "-- every faction named"),
-    "where_no_source": ("if #carriers == 0 and not levels then", "if false then"),
-    "where_levels": ("text(\"entry_line\", #names > 0\n", "text(\"entry_line\", false\n"),
+    "where_no_source": ("    if not any then\n        line(game.translate_string(full and", "    if false then\n        line(game.translate_string(full and"),
+    "armor_modes": ("if know and not armor and arsenal_data.has_stat_card(shown.sec) then",
+                    "if know and arsenal_data.has_stat_card(shown.sec) then"),
+    "armor_rows": ("for _, row in ipairs(arsenal_data.stat_rows(false, shown.sec)) do", "for _, row in ipairs(arsenal_data.stat_rows(false)) do"),
+    "armor_worn": ("known_rows(armor and safe(arsenal_data.worn_by, shown.sec) or {}, fx.worn)", "known_rows({}, fx.worn)"),
+    "armor_carried": ("known_rows((not armor) and safe(arsenal_data.carriers, shown.sec) or {}, fx.carried)",
+                      "known_rows(safe(arsenal_data.carriers, shown.sec) or {}, fx.carried)"),
+    "never_role": ('local role = (not arsenal_data.obtainable(e.sec) and "never") or (found and "body") or "dim"',
+                   'local role = (found and "body") or "dim"'),
+    "count_obtainable": ("            if arsenal_data.obtainable(e.sec) then\n                total = total + 1",
+                         "            if true then\n                total = total + 1"),
+    "never_line": ('        line(game.translate_string("st_arsenal_never"), "warn")\n', ""),
+    "addon_never_note": ("            if it.never then\n", "            if false then\n"),
+    "addon_hide": ("if up or not imm then", "if true then"),
+    "listed": ("if listed(e) and (found or not only) then", "if found or not only then"),
+    "new_mark": ("e.name .. (is_new(e) and new_mark() or \"\")", "e.name"),
+    "cat_new": ("if listed(e) and is_new(e) then fresh = true end", "-- no mark"),
+    "not_studied_note": ('        text("entry_line", game.translate_string("st_arsenal_not_studied"), "dim")\n', ""),
+    "gate_fits": ("    -- what fits it, its camos, parts and repair kits, once it is studied\n    if know then",
+                  "    -- what fits it, its camos, parts and repair kits, once it is studied\n    if true then"),
+    "facts_rows": ("        if full then return rows end\n", ""),
+    "facts_stash": ('        line(string.format(game.translate_string("st_arsenal_stashes_seen"), table.concat(names, ", ")))\n', ""),
+    "facts_sold": ('        line(string.format(game.translate_string("st_arsenal_sold_at"), table.concat(names, ", ")))\n', ""),
+    "kit_mine": ("            if f == mine then has = true end\n", ""),
+    "where_unknown": ('line(game.translate_string(full and "st_arsenal_no_source" or "st_arsenal_where_unknown"), "dim")',
+                      'line(game.translate_string("st_arsenal_no_source"), "dim")'),
+    "learned_line": ("    elseif learned and learned.at then", "    elseif false then"),
+    "viewed": ("    if arsenal_intel then arsenal_intel.viewed(e) end\n", ""),
+    "known_header": ("    if immersive() then\n        self.found_count", "    if false then\n        self.found_count"),
+    "story_names": ("            if t ~= n then names[#names + 1] = t end", "            names[#names + 1] = t"),
+    "full_sources": ("    local up = full and safe(arsenal_data.turns_up_model, shown.sec) or {}",
+                     "    local up = safe(arsenal_data.turns_up_model, shown.sec) or {}"),
+    "armor_drop_rank": ("rank and string.format(game.translate_string(\"st_arsenal_drop_rank\")", "false and string.format(game.translate_string(\"st_arsenal_drop_rank\")"),
+    "armor_drop_off": ("        if d and d.off then\n", "        if false then\n"),
+    "armor_exchange": ("local ex = armor and safe(arsenal_data.exchange, shown.sec)", "local ex = nil"),
+    "armor_max": ("if row.gr.track or not (MAXED[row.stat] or arsenal_data.ARMOR[e.cat]) then return nil end",
+                  "if row.gr.track or not MAXED[row.stat] then return nil end"),
+    "where_levels": ("line(#names > 0 and string.format(game.translate_string(\"st_arsenal_stashes_at\")",
+                     "line(false and string.format(game.translate_string(\"st_arsenal_stashes_at\")"),
     "where_distinct": ("for _, list in ipairs({ distinct(from), distinct(gets) }) do", "for _, list in ipairs({ from, gets }) do"),
     "where_eco": ("        if k.economies then", "        if false then"),
     "where_free": ('or string.format(game.translate_string("st_arsenal_start_free"), who)', "or who"),
     "where_row_height": ("y = y + math.max(f:GetHeight(), r:GetHeight()) + 2", "y = y + f:GetHeight() + 2"),
-    "where_made": ('text("entry_line", string.format(game.translate_string("st_arsenal_made_from"), mf.from, mf.kit))',
+    "where_made": ('line(string.format(game.translate_string("st_arsenal_made_from"), mf.from, mf.kit))',
                    "-- not shown"),
 }
 
@@ -427,14 +509,15 @@ def main():
           "values listed by number with one unit: %s | %s | %s"
           % (joined("350 RPM", "200 RPM", "245 RPM"), joined("30", "20"), joined("1.05 kg", "2 lb")))
 
-    check(ui.found_count.text == "Found 1 of 4", "count line: %s" % ui.found_count.text)
+    check(ui.found_count.text == "Found 1 of 5", "count line: %s" % ui.found_count.text)
     cats = [(r.key, r.name.text, r.count.text) for r in ui.cat_list["items"].values()]
-    check(cats == [("pistols", "Pistols", "1/2"), ("rifles", "Rifles", "0/1"), ("melee", "Melee", "0/1")],
+    check(cats == [("pistols", "Pistols", "1/2"), ("rifles", "Rifles", "0/1"), ("melee", "Melee", "0/1"),
+                   ("medium", "Medium armor", "0/1")],
           "categories with found/total models, empty ones left out: %s" % cats)
     rows = [(r.key, r.name.text, r.name.color) for r in ui.wpn_list["items"].values()]
-    check([r[1] for r in rows] == ["PM", "Fort-17"], "one row per gun model: %s" % [r[1] for r in rows])
-    check([r[2] for r in rows] == ["dim", "body"],
-          "a model is found once any variant is, else dim: %s" % [r[2] for r in rows])
+    check([r[1] for r in rows] == ["PM", "Fort-17", "Ghost"], "one row per gun model: %s" % [r[1] for r in rows])
+    check([r[2] for r in rows] == ["dim", "body", "never"],
+          "a model is found once any variant is, else dim; one that never turns up darker: %s" % [r[2] for r in rows])
     entry = ui.detail.content and ui.detail.content[1]
     check(entry is not None and ui.sec == "wpn_pm", "the first model's entry is shown")
     if entry is not None:
@@ -515,8 +598,9 @@ def main():
           and rr[0].h > 18 and fr[1].y >= rr[0].y + rr[0].h,
           "a faction and its ranks side by side; ranks that wrap push the next row down: %s"
           % [(f.y, r.y, r.h) for f, r in zip(fr, rr)])
-    check(after("Scopes:", 4) == ["Kobra", "PK-A", "OKP-7", "PSO-1"],
-          "every variant's scopes, each once, the shown variant's first: %s" % after("Scopes:", 4))
+    check(after("Scopes:", 5) == ["Kobra", "PK-A", "OKP-7", "PSO-1", "never turns up"],
+          "every variant's scopes, each once, the shown variant's first; one that never turns up says so: %s"
+          % after("Scopes:", 5))
     check(after("Suppressors:", 3) == ["Built in on Fort-17 (reliability 89%)", "PBS-1", "after an upgrade"],
           "a suppressor built into one variant is named for it; one an upgrade mounts says so: %s"
           % after("Suppressors:", 3))
@@ -582,6 +666,116 @@ def main():
     i = texts.index("Where to find:") if "Where to find:" in texts else -1
     check(i >= 0 and texts[i + 1] == "No faction carries it and no stash holds it",
           "a gun no fighter carries and no stash holds says so: %s" % texts[i:i + 2])
+    # a suit: the outfit card with its max, no fire modes, who wears it and how it drops, no
+    # carriers, stashes, its repair kits
+    ui.cat_list.sel = 3
+    ui.cb.cat_list()
+    seva = shown(ui)
+    texts = texts_of(seva)
+    stats = [c.stat for c in seva.children.values() if c.stat]
+    check(ui.sec == "sci_suit" and stats == ["fire_wound_protection", "burn_protection"]
+          and not any(t.startswith("Fire modes") for t in texts) and "Weight: 3.3 kg" in texts,
+          "a suit: the outfit card, no fire modes: %s %s" % (stats, texts[:6]))
+    smax = [(c.stat, [k.text for k in c.children.values() if k.path == "entry_max"])
+            for c in seva.children.values() if c.path == "stats_box"]
+    check(smax == [("fire_wound_protection", ["max 90 %"]), ("burn_protection", [])],
+          "a suit's max where an upgrade raises a card value: %s" % smax)
+    check(after("Where to find:", 7) == ["Worn by:", "Ecologist", "Rookie \u2013 Professional", "Duty", "special squads",
+                                          "Drops from a body 50% of the time once your rank reaches 1747 (Rookie)",
+                                          "In stashes, most often at Yantar"]
+          and "Carried by:" not in texts,
+          "who wears it, how it drops, stashes; no carriers: %s" % after("Where to find:", 7))
+    check(after("In stashes, most often at Yantar", 4) == [
+              "Carried by Strelok", "Crafted at a workbench",
+              "From Petrenko, for any of 12 suits and 10000 RU (Duty only)",
+              "Sidorovich, Owl gives the Exoskeleton for it and 45000 RU (Loner only)"],
+          "story characters (a name with no text left out), crafting, the Armor Exchange both ways: %s"
+          % after("In stashes, most often at Yantar", 4))
+    check(after("Repair kits:", 1) == ["Basic Sewing Kit"], "its repair kits: %s" % after("Repair kits:", 1))
+    g.DROP_OFF = True
+    ui.cat_list.sel = 0
+    ui.cb.cat_list()
+    ui.cat_list.sel = 3
+    ui.cb.cat_list()
+    off = texts_of(shown(ui))
+    g.DROP_OFF = None
+    check("Bodies drop no armor in this game's economy" in off, "with drops off, says so")
+    # a model that never turns up: listed with the jailbreak, and says so
+    ui.cat_list.sel = 0
+    ui.cb.cat_list()
+    ui.wpn_list.sel = 2
+    ui.cb.wpn_list()
+    ghost = texts_of(shown(ui))
+    i = ghost.index("Where to find:") if "Where to find:" in ghost else -1
+    check(ui.sec == "wpn_ghost" and i >= 0 and ghost[i + 1] == "Never turns up in this game",
+          "a model that never turns up says so: %s" % ghost[i:i + 2])
+
+    # immersive: only what the player knows of, what he has learned of where to find it, its
+    # stats once studied, a mark on what is new
+    lua.execute("""
+KNOWN = { wpn_pm = true, wpn_fort = true, wpn_ak74 = true }
+STUDIED = {}
+NEW = { wpn_pm = true }
+FACTS = { wpn_pm = { stash = { l02_garbage = true }, sold = { Sidorovich = true } },
+          wpn_fort = { carried = { bandit = { trainee = true }, stalker = { legend = true } }, ways = { kit = true } } }
+LEARNED = { wpn_pm = { at = { d = 3, mo = 6, y = 2012, lvl = "l01_escape" }, how = { kind = "pda" } } }
+arsenal_intel = {
+    jailbroken = function() return false end,
+    listed = function(e) return KNOWN[e.sec] == true end,
+    studied = function(e) return STUDIED[e.sec] == true end,
+    facts = function(e) return FACTS[e.sec] end,
+    learned = function(e) return LEARNED[e.sec] end,
+    describe = function(how) return "a Duty PDA" end,
+    is_new = function(e) return NEW[e.sec] == true end,
+    viewed = function(e) NEW[e.sec] = nil end,
+    player_faction = function() return "stalker" end,
+}
+""")
+    ui.cat_list.sel = 0
+    ui = m.get_ui()
+    check(ui.found_count.text == "Known 3 \u00b7 Found 1 of 5", "count line: %s" % ui.found_count.text)
+    cats = [r.name.text for r in ui.cat_list["items"].values()]
+    check(cats[0] == "Pistols <warn>*", "a category with something new is marked: %s" % cats)
+    ui.cat_list.sel = 0
+    ui.cb.cat_list()
+    rows = [r.name.text for r in ui.wpn_list["items"].values()]
+    check(rows == ["PM <warn>*", "Fort-17"], "only what is known, the new one marked: %s" % rows)
+    pm = shown(ui)
+    texts = texts_of(pm)
+    stats = [c.stat for c in pm.children.values() if c.stat]
+    i = texts.index("Where to find:") if "Where to find:" in texts else -1
+    check("Learned 03.06.2012 from a Duty PDA" in texts and not stats and not any(t.startswith("Weight") for t in texts)
+          and any(t.startswith("Not studied yet") for t in texts),
+          "a known model not yet studied: how it was learned, no stats: %s %s" % (stats, texts[:5]))
+    check(texts[i + 1:i + 3] == ["Seen in stashes at Garbage", "Seen for sale at Sidorovich"],
+          "where to find it: only where it was seen: %s" % texts[i:i + 3])
+    rows = [r.name.text for r in m.get_ui().wpn_list["items"].values()]
+    check(rows[0] == "PM", "seen: no longer new: %s" % rows)
+    ui.wpn_list.sel = 1
+    ui.cb.wpn_list()
+    fort = shown(ui)
+    texts = texts_of(fort)
+    check("Scopes:" not in texts and "Parts:" not in texts and "Camos:" not in texts,
+          "not studied: nothing of what fits it: %s" % [t for t in texts if t.endswith(":")])
+    check(after("Where to find:", 7) == ["Carried by:", "Bandit", "Trainee", "Loner", "Legend",
+                                          "New-game kit, 150 points: Loner", "New-game kit, free: Loner"],
+          "the factions and ranks seen carrying it, the player's own faction's kits only: %s" % after("Where to find:", 7))
+    lua.execute("STUDIED.wpn_fort = true")
+    ui.wpn_list.sel = 0
+    ui.cb.wpn_list()
+    ui.wpn_list.sel = 1
+    ui.cb.wpn_list()
+    texts = texts_of(shown(ui))
+    check("Scopes:" in texts and "PSO-1" not in texts, "studied: what fits it, but what never turns up left out")
+    ui.cat_list.sel = 1
+    ui.cb.cat_list()
+    texts = texts_of(shown(ui))
+    i = texts.index("Where to find:") if "Where to find:" in texts else -1
+    check(ui.sec == "wpn_ak74" and texts[i + 1] == "Nothing learned yet about where to find it",
+          "nothing learned of where to find it says so, though traders sell it: %s" % texts[i:i + 2])
+    lua.execute("arsenal_intel = nil")
+    ui = m.get_ui()
+
     ui.cb.btn_back()
     check(g.pda_section == "eptLauncher", "Back returns to the launcher")
 
@@ -597,7 +791,7 @@ def main():
         kids = paths(flat)
         check(kids[:2] == ["flat_bezel", "flat_caption"], "the frame first, behind everything: %s" % kids[:3])
         check(list(flat.rect.values())[:2] == [112, 34], "placed as the PDA places its pages: %s" % list(flat.rect.values()))
-        check(flat.found_count.text == "Found 1 of 4" and flat.detail.content and flat.detail.content[1] is not None,
+        check(flat.found_count.text == "Found 1 of 5" and flat.detail.content and flat.detail.content[1] is not None,
               "the window fills like the page")
         ret = flat.OnKeyboard(flat, g.DIK_keys.DIK_A, g.ui_events.WINDOW_KEY_PRESSED)
         check(flat.IsShown(flat) and not ret, "another key leaves it open")

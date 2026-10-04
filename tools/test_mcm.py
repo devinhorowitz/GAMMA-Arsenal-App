@@ -32,6 +32,8 @@ MUTANTS = {
     "any_key": ("if k and key == k then", "if k then"),
     "seen_def": ('{ id = "count_seen", type = "check", val = 1, def = false }', '{ id = "count_seen", type = "check", val = 1 }'),
     "seen_any": ("return ok and v == true", "return ok"),
+    "jail_def": ('{ id = "jailbreak", type = "check", val = 1, def = false }', '{ id = "jailbreak", type = "check", val = 1 }'),
+    "jail_any": ("return (ok and v == true) or false", "return ok"),
 }
 
 
@@ -67,6 +69,15 @@ def main():
     check(m.count_seen() is True, "on once the player turns it on")
     mcm, g.ui_mcm = g.ui_mcm, None
     check(m.count_seen() is False, "off without MCM")
+    g.ui_mcm = mcm
+    jail = [o for o in opts.gr.values() if o.id == "jailbreak"]
+    check(len(jail) == 1 and jail[0].type == "check" and jail[0]["def"] is False,
+          "the jailbreak is a check box, off by default (false, not nil): Arsenal starts immersive")
+    check(m.jailbreak() is False, "off while the option is unset")
+    g.options["arsenal/jailbreak"] = True
+    check(m.jailbreak() is True, "on once the player turns it on")
+    mcm, g.ui_mcm = g.ui_mcm, None
+    check(m.jailbreak() is False, "off without MCM")
     g.ui_mcm = mcm
     m.on_game_start()
     press = g.callbacks.on_key_press
