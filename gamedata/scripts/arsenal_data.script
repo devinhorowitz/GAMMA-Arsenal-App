@@ -1,0 +1,1311 @@
+--[[
+    Arsenal data: every weapon of the running game, read from its own configs (system.ltx and
+    all it includes, after DLTX), so the catalog matches whatever mod list the player has.
+
+    A weapon is listed when its kind is a weapon kind (or its class is WP_KNIFE), it is its own
+    parent_section (a scope or silencer combination names the gun it was made from), and it
+    has a name and an inventory icon. Multiplayer sections, the knives' attack animations and
+    a few leftovers that look like weapons but are not are skipped.
+
+    Guns that share a name are sorted out here. Those that play the same (same ammo, fire
+    modes, magazine, rate of fire, damage, accuracy, handling, bullet speed, reliability,
+    recoil, weight and built-in or attachable parts) are one entry, and finding any of them
+    finds it. The rest get tags from the differences that tell them apart, in the order a
+    player cares about: caliber, a built-in suppressor or scope, a grenade launcher, auto
+    fire, magazine, rate of fire, the stat card's values, weight, then mounts. Only guns that
+    still clash get the next tag; what no tag separates is numbered.
+
+    Stats come from the game's own weapon stat card, utils_ui.stats_table.weapon, as GAMMA
+    sets it up: the same rows, order, icons, names and units as the inventory tooltip. A row
+    whose function needs a live weapon (Momopate's bullet speed, reliability, recoil) gets a
+    stand-in here that reads the same values from the section alone.
+--]]
+
+-- weapon kind -> category, in display order
+CATEGORIES = { "pistols", "smgs", "shotguns", "rifles", "snipers", "launchers", "melee" }
+local KIND = {
+    w_pistol = "pistols", w_smg = "smgs", w_shotgun = "shotguns", w_rifle = "rifles",
+    w_sniper = "snipers", w_explosive = "launchers", w_melee = "melee",
+}
+-- sections that look like weapons but are not items
+local SKIP = { wpn_addon_silencer = true, wpn_addon_scope = true }
+
+local by_var, by_cat, total = nil, nil, 0
+
+local function translated(key)
+    if not key or key == "" then return nil end
+    local s = game.translate_string(key)
+    return (s ~= key) and s or nil
+end
+
+-- the category a section is listed under, or nil
+function category_of(sec)
+    if SKIP[sec] or sec:find("^mp_") or sec:find("^animation_") then return nil end
+    local kind = ini_sys:r_string_ex(sec, "kind")
+    local cat = kind and KIND[kind]
+    if not cat and ini_sys:r_string_ex(sec, "class") == "WP_KNIFE" then
+        cat = "melee"
+    end
+    if not cat then return nil end
+    local parent = ini_sys:r_string_ex(sec, "parent_section")
+    if parent and parent ~= sec then return nil end              -- a combination of another gun
+    if cat == "launchers" and not ini_sys:r_string_ex(sec, "weapon_class") then
+        return nil                                                -- a grenade, not a launcher
+    end
+    if not translated(ini_sys:r_string_ex(sec, "inv_name")) then return nil end
+    if not ini_sys:r_float_ex(sec, "inv_grid_x") then return nil end
+    return cat
+end
+
+local function by_name(a, b)
+    if a.name ~= b.name then return a.name < b.name end
+    return a.sec < b.sec
+end
+
+-- a field as the engine reads it: r_float_ex is the engine's atof, so "1.0f" is 1 and a list
+-- gives its first value
+local function num(sec, key)
+    local n = ini_sys:r_float_ex(sec, key)
+    return n and string.format("%.4g", n) or ""
+end
+
+-- the ammo a gun chambers, worn rounds left out, in a fixed order
+local function ammo_key(sec)
+    local list = {}
+    for a in (ini_sys:r_string_ex(sec, "ammo_class") or ""):gmatch("[^,%s]+") do
+        if not (a:find("_bad$") or a:find("_verybad$")) then
+            list[#list + 1] = a
+        end
+    end
+    table.sort(list)
+    return table.concat(list, ",")
+end
+
+-- the items of a comma list in a section
+local function each_of(sec, key)
+    return (ini_sys:r_string_ex(sec, key) or ""):gmatch("[^,%s]+")
+end
+
+-- what makes two guns of one name play differently
+local SAME = { "ammo_mag_size", "rpm", "hit_power", "fire_dispersion_base", "PDM_disp_base",
+    "control_inertion_factor", "bullet_speed", "condition_shot_dec", "zoom_cam_dispersion",
+    "silencer_status", "scope_status", "grenade_launcher_status", "inv_weight" }
+
+function signature(sec)
+    local t = { ammo_key(sec), ((ini_sys:r_string_ex(sec, "fire_modes") or ""):gsub("%s", "")) }
+    for _, k in ipairs(SAME) do
+        t[#t + 1] = num(sec, k)
+    end
+    local up = {}
+    for u in each_of(sec, "installed_upgrades") do
+        up[#up + 1] = u
+    end
+    table.sort(up)
+    t[#t + 1] = table.concat(up, ",")
+    return table.concat(t, "|")
+end
+
+local function status(sec, key)
+    return math.floor(ini_sys:r_float_ex(sec, key) or 0)
+end
+
+local function tag(id, ...)
+    return string.format(game.translate_string(id), ...)
+end
+
+-- the caliber, from the first ammo's name: its first word with a digit in it ("9x19", ".45";
+-- a Russian name may open with a word for "cartridges"), else its first word
+local function caliber(sec)
+    local a = (ini_sys:r_string_ex(sec, "ammo_class") or ""):match("^%s*([^,%s]+)")
+    local n = a and (translated(ini_sys:r_string_ex(a, "inv_name_short"))
+        or translated(ini_sys:r_string_ex(a, "inv_name")))
+    if not n then return nil end
+    for w in n:gmatch("%S+") do
+        if w:find("%d") then return w end
+    end
+    return n:match("^(%S+)")
+end
+
+local function first_ammo(sec)
+    local ok, list = pcall(utils_item.get_ammo, sec, nil)
+    return ok and list and list[1]
+end
+
+local function value(sec, key)
+    return ini_sys:r_float_ex(sec, key) or 0
+end
+
+local function above0(d)
+    return d < 0 and 0 or d
+end
+
+-- A gun's values as the stat card reads them for a section: its own plus the upgrades it
+-- ships with, which utils_item.get_param adds (a pre-upgraded variant's card shows them).
+PARAMS = { "fire_dispersion_base", "PDM_disp_base", "control_inertion_factor", "rpm",
+    "ammo_mag_size", "bullet_speed", "condition_shot_dec", "zoom_cam_dispersion" }
+
+function params(sec)
+    local p = { sec = sec }
+    for _, k in ipairs(PARAMS) do
+        local ok, v = pcall(utils_item.get_param, sec, nil, k, "float", true)
+        p[k] = (ok and tonumber(v)) or ini_sys:r_float_ex(sec, k) or 0
+    end
+    return p
+end
+
+-- Momopate's bullet speed (as a fraction of 1000 m/s) and recoil control (nil without a recoil
+-- profile) from a gun's values; momopate_weaponstats.script
+local function bspeed(p)
+    local bs = p.bullet_speed
+    local ammo = first_ammo(p.sec)
+    if ammo then
+        local k = ini_sys:r_float_ex(ammo, "k_bullet_speed") or 1
+        bs = (bs ~= 0) and (k * bs) or k
+        bs = bs * 0.70
+    end
+    return normalize(bs, 0, 1000)
+end
+
+local ini_recoil
+local function numbers(s, out)
+    for n in (s or ""):gmatch("[^,:%s]+") do
+        out[#out + 1] = tonumber(n)
+    end
+    return out
+end
+
+local function recoil(p)
+    ini_recoil = ini_recoil or ini_file("plugins\\grok_bo_enhanced_recoil.ltx")
+    local prof = ini_sys:r_string_ex(p.sec, "parent_section") or p.sec
+    if not ini_recoil:section_exist(prof) then return nil end
+    local s = numbers(ini_recoil:r_string_ex(prof, "s"), {})
+    local e = {}
+    for _, v in ipairs(numbers(ini_recoil:r_string_ex(prof, "e"), {})) do
+        if v > 0 then e[#e + 1] = v end
+    end
+    local zcd = p.zoom_cam_dispersion
+    if #s == 0 or zcd <= 0 then return nil end
+    local mean = 0
+    for _, v in ipairs(s) do mean = mean + v end
+    mean = mean / #s
+    local r = (1 / zcd) * (1 / (3 * mean + (e[2] or 1))) * 100
+    return math.max(1, r)
+end
+
+-- A stat as the inventory's stat card shows it (utils_ui and ish_item_stats), from a gun's
+-- values: the same formula in the same order, rounded the same way, so a tag or a maximum
+-- reads like the card. Keyed by the card's row names. The percentages stop at 100: stacked
+-- upgrades can take a dispersion past zero in the configs, which no gun reaches in play.
+CARD = {
+    accuracy = function(p)
+        return math.min(100, math.floor(above0((p.fire_dispersion_base - 1.5) / (0 - 1.5)) * 100))
+    end,
+    handling = function(p)
+        return math.min(100, math.floor((above0((p.PDM_disp_base - 2.1) / (0 - 2.1))
+            + above0((p.control_inertion_factor - 3) / (1 - 3))) / 2 * 100))
+    end,
+    fire_rate = function(p)
+        return math.ceil(above0((p.rpm - 0) / (1000 - 0)) * 1000)
+    end,
+    ammo_mag_size = function(p)
+        return math.ceil(p.ammo_mag_size)
+    end,
+    speed = function(p)
+        return math.ceil(bspeed(p) * 1000)
+    end,
+    reliability = function(p)
+        return math.min(100, math.ceil((1.0 - p.condition_shot_dec - 0.99) * 10000))
+    end,
+    recoil = function(p)
+        local r = recoil(p)
+        return r and math.ceil(r)
+    end,
+    damage = function(p)
+        local hp, ammo = value(p.sec, "hit_power"), first_ammo(p.sec)
+        if ammo then
+            local k = ini_sys:r_float_ex(ammo, "k_hit") or 1
+            hp = (hp ~= 0) and (k * hp) or k
+        end
+        return math.floor(above0(hp / 1.5) * 100)
+    end,
+}
+
+-- The upgrade tree of a section. Its "upgrades" name the first groups; a group's "elements"
+-- are the upgrades to choose between, one per group; an upgrade's "effects" open more groups
+-- and its "section" holds the changes the game adds to the gun's values. Returns the groups,
+-- each a list of { ps = change section, prop = property, installed = the gun ships with it },
+-- `fixed` when the gun ships an upgrade of the group. Kept per section: the configs do not
+-- change while the game runs, and a page asks for a tree once per stat.
+local trees = {}
+function upgrade_tree(sec)
+    if trees[sec] then return trees[sec] end
+    local installed, groups, seen, queue = {}, {}, {}, {}
+    for u in each_of(sec, "installed_upgrades") do
+        installed[u] = true
+    end
+    for g in each_of(sec, "upgrades") do
+        queue[#queue + 1] = g
+    end
+    local i = 1
+    while queue[i] do
+        local g = queue[i]
+        i = i + 1
+        if not seen[g] and ini_sys:section_exist(g) then
+            seen[g] = true
+            local group = { fixed = false }
+            for el in each_of(g, "elements") do
+                if ini_sys:section_exist(el) then
+                    for nxt in each_of(el, "effects") do
+                        queue[#queue + 1] = nxt
+                    end
+                    local inst = installed[el] == true
+                    group.fixed = group.fixed or inst
+                    local ps = ini_sys:r_string_ex(el, "section")
+                    if ps and ini_sys:section_exist(ps) then
+                        group[#group + 1] = { ps = ps, prop = ini_sys:r_string_ex(el, "property") or "", installed = inst }
+                    end
+                end
+            end
+            if #group > 0 then
+                groups[#groups + 1] = group
+            end
+        end
+    end
+    trees[sec] = groups
+    return groups
+end
+
+local function calibre(u)
+    return u.prop:find("prop_calibre", 1, true) ~= nil
+end
+
+-- The upgrades open to a fully upgraded gun, by group, as lists of change sections: a group
+-- the gun ships an upgrade in is already in its values (params) and left out, and a caliber
+-- conversion trades one stat for another and is no upgrade.
+function upgrade_groups(sec)
+    local out = {}
+    for _, g in ipairs(upgrade_tree(sec)) do
+        if not g.fixed then
+            local opts = {}
+            for _, u in ipairs(g) do
+                if not calibre(u) then opts[#opts + 1] = u.ps end
+            end
+            if #opts > 0 then out[#out + 1] = opts end
+        end
+    end
+    return out
+end
+
+-- A stat card value of a section fully upgraded: in every group, the upgrade that raises it
+-- most, or none. Returns the maximum and the value as it is, or nil for a stat the card
+-- formulas here do not cover.
+function max_stat(sec, stat)
+    local f = CARD[stat]
+    if not f or stat == "damage" then return nil end
+    local p = params(sec)
+    local base = f(p)
+    if base == nil then return nil end
+    local cur = base
+    for _, opts in ipairs(upgrade_groups(sec)) do
+        local pick
+        for _, ps in ipairs(opts) do
+            local q = {}
+            for k, v in pairs(p) do
+                q[k] = v
+            end
+            for _, k in ipairs(PARAMS) do
+                local d = ini_sys:r_float_ex(ps, k)
+                if d then q[k] = q[k] + d end
+            end
+            local v = f(q)
+            if v and v > cur then
+                cur, pick = v, q
+            end
+        end
+        if pick then p = pick end
+    end
+    return cur, base
+end
+
+-- What tells guns of one name apart, in the order a player cares about. A tagger returns the
+-- tag, "" for a plain no (no suppressor), or nil when it cannot tell (no recoil profile), and
+-- a gun it cannot tell about is no difference.
+TAGGERS = {
+    caliber,
+    function(sec) return status(sec, "silencer_status") == 1 and tag("st_arsenal_tag_suppressed") or "" end,
+    function(sec) return status(sec, "scope_status") == 1 and tag("st_arsenal_tag_scoped") or "" end,
+    function(sec)
+        local g = status(sec, "grenade_launcher_status")
+        return g == 1 and tag("st_arsenal_tag_gl") or g == 2 and tag("st_arsenal_tag_gl_mount") or ""
+    end,
+    function(sec)
+        return (ini_sys:r_string_ex(sec, "fire_modes") or ""):find("-1", 1, true) and tag("st_arsenal_tag_auto") or ""
+    end,
+    function(sec) return tag("st_arsenal_tag_rounds", CARD.ammo_mag_size(params(sec))) end,
+    function(sec) return tag("st_arsenal_tag_rpm", CARD.fire_rate(params(sec))) end,
+    function(sec) return tag("st_arsenal_tag_accuracy", CARD.accuracy(params(sec)) .. "%") end,
+    function(sec) return tag("st_arsenal_tag_handling", CARD.handling(params(sec)) .. "%") end,
+    function(sec) return tag("st_arsenal_tag_damage", CARD.damage(params(sec))) end,
+    function(sec) return tag("st_arsenal_tag_speed", CARD.speed(params(sec))) end,
+    function(sec) return tag("st_arsenal_tag_reliability", CARD.reliability(params(sec)) .. "%") end,
+    function(sec)
+        local r = CARD.recoil(params(sec))
+        return r and tag("st_arsenal_tag_recoil", r)
+    end,
+    function(sec) return string.format("%s %s", tostring(kg(weight(sec))), game.translate_string("st_kg")) end,
+    function(sec) return status(sec, "silencer_status") == 2 and tag("st_arsenal_tag_sup_mount") or "" end,
+    function(sec) return status(sec, "scope_status") == 2 and tag("st_arsenal_tag_scope_mount") or "" end,
+}
+
+-- name the variants of one gun: a tag only where variants still clash, then numbers
+local function label(name, reps)
+    local tags = {}
+    for _, e in ipairs(reps) do
+        tags[e] = {}
+    end
+    local function clashing()
+        local by, out = {}, {}
+        for _, e in ipairs(reps) do
+            local k = table.concat(tags[e], ", ")
+            by[k] = by[k] or {}
+            table.insert(by[k], e)
+        end
+        for _, g in pairs(by) do
+            if #g > 1 then out[#out + 1] = g end
+        end
+        return out
+    end
+    for _, f in ipairs(TAGGERS) do
+        local groups = clashing()
+        if #groups == 0 then break end
+        for _, g in ipairs(groups) do
+            local vals, first, differ, known = {}, nil, false, true
+            for _, e in ipairs(g) do
+                local ok, v = pcall(f, e.sec)
+                if not ok or v == nil then
+                    known = false
+                    break
+                end
+                vals[e] = v
+                if first == nil then
+                    first = v
+                elseif v ~= first then
+                    differ = true
+                end
+            end
+            if known and differ then
+                for _, e in ipairs(g) do
+                    if vals[e] ~= "" then table.insert(tags[e], vals[e]) end
+                end
+            end
+        end
+    end
+    local base, seen, nth = {}, {}, {}
+    for _, e in ipairs(reps) do
+        base[e] = #tags[e] > 0 and string.format("%s (%s)", name, table.concat(tags[e], ", ")) or name
+        seen[base[e]] = (seen[base[e]] or 0) + 1
+    end
+    for _, e in ipairs(reps) do
+        if seen[base[e]] > 1 then
+            nth[base[e]] = (nth[base[e]] or 0) + 1
+            e.name = string.format("%s [%d]", base[e], nth[base[e]])
+        else
+            e.name = base[e]
+        end
+    end
+end
+
+local function shorter(a, b)
+    if #a ~= #b then return #a < #b end
+    return a < b
+end
+
+-- Build the catalog once per game (the configs do not change while it runs). An entry is one
+-- gun model, all sections of one name in one category:
+--     { sec = its first variant's section, cat, name, variants = { variant, ... } }
+-- and a variant is the sections of that name that play the same, named by the shortest:
+--     { sec, name = the name with its tags ("SKS (350 RPM)"), members = { section, ... }, entry }
+-- A model's variants are sorted by name; a model of one variant has the plain name.
+function build()
+    if by_var then return end
+    by_var, by_cat, total = {}, {}, 0
+    for _, c in ipairs(CATEGORIES) do
+        by_cat[c] = {}
+    end
+    local groups, order = {}, {}
+    ini_sys:section_for_each(function(sec)
+        local ok, cat = pcall(category_of, sec)
+        if ok and cat then
+            local name = translated(ini_sys:r_string_ex(sec, "inv_name"))
+            local key = cat .. "|" .. name
+            local g = groups[key]
+            if not g then
+                g = { cat = cat, name = name, buckets = {}, sigs = {} }
+                groups[key] = g
+                order[#order + 1] = key
+            end
+            local okS, sg = pcall(signature, sec)
+            sg = okS and sg or sec
+            if not g.buckets[sg] then
+                g.buckets[sg] = {}
+                g.sigs[#g.sigs + 1] = sg
+            end
+            table.insert(g.buckets[sg], sec)
+        end
+    end)
+    for _, key in ipairs(order) do
+        local g, vars = groups[key], {}
+        for _, sg in ipairs(g.sigs) do
+            local secs = g.buckets[sg]
+            table.sort(secs, shorter)
+            vars[#vars + 1] = { sec = secs[1], name = g.name, members = secs }
+        end
+        if #vars > 1 then
+            table.sort(vars, function(a, b) return a.sec < b.sec end)
+            label(g.name, vars)
+            table.sort(vars, by_name)
+        end
+        local e = { sec = vars[1].sec, cat = g.cat, name = g.name, variants = vars }
+        for _, v in ipairs(vars) do
+            v.entry = e
+            for _, s in ipairs(v.members) do
+                by_var[s] = v
+            end
+        end
+        table.insert(by_cat[g.cat], e)
+        total = total + 1
+    end
+    for _, c in ipairs(CATEGORIES) do
+        table.sort(by_cat[c], by_name)
+    end
+end
+
+-- the gun models of a category, by name
+function list(cat)
+    build()
+    return by_cat[cat] or {}
+end
+
+-- the gun model a listed section belongs to
+function get(sec)
+    build()
+    local v = sec and by_var[sec]
+    return v and v.entry
+end
+
+-- the variant a listed section belongs to
+function variant_of(sec)
+    build()
+    return sec and by_var[sec]
+end
+
+-- how many gun models
+function count()
+    build()
+    return total
+end
+
+-- the variant a weapon in the world belongs to: a scoped or silenced combination counts as
+-- the gun it was made from
+function variant_for(sec)
+    build()
+    if not sec then return nil end
+    local parent = ini_sys:r_string_ex(sec, "parent_section")
+    return by_var[parent or sec] or by_var[sec]
+end
+
+function entry_for(sec)
+    local v = variant_for(sec)
+    return v and v.entry
+end
+
+function description(sec)
+    return translated(ini_sys:r_string_ex(sec, "description"))
+end
+
+-- texture and rectangle of a weapon's inventory icon (HD icon overrides apply)
+function icon(sec)
+    local tex = utils_xml.get_icons_texture(sec)
+    local a = utils_xml.get_item_axis(sec)
+    return tex, a
+end
+
+-- the names of rounds (ammo or grenades), each once, short names first; GAMMA's worn rounds
+-- (_bad, _verybad) share their names with the good ones and are left out
+local function round_names(list)
+    local out, seen = {}, {}
+    for _, r in ipairs(list) do
+        if not (r:find("_bad$") or r:find("_verybad$")) then
+            local n = translated(ini_sys:r_string_ex(r, "inv_name_short"))
+                or translated(ini_sys:r_string_ex(r, "inv_name"))
+            if n and not seen[n] then
+                seen[n] = true
+                out[#out + 1] = n
+            end
+        end
+    end
+    return out
+end
+
+local function list_of(sec, key)
+    local out = {}
+    for a in each_of(sec, key) do
+        out[#out + 1] = a
+    end
+    return out
+end
+
+-- ammo the weapon chambers, as names (utils_item.get_ammo, as the game reads it)
+function ammo_names(sec)
+    local ok, list = pcall(utils_item.get_ammo, sec, nil)
+    return round_names(ok and list or {})
+end
+
+-- whether the inventory shows a weapon's stat card: for a gun with real ammo, not for a knife,
+-- whose ammo is fake (utils_ui's tooltip decides the same way, UIInfoItem:GetType)
+function has_stat_card(sec)
+    return ini_sys:r_string_ex(sec, "ammo_class") ~= nil and not IsItem("fake_ammo_wpn", sec)
+end
+
+-- fire modes as the HUD shows them: 1, 3, A
+local function modes_text(s)
+    local out = {}
+    for m in s:gmatch("[^,%s]+") do
+        out[#out + 1] = (m == "-1") and "A" or m
+    end
+    return table.concat(out, " / ")
+end
+
+function fire_modes(sec)
+    local s = ini_sys:r_string_ex(sec, "fire_modes")
+    return s and modes_text(s) or "1"
+end
+
+-- What a gun's upgrades open besides its stats (one it ships with is open already): the
+-- ammo of each caliber an upgrade converts it to, and fire modes an upgrade gives it
+function upgrade_options(sec)
+    local out = { calibres = {}, fire_modes = {} }
+    for _, g in ipairs(upgrade_tree(sec)) do
+        for _, u in ipairs(g) do
+            if not u.installed then
+                if calibre(u) then
+                    local names = round_names(list_of(u.ps, "ammo_class"))
+                    if #names > 0 then out.calibres[#out.calibres + 1] = names end
+                end
+                local fm = ini_sys:r_string_ex(u.ps, "fire_modes")
+                if fm then out.fire_modes[#out.fire_modes + 1] = modes_text(fm) end
+            end
+        end
+    end
+    return out
+end
+
+function weight(sec)
+    return ini_sys:r_float_ex(sec, "inv_weight") or 0
+end
+
+-- a weight as the inventory shows it (utils_ui's tooltip: round_100, then the number as is):
+-- 0.995 shows as 0.99, 3.30 as 3.3
+function kg(x)
+    return math.floor(x * 100 + 0.5) / 100
+end
+
+---------------------------------------------------------------------------------------------
+-- Section-only stand-ins for stat-card functions that need a live weapon. Each returns what
+-- Momopate's function would for a weapon of that section as it ships (the card multiplies by
+-- the row's magnitude). Formulas from momopate_weaponstats.script.
+---------------------------------------------------------------------------------------------
+
+function standin_bspeed(obj, sec)
+    return bspeed(params(sec))
+end
+
+function standin_range(obj, sec)
+    return normalize(ini_sys:r_float_ex(sec, "fire_distance") or 0, 0, 1000)
+end
+
+function standin_drag(obj, sec)
+    local ammo = first_ammo(sec)
+    return ammo and -(ini_sys:r_float_ex(ammo, "k_air_resistance") or 1) or 0
+end
+
+function standin_reliability(obj, sec)
+    return 1.0 - params(sec).condition_shot_dec - 0.99
+end
+
+function standin_recoil(obj, sec)
+    return recoil(params(sec))
+end
+
+---------------------------------------------------------------------------------------------
+-- What fits a gun, and what it is made of
+---------------------------------------------------------------------------------------------
+
+-- an item with a name: { sec, name }
+local function item_of(sec)
+    if not (sec and ini_sys:section_exist(sec)) then return nil end
+    local name = translated(ini_sys:r_string_ex(sec, "inv_name"))
+    return name and { sec = sec, name = name } or nil
+end
+
+-- the names of the grenades a launcher fires
+local function grenade_names(sec)
+    return round_names(list_of(sec, "grenade_class"))
+end
+
+-- What a gun takes. GAMMA lists scopes, laser modules and kits alike in "scopes"; the section
+-- the game makes of the gun with one attached tells them apart: a kit makes another gun (a
+-- variant in this catalog, or another name; named in `makes`), a laser module turns on a
+-- laser the gun lacks (laser_status; a gun with its own laser passes it to every
+-- combination), a scope does neither. Also the suppressors and grenade launchers it takes (a
+-- launcher with the grenades it fires in `ammo`), those an upgrade mounts (`upgrade`), and
+-- which of scope, suppressor, launcher and laser it has built in.
+function attachments(sec)
+    local out = { scopes = {}, lasers = {}, kits = {}, suppressors = {}, launchers = {}, builtin = {} }
+    local own, seen = translated(ini_sys:r_string_ex(sec, "inv_name")), {}
+    local own_laser = ini_sys:r_string_ex(sec, "laser_status") == "true"
+    local function scope(s)
+        if not s or seen[s] then return end
+        seen[s] = true
+        local it = item_of(s)
+        if not it then return end
+        local combo = sec .. "_" .. s
+        if ini_sys:section_exist(combo) then
+            local v = variant_of(combo)
+            local cname = translated(ini_sys:r_string_ex(combo, "inv_name"))
+            if v or (cname and cname ~= own) then
+                -- a kit whose gun plays as this one (the same variant) changes only its looks
+                if not (v and v == variant_of(sec)) then
+                    it.makes = v and v.name or cname
+                end
+                table.insert(out.kits, it)
+                return
+            end
+            if not own_laser and ini_sys:r_string_ex(combo, "laser_status") == "true" then
+                table.insert(out.lasers, it)
+                return
+            end
+        end
+        table.insert(out.scopes, it)
+    end
+    for s in each_of(sec, "scopes") do
+        scope(s)
+    end
+    local ss = ini_sys:r_string_ex(sec, "scopes_sect")
+    if ss and ini_sys:section_exist(ss) then
+        scope(ini_sys:r_string_ex(ss, "scope_name"))
+    end
+    local st = status(sec, "scope_status")
+    if st == 2 then
+        scope(ini_sys:r_string_ex(sec, "scope_name"))
+    end
+    out.builtin.scope = st == 1
+    local sil = status(sec, "silencer_status")
+    local it = sil == 2 and item_of(ini_sys:r_string_ex(sec, "silencer_name"))
+    if it then
+        table.insert(out.suppressors, it)
+    end
+    out.builtin.suppressor = sil == 1
+    local gl = status(sec, "grenade_launcher_status")
+    it = gl == 2 and item_of(ini_sys:r_string_ex(sec, "grenade_launcher_name"))
+    if it then
+        it.ammo = grenade_names(sec)
+        table.insert(out.launchers, it)
+    end
+    out.builtin.launcher = gl == 1
+    out.builtin.laser = own_laser
+    -- mounts an upgrade adds (GAMMA's suppressor and underbarrel launcher upgrades set
+    -- silencer_status or grenade_launcher_status to 2); one the gun ships with is there already
+    local have = {}
+    for _, x in ipairs(out.suppressors) do have[x.sec] = true end
+    for _, x in ipairs(out.launchers) do have[x.sec] = true end
+    for _, g in ipairs(upgrade_tree(sec)) do
+        for _, u in ipairs(g) do
+            if status(u.ps, "silencer_status") == 2 then
+                local s = item_of(ini_sys:r_string_ex(u.ps, "silencer_name"))
+                if s and not have[s.sec] then
+                    have[s.sec] = true
+                    s.upgrade = not u.installed
+                    table.insert(out.suppressors, s)
+                end
+            end
+            if status(u.ps, "grenade_launcher_status") == 2 then
+                local l = item_of(ini_sys:r_string_ex(u.ps, "grenade_launcher_name"))
+                if l and not have[l.sec] then
+                    have[l.sec] = true
+                    l.upgrade = not u.installed
+                    l.ammo = grenade_names(ini_sys:r_string_ex(u.ps, "grenade_class") and u.ps or sec)
+                    table.insert(out.launchers, l)
+                end
+            end
+        end
+    end
+    return out
+end
+
+-- The magazines a gun takes when Mags Redux runs (GAMMA ships it switched off, and guns then
+-- load loose rounds): those of the gun's magazine group (magazine_binder's base_type, from
+-- the gun's first ammo), each { sec, name, rounds }, fewest rounds first. None when Mags
+-- Redux does not run or the gun takes no magazine.
+function mags(sec)
+    local out = {}
+    if not magazine_binder then return out end
+    local ok, bt = pcall(magazine_binder.get_weapon_base_type, sec)
+    if not (ok and bt) then return out end
+    local okl, list = pcall(magazine_binder.get_mags_for_basetype, bt)
+    for _, m in ipairs(okl and type(list) == "table" and list or {}) do
+        local it = item_of(m)
+        if it then
+            it.rounds = ini_sys:r_float_ex(m, "max_mag_size") or 0
+            out[#out + 1] = it
+        end
+    end
+    table.sort(out, function(a, b)
+        if a.rounds ~= b.rounds then return a.rounds < b.rounds end
+        return a.name < b.name
+    end)
+    return out
+end
+
+-- Nimble's trade-ins (Darkasleif's Nimble Upgrades Guns): he gives a gun for one of several
+-- others plus money. His script keeps them in its dialog functions (NimbleTrade.script), so
+-- they are listed here; the prices are his own variables, read while his script runs. His
+-- Groza offer has no dialog option and is left out.
+local COLTS = { "wpn_colt1911", "wpn_colt1911_alt", "wpn_colt1911_duty", "wpn_colt1911_merc",
+    "wpn_colt1911_modern", "wpn_colt1911_n", "wpn_colt1911_new", "wpn_colt1911_kimber" }
+NIMBLE = {
+    { gives = "wpn_colt1911_camo", takes = COLTS, cost = "CoonanCost" },
+    { gives = "wpn_colt1911_custom", takes = COLTS, cost = "StrayerVoigtCost" },
+    { gives = "wpn_desert_eagle_nimble", takes = { "wpn_desert_eagle", "wpn_desert_eagle_custom", "wpn_desert_eagle_modern" },
+      cost = "DeagleCost" },
+    { gives = "wpn_usp_nimble", takes = { "wpn_usp", "wpn_usp_custom", "wpn_usp_match" }, cost = "USPCost" },
+    { gives = "wpn_protecta_nimble", takes = { "wpn_protecta", "wpn_protecta_aim", "wpn_protecta_camo", "wpn_protecta_custom" },
+      cost = "ProtectaCost" },
+    { gives = "wpn_spas12_nimble", takes = { "wpn_spas12", "wpn_spas12_custom" }, cost = "SPAS12Cost" },
+    { gives = "wpn_toz34_mark4_23", takes = { "wpn_toz34", "wpn_toz34_custom", "wpn_toz34_decor", "wpn_toz34_mark4" },
+      cost = "TOZ34Cost" },
+    { gives = "wpn_mp5_nimble", takes = { "wpn_mp5", "wpn_mp5_alt", "wpn_mp5_custom" }, cost = "MP5Cost" },
+    { gives = "wpn_g36nimble_rwap", takes = { "wpn_g36", "wpn_g36_camo", "wpn_g36k", "wpn_g36ka4_rwap", "wpn_g36v_rwap" },
+      cost = "G36Cost" },
+    { gives = "wpn_pkm_zenit_siber", takes = { "wpn_pkm_siber" }, cost = "PKMCost" },
+    { gives = "wpn_dvl10_m1", takes = { "wpn_dvl10" }, cost = "UrbanaCost" },
+    { gives = "wpn_dvl10", takes = { "wpn_dvl10_m1" }, cost = "SaboteurCost" },
+    { gives = "wpn_svu_nimble", takes = { "wpn_svu", "wpn_svu_alt" }, cost = "SVUCost" },
+}
+
+-- a listed section's name as the catalog shows it: its variant's, else its own
+local function shown_name(sec)
+    local v = variant_of(sec)
+    return v and v.name or translated(ini_sys:r_string_ex(sec, "inv_name"))
+end
+
+-- Nimble's trade-ins that concern a section, while his script runs: `gets` (what he gives for
+-- it: { name, cost }) and `from` (what he takes for it: { names = the guns, any one; cost }).
+-- Guns this mod list does not have are left out.
+function nimble(sec)
+    local out = { gets = {}, from = {} }
+    if not NimbleTrade then return out end
+    -- a section counts as the gun it plays as (its variant), so a merged copy counts too
+    local mine = variant_of(sec)
+    local function is_mine(s)
+        return s == sec or (mine ~= nil and variant_of(s) == mine)
+    end
+    for _, t in ipairs(NIMBLE) do
+        local cost = tonumber(NimbleTrade[t.cost])
+        if cost and ini_sys:section_exist(t.gives) then
+            local takes_it = false
+            for _, s in ipairs(t.takes) do
+                if is_mine(s) then takes_it = true end
+            end
+            local name = shown_name(t.gives)
+            if takes_it and name then
+                out.gets[#out.gets + 1] = { name = name, cost = cost }
+            end
+            if is_mine(t.gives) then
+                local names, seen = {}, {}
+                for _, s in ipairs(t.takes) do
+                    local n = ini_sys:section_exist(s) and shown_name(s)
+                    if n and not seen[n] then
+                        seen[n] = true
+                        names[#names + 1] = n
+                    end
+                end
+                if #names > 0 then out.from[#out.from + 1] = { names = names, cost = cost } end
+            end
+        end
+    end
+    return out
+end
+
+---------------------------------------------------------------------------------------------
+-- Where a gun turns up: on the Zone's fighters, in stashes, from a kit, in a new-game kit.
+-- Each is read from the mod that does it, as that mod reads it; a mod list without one of
+-- them leaves that part out. Built on first use, once a game.
+---------------------------------------------------------------------------------------------
+
+-- ranks, lowest first (creatures\game_relations.ltx), and the factions whose fighters the
+-- Zone spawns and a new game starts in
+RANKS = { "novice", "trainee", "experienced", "professional", "veteran", "expert", "master", "legend" }
+FACTIONS = { "stalker", "dolg", "freedom", "csky", "ecolog", "killer", "army", "bandit", "monolith",
+    "zombied", "renegade", "greh", "isg" }
+local RANK_AT, FACTION_AT = {}, {}
+for i, r in ipairs(RANKS) do RANK_AT[r] = i end
+for i, f in ipairs(FACTIONS) do FACTION_AT[f] = i end
+
+-- the fields of a value split on a separator, trimmed: "a, b" -> { "a", "b" }
+local function fields(s, sep)
+    local out = {}
+    for x in ((s or "") .. sep):gmatch("(.-)" .. sep) do
+        out[#out + 1] = x:match("^%s*(.-)%s*$")
+    end
+    return out
+end
+
+-- the lines of an ini section as key, value pairs (none when the section is missing)
+local function lines(ini, sec)
+    local out = {}
+    if not ini:section_exist(sec) then return out end
+    for i = 0, (ini:line_count(sec) or 0) - 1 do
+        local _, k, v = ini:r_line_ex(sec, i, "", "")
+        if k then out[#out + 1] = { k = k, v = v } end
+    end
+    return out
+end
+
+-- a local of another script, through a function of that script that uses it
+local function upvalue(fn, name)
+    if type(fn) ~= "function" or not (debug and debug.getupvalue) then return nil end
+    for i = 1, 255 do
+        local n, v = debug.getupvalue(fn, i)
+        if n == nil then return nil end
+        if n == name then return v end
+    end
+end
+
+-- NPC loadouts (npc_loadouts.ltx and what it includes, as xrs_rnd_npc_loadout gives them out).
+-- A slot is lines of "section:addons:ammo:weight:...", one picked by weight (10 when left out);
+-- a section the game lacks is skipped. A fighter's loadout is his faction-and-rank one, else
+-- his faction's, else the default; snipers and special forces with a loadout of their own
+-- (loadouts_per_name) count under their faction and rank, or as "special" when their spawn
+-- section names no rank (UNISG's black ops).
+local carried     -- gun model -> faction -> rank (or "special") -> the chance one fighter carries it
+
+local function slot_chances(ini, slot)
+    local weights, total = {}, 0
+    for _, l in ipairs(lines(ini, slot)) do
+        local f = fields(l.k, ":")
+        if f[1] ~= "" and ini_sys:section_exist(f[1]) then
+            local w = tonumber(f[4]) or 10
+            weights[f[1]] = (weights[f[1]] or 0) + w
+            total = total + w
+        end
+    end
+    local out = {}
+    for sec, w in pairs(weights) do
+        local e = entry_for(sec)
+        if e then out[e] = (out[e] or 0) + w / total end
+    end
+    return out
+end
+
+local function build_carried()
+    carried = {}
+    local ok, ini = pcall(ini_file, "items\\settings\\npc_loadouts\\npc_loadouts.ltx")
+    if not (ok and ini and ini:section_exist("default")) then return end
+    local slots = {}
+    local function add(loadout, faction, rank)
+        local sum = {}
+        for _, k in ipairs({ "primary", "secondary", "extra" }) do
+            local slot = ini:r_string_ex(loadout, k)
+            if slot and ini:section_exist(slot) then
+                slots[slot] = slots[slot] or slot_chances(ini, slot)
+                for e, c in pairs(slots[slot]) do
+                    sum[e] = (sum[e] or 0) + c
+                end
+            end
+        end
+        for e, c in pairs(sum) do
+            carried[e] = carried[e] or {}
+            local by = carried[e][faction] or {}
+            carried[e][faction] = by
+            by[rank] = math.max(by[rank] or 0, c)
+        end
+    end
+    for _, f in ipairs(FACTIONS) do
+        for _, r in ipairs(RANKS) do
+            local l = f .. "_" .. r
+            if not ini:section_exist(l) then
+                l = ini:section_exist(f) and f or "default"
+            end
+            add(l, f, r)
+        end
+    end
+    for _, l in ipairs(lines(ini, "loadouts_per_name")) do
+        local f = ini_sys:r_string_ex(l.k, "community")
+        local r = ini_sys:r_string_ex(l.k, "spec_rank")
+        if l.v and ini:section_exist(l.v) and FACTION_AT[f] then
+            add(l.v, f, RANK_AT[r] and r or "special")
+        end
+    end
+end
+
+-- The factions whose fighters carry a gun model, the likeliest first:
+--     { { faction, ranks = { rank, ... } lowest first, special = true when a special squad
+--     without a rank does }, ... }
+function carriers(sec)
+    local e = entry_for(sec)
+    if not e then return {} end
+    if not carried then build_carried() end
+    local out = {}
+    for f, by in pairs(carried[e] or {}) do
+        local ranks, best = {}, by.special or 0
+        for _, r in ipairs(RANKS) do
+            if (by[r] or 0) > 0 then
+                ranks[#ranks + 1] = r
+                best = math.max(best, by[r])
+            end
+        end
+        local special = (by.special or 0) > 0
+        if #ranks > 0 or special then
+            out[#out + 1] = { faction = f, ranks = ranks, special = special or nil, best = best }
+        end
+    end
+    table.sort(out, function(a, b)
+        if a.best ~= b.best then return a.best > b.best end
+        return FACTION_AT[a.faction] < FACTION_AT[b.faction]
+    end)
+    return out
+end
+
+-- Stashes (Grok's stash overhaul, treasure_manager.script). An item in [possible_items] that
+-- this game's economy does not bar, with a kind, a tier (grok_items_tier.ltx) and a price,
+-- goes into a stash when math.random(1, 100) is below its kind's chance times the tier's
+-- multiplier, in common or rare stashes; at 1 or less it never does. Each item's tier is drawn
+-- from the stash's level's list (the script's local map_tiers), and marked stashes skip a few
+-- levels (its local blacklisted_maps).
+STASH_LEVELS = 3
+local stashed, stashed_eco     -- gun model -> { [tier] = true }, and the economy it was built for
+
+local function economy()
+    local ok, eco = pcall(function() return game_difficulties.get_eco_factor("type") end)
+    return ok and tonumber(eco) or 1
+end
+
+local function build_stashed(eco)
+    stashed, stashed_eco = {}, eco
+    local tm = treasure_manager
+    local ini, tiers = tm and tm.ini_treasure, tm and tm.ini_tiers
+    if not (ini and tiers) then return end
+    for _, l in ipairs(lines(ini, "possible_items")) do
+        local sec = l.k
+        local e = ini_sys:section_exist(sec) and entry_for(sec)
+        local barred = false
+        for _, x in ipairs(fields(l.v, ",")) do
+            if tonumber(x) == eco then barred = true end
+        end
+        local kind, tier = e and ini_sys:r_string_ex(sec, "kind"), e and tiers:r_float_ex(sec, "tier")
+        if e and not barred and kind and tier and (ini_sys:r_float_ex(sec, "cost") or 1000) > 1 then
+            tier = math.max(1, math.min(5, math.ceil(tier)))
+            for _, t in ipairs({ "kind_tier_effect_common", "kind_tier_effect_rare" }) do
+                local v = fields(ini:r_string_ex(t, kind), ",")
+                local chance, multi = tonumber(v[1]), tonumber(v[tier * 2 + 1])
+                if chance and multi and chance * multi > 1 then
+                    stashed[e] = stashed[e] or {}
+                    stashed[e][tier] = true
+                end
+            end
+        end
+    end
+end
+
+-- Whether stashes hold a gun model: nil if they never do, else the levels whose stashes
+-- most often draw its tier, best first, at most STASH_LEVELS (none when the level lists
+-- cannot be read)
+function stashes(sec)
+    local e = entry_for(sec)
+    if not e then return nil end
+    local eco = economy()
+    if not stashed or stashed_eco ~= eco then build_stashed(eco) end
+    local tiers = stashed[e]
+    if not tiers then return nil end
+    local tm = treasure_manager
+    local lists = upvalue(tm and tm.set_random_stash, "map_tiers")
+    local skip = upvalue(tm and tm.box_in_valid_map, "blacklisted_maps")
+    local best = {}
+    for lvl, v in pairs(type(lists) == "table" and lists or {}) do
+        local n = 0
+        for _, t in ipairs(v) do
+            if tiers[t] then n = n + 1 end
+        end
+        if n > 0 and not (type(skip) == "table" and skip[lvl]) then
+            best[#best + 1] = { lvl = lvl, share = n / #v }
+        end
+    end
+    table.sort(best, function(a, b)
+        if a.share ~= b.share then return a.share > b.share end
+        return a.lvl < b.lvl
+    end)
+    local out = {}
+    for i = 1, math.min(STASH_LEVELS, #best) do
+        out[i] = best[i].lvl
+    end
+    return out
+end
+
+-- Guns a kit makes of another gun model: a kit in a gun's scopes whose combination is a gun
+-- model of its own in the catalog (one that plays as the gun is in its Accessories already)
+local made     -- gun model -> { { from = the gun's name, kit = the kit's name }, ... }
+
+local function build_made()
+    made = {}
+    build()
+    local seen = {}
+    for _, c in ipairs(CATEGORIES) do
+        for _, e in ipairs(by_cat[c]) do
+            for _, v in ipairs(e.variants) do
+                for _, s in ipairs(v.members) do
+                    for k in each_of(s, "scopes") do
+                        local m = variant_of(s .. "_" .. k)
+                        local kit = m and m.entry ~= e and item_of(k)
+                        local key = kit and (m.entry.sec .. "|" .. v.name .. "|" .. kit.name)
+                        if key and not seen[key] then
+                            seen[key] = true
+                            made[m.entry] = made[m.entry] or {}
+                            table.insert(made[m.entry], { from = v.name, kit = kit.name })
+                        end
+                    end
+                end
+            end
+        end
+    end
+end
+
+function made_from(sec)
+    local e = entry_for(sec)
+    if not e then return {} end
+    if not made then build_made() end
+    return made[e] or {}
+end
+
+-- New-game kits: each faction's [<faction>_loadout] in new_game_loadouts.ltx, as
+-- ui_mm_faction_select reads it (a line is "item = picked, count, points, hardest economy";
+-- not picked: given free), and the items new_game_loadout_injector_mcm adds or takes out
+ECONOMIES = 3
+local kits     -- gun model -> { { faction, points (nil: given), eco = { [n] = true } or nil }, ... }
+
+local function build_kits()
+    kits = {}
+    local function add(e, faction, points, eco)
+        kits[e] = kits[e] or {}
+        table.insert(kits[e], { faction = faction, points = points, eco = eco })
+    end
+    local inj = new_game_loadout_injector_mcm
+    local removed = inj and inj.loadout_removed_items or {}
+    local ok, ini = pcall(ini_file, "items\\settings\\new_game_loadouts.ltx")
+    for _, f in ipairs((ok and ini) and FACTIONS or {}) do
+        for _, l in ipairs(lines(ini, f .. "_loadout")) do
+            local e = not removed[l.k] and ini_sys:section_exist(l.k) and entry_for(l.k)
+            local v = fields(l.v, ",")
+            if e and (v[1] == "true" or v[1] == "false") then
+                local top, eco = tonumber(v[4]), nil
+                if top then
+                    eco = {}
+                    for n = 1, math.min(top, ECONOMIES) do eco[n] = true end
+                end
+                add(e, f, v[1] == "true" and (tonumber(v[3]) or 0) or nil, eco)
+            end
+        end
+    end
+    for sec, list in pairs(inj and inj.loadout_items or {}) do
+        local e = ini_sys:section_exist(sec) and entry_for(sec)
+        for _, it in ipairs(e and list or {}) do
+            local eco
+            if next(it.economy or {}) then
+                eco = {}
+                for n = 1, ECONOMIES do
+                    if it.economy["st_econ_" .. n] then eco[n] = true end
+                end
+            end
+            for _, f in ipairs(FACTIONS) do
+                if not next(it.faction or {}) or it.faction[f] then
+                    add(e, f, (not it.add_to_inventory) and (tonumber(it.points) or 0) or nil, eco)
+                end
+            end
+        end
+    end
+end
+
+-- The new-game kits that hold a gun model, one per price and set of economies:
+--     { { factions = { faction, ... }, points (nil: given free), economies = { n, ... } (nil: every one) }, ... }
+function starting_kits(sec)
+    local e = entry_for(sec)
+    if not e then return {} end
+    if not kits then build_kits() end
+    local groups, out = {}, {}
+    for _, k in ipairs(kits[e] or {}) do
+        local ecos = {}
+        for n = 1, ECONOMIES do
+            if not k.eco or k.eco[n] then ecos[#ecos + 1] = n end
+        end
+        local key = tostring(k.points) .. "|" .. table.concat(ecos, ",")
+        local g = groups[key]
+        if #ecos > 0 and not g then
+            g = { factions = {}, points = k.points, economies = (#ecos < ECONOMIES) and ecos or nil, has = {} }
+            groups[key] = g
+            out[#out + 1] = g
+        end
+        if g and not g.has[k.faction] then
+            g.has[k.faction] = true
+            table.insert(g.factions, k.faction)
+        end
+    end
+    for _, g in ipairs(out) do
+        table.sort(g.factions, function(a, b) return FACTION_AT[a] < FACTION_AT[b] end)
+        g.has = nil
+    end
+    return out
+end
+
+-- The parts a gun is made of (GAMMA's weapon parts: items\settings\parts.ltx, con_parts_list,
+-- read through itms_manager as item_parts does), each { sec, name }.
+function parts(sec)
+    local out = {}
+    local ini = itms_manager and itms_manager.ini_parts
+    if not ini then return out end
+    local key = ini_sys:r_string_ex(sec, "parent_section") or sec
+    local list = ini:r_string_ex("con_parts_list", key) or ini:r_string_ex("con_parts_list", sec)
+    for p in (list or ""):gmatch("[^,%s]+") do
+        local it = item_of(p)
+        if it then out[#out + 1] = it end
+    end
+    return out
+end
+
+-- The camos a gun model can wear, as 3DSS for GAMMA's camo wheel lists them
+-- (z_3dss_gamma_camo_system: its loaded configs, items\settings\camo\*.ltx, and its own checks,
+-- read through the upvalues of get_camo_options and assign_drop_camo), each once by name:
+--     { name, icon (a texture id), required (it must be discovered first), locked (not
+--     discovered in this game), factions = { faction, ... } whose fighters carry the gun and
+--     can have it in this camo, likeliest first }
+-- None when the camo system does not run or has nothing for the gun.
+function camos(sec)
+    local out = {}
+    local e = entry_for(sec)
+    local cs = z_3dss_gamma_camo_system
+    local get = cs and cs.get_camo_options
+    local files = upvalue(get, "config_files")
+    local belongs = upvalue(get, "target_belongs_to_weapon")
+    local label_for = upvalue(get, "label_for")
+    local unlocked = upvalue(get, "camo_is_unlocked")
+    if not (e and type(files) == "table" and belongs and label_for and unlocked) then return out end
+    local can_drop = upvalue(cs.assign_drop_camo, "camo_can_drop_for")
+    local weight = upvalue(cs.assign_drop_camo, "camo_rarity_weight")
+    local carriers_of = {}
+    for _, c in ipairs(carriers(sec)) do carriers_of[c.faction] = true end
+    local by_name = {}
+    for _, v in ipairs(e.variants) do
+        for _, s in ipairs(v.members) do
+            for _, fd in ipairs(files) do
+                for _, t in ipairs(fd.sections and fd.sections[s] and fd.section_order or {}) do
+                    local d = fd.sections[t]
+                    if d and belongs(fd, s, t) then
+                        local name = label_for(fd, s, t)
+                        local c = by_name[name]
+                        if not c then
+                            c = { name = name, icon = d.icon, required = false, locked = true, factions = {}, w = {} }
+                            by_name[name] = c
+                            out[#out + 1] = c
+                        end
+                        c.required = c.required or d.unlock_required == true
+                        c.locked = c.locked and not unlocked(fd, t)
+                        for _, f in ipairs(FACTIONS) do
+                            if carriers_of[f] and can_drop and weight and can_drop(d, f) then
+                                c.w[f] = math.max(c.w[f] or 0, weight(d, f) or 0)
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    for _, c in ipairs(out) do
+        for _, f in ipairs(FACTIONS) do
+            if (c.w[f] or 0) > 0 then c.factions[#c.factions + 1] = f end
+        end
+        local w = c.w
+        table.sort(c.factions, function(a, b)
+            if w[a] ~= w[b] then return w[a] > w[b] end
+            return FACTION_AT[a] < FACTION_AT[b]
+        end)
+        c.w = nil
+    end
+    return out
+end
+
+-- The kits that repair a gun, each { sec, name }: the cleaning and repair kits of its
+-- repair_type (Weapon Parts Overhaul's toolkit_map, a local of zzzz_arti_jamming_repairs read
+-- through get_suitable_kit), then any repair item whose repair_only names that type (a
+-- knife's sharpening stones; _g's item list)
+function repair_kits(sec)
+    local out, seen = {}, {}
+    local rt = ini_sys:r_string_ex(ini_sys:r_string_ex(sec, "parent_section") or sec, "repair_type")
+    if not rt then return out end
+    local function add(k)
+        local it = not seen[k] and item_of(k)
+        if it then
+            seen[k] = true
+            out[#out + 1] = it
+        end
+    end
+    local wpo = zzzz_arti_jamming_repairs
+    local map = upvalue(wpo and wpo.get_suitable_kit, "toolkit_map")
+    for _, k in ipairs(type(map) == "table" and type(map[rt]) == "table" and map[rt] or {}) do
+        add(k)
+    end
+    local ok, list = pcall(GetItemList, "repair")
+    local more = {}
+    for k, v in pairs(ok and type(list) == "table" and list or {}) do
+        if type(v) == "table" and v[rt] then more[#more + 1] = k end
+    end
+    table.sort(more)
+    for _, k in ipairs(more) do
+        add(k)
+    end
+    return out
+end
+
+local STANDIN = {
+    get_weapon_bspeed = "standin_bspeed",
+    get_weapon_range = "standin_range",
+    get_weapon_drag = "standin_drag",
+    get_weapon_reliability = "standin_reliability",
+    get_weapon_recoil = "standin_recoil",
+}
+
+-- The weapon stat card's rows in the card's order: { stat = key, gr = row definition }. With
+-- a live weapon the card's own functions apply; without one a stand-in replaces any function
+-- that needs it.
+function stat_rows(live)
+    utils_ui.prepare_stats_table()
+    local rows = {}
+    for stat, gr in pairs(utils_ui.stats_table and utils_ui.stats_table.weapon or {}) do
+        local f = gr.value_functor
+        local alt = f and STANDIN[f[2]]
+        if alt and not live then
+            local g = {}
+            for k, v in pairs(gr) do g[k] = v end
+            g.value_functor = { "arsenal_data", alt }
+            gr = g
+        end
+        rows[#rows + 1] = { stat = stat, gr = gr }
+    end
+    table.sort(rows, function(a, b) return (a.gr.index or 0) < (b.gr.index or 0) end)
+    return rows
+end
+
+-- forget the catalog (a new game, or a test)
+function reset()
+    by_var, by_cat, total = nil, nil, 0
+    trees = {}
+    carried, stashed, stashed_eco, made, kits = nil, nil, nil, nil, nil
+end

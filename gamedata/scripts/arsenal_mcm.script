@@ -1,0 +1,46 @@
+--[[
+    Arsenal's MCM page: a key that opens Arsenal flat, in a window of its own (ui_arsenal), and
+    whether guns the player only sees count. With the 3D PDA on, the PDA's pages are drawn onto
+    the in-hand screen, which softens them; the flat window is drawn straight to the screen, as
+    sharp as the inventory. The key is unbound (-1) until the player picks one; the PDA tile
+    works either way. Seen guns are off until the player turns them on.
+--]]
+
+function on_mcm_load()
+    return {
+        id = "arsenal",
+        sh = true,
+        gr = {
+            { id = "title", type = "slide", link = "ui_options_slider_player", text = "ui_mcm_menu_arsenal",
+              size = { 512, 50 }, spacing = 20 },
+            { id = "flat_key", type = "key_bind", val = 2, def = -1 },
+            { id = "count_seen", type = "check", val = 1, def = false },
+            { id = "about", type = "desc", text = "ui_mcm_arsenal_about" },
+        },
+    }
+end
+
+-- the key that opens Arsenal flat, or nil while it is unbound or MCM is missing
+function flat_key()
+    local ok, k = pcall(function() return ui_mcm and ui_mcm.get("arsenal/flat_key") end)
+    k = ok and tonumber(k)
+    return (k and k >= 0) and k or nil
+end
+
+-- whether the guns in a body, stash or trader's stock count when their window opens; false
+-- while the option is off or MCM is missing
+function count_seen()
+    local ok, v = pcall(function() return ui_mcm and ui_mcm.get("arsenal/count_seen") end)
+    return ok and v == true
+end
+
+local function on_key_press(key)
+    local k = flat_key()
+    if k and key == k then
+        ui_arsenal.open_flat()
+    end
+end
+
+function on_game_start()
+    RegisterScriptCallback("on_key_press", on_key_press)
+end

@@ -1,0 +1,117 @@
+<?xml version="1.0" encoding="windows-1251"?>
+<!--
+    Arsenal's page in the PDA. Laid out like the PDA's own Guide (pda_encyclopedia_16.xml):
+    categories, a list, and the entry, side by side, in the free content box every PDA page
+    uses, (28,106)-(792,709) of the 1024x768 PDA frame. Colors are arsenal_theme's palette:
+    heading 238,196,112; body 200,200,200; dim 140,140,140.
+-->
+<w>
+	<!-- the flat window (arsenal_mcm's key): the 2D PDA's frame and caption, where pda_16.xml
+	     puts them relative to the PDA's pages -->
+	<flat_bezel x="-10" y="-34" width="819" height="768" stretch="1">
+		<texture>ui_inGame2_pda_texture</texture>
+	</flat_bezel>
+	<flat_caption x="29" y="28" width="748" height="17">
+		<text font="letterica16" align="l" r="170" g="170" b="170">st_arsenal_title</text>
+	</flat_caption>
+
+	<!-- header row -->
+	<found_count x="28" y="110" width="420" height="20">
+		<text font="letterica16" r="200" g="200" b="200" align="l" vert_align="c"/>
+	</found_count>
+	<found_only_lbl x="476" y="110" width="150" height="20">
+		<text font="letterica16" r="200" g="200" b="200" align="r" vert_align="c">st_arsenal_found_only</text>
+	</found_only_lbl>
+	<found_only x="630" y="105" width="30" height="30" stretch="1">
+		<texture>ui_inGame2_checkbox</texture>
+	</found_only>
+	<btn_back x="672" y="107" width="120" height="26" stretch="1" check_mode="0">
+		<texture>ui_button_ordinary</texture>
+		<text font="letterica16" align="c" vert_align="c">st_arsenal_back</text>
+	</btn_back>
+	<rule_top x="28" y="139" width="764" height="1" stretch="1">
+		<texture>arsenal_rule</texture>
+	</rule_top>
+
+	<!-- columns -->
+	<cat_list x="28" y="146" width="132" height="560" item_height="22" can_select="1" always_show_scroll="0">
+		<font font="letterica16" r="200" g="200" b="200"/>
+	</cat_list>
+	<rule_cat x="164" y="146" width="1" height="560" stretch="1">
+		<texture>arsenal_rule</texture>
+	</rule_cat>
+	<wpn_list x="170" y="146" width="250" height="560" item_height="22" can_select="1" always_show_scroll="0">
+		<font font="letterica16" r="200" g="200" b="200"/>
+	</wpn_list>
+	<rule_wpn x="424" y="146" width="1" height="560" stretch="1">
+		<texture>arsenal_rule</texture>
+	</rule_wpn>
+	<detail x="432" y="146" width="360" height="560" always_show_scroll="0" stretch="1"/>
+
+	<!-- the entry, built per weapon inside the detail scroll view; 344 wide leaves room for its bar -->
+	<entry x="0" y="0" width="344" height="560" stretch="1"/>
+	<!-- a panel a little lighter than the PDA, behind the icon: arsenal_rule (90 gray) at 160/255 -->
+	<entry_icon_bg x="0" y="2" width="344" height="118" stretch="1">
+		<texture r="160" g="160" b="160">arsenal_rule</texture>
+	</entry_icon_bg>
+	<entry_icon_frame x="8" y="8" width="328" height="106" stretch="1"/>
+	<entry_icon x="0" y="0" width="10" height="10" stretch="1"/>
+	<entry_name x="0" y="126" width="344" height="20">
+		<text font="letterica18" r="238" g="196" b="112" align="l" vert_align="t" complex_mode="1"/>
+	</entry_name>
+	<entry_found x="0" y="146" width="344" height="18">
+		<text font="letterica16" r="140" g="140" b="140" align="l" vert_align="t" complex_mode="1"/>
+	</entry_found>
+	<entry_rule x="0" y="0" width="344" height="1" stretch="1">
+		<texture>arsenal_rule</texture>
+	</entry_rule>
+	<entry_heading x="0" y="0" width="344" height="20">
+		<text font="letterica18" r="238" g="196" b="112" align="l" vert_align="c"/>
+	</entry_heading>
+	<entry_line x="0" y="0" width="344" height="18">
+		<text font="letterica16" r="200" g="200" b="200" align="l" vert_align="t" complex_mode="1"/>
+	</entry_line>
+	<!-- a stat's fully upgraded value, right of the card's value (child of the card's row) -->
+	<entry_max x="250" y="2" width="94" height="16">
+		<text font="letterica16" r="140" g="140" b="140" align="l" vert_align="t"/>
+	</entry_max>
+	<!-- where to find it: a faction, and the ranks of its fighters that carry the gun -->
+	<where_faction x="0" y="0" width="84" height="18">
+		<text font="letterica16" r="200" g="200" b="200" align="l" vert_align="t" complex_mode="1"/>
+	</where_faction>
+	<where_ranks x="88" y="0" width="256" height="18">
+		<text font="letterica16" r="200" g="200" b="200" align="l" vert_align="t" complex_mode="1"/>
+	</where_ranks>
+
+	<!-- what fits the gun: tiles three to a row (108 wide, 10 apart), the icon on a panel like
+	     the gun's, the name under it, a note (grenades, the gun a kit makes) under that -->
+	<tile_icon_frame x="0" y="0" width="108" height="56" stretch="1">
+		<texture r="160" g="160" b="160">arsenal_rule</texture>
+	</tile_icon_frame>
+	<tile_name x="0" y="0" width="108" height="18">
+		<text font="letterica16" r="200" g="200" b="200" align="c" vert_align="t" complex_mode="1"/>
+	</tile_name>
+	<tile_note x="0" y="0" width="108" height="18">
+		<text font="letterica16" r="140" g="140" b="140" align="c" vert_align="t" complex_mode="1"/>
+	</tile_note>
+	<!-- parts: a row each, the icon on a panel, the name beside it -->
+	<part_icon_frame x="0" y="0" width="64" height="30" stretch="1">
+		<texture r="160" g="160" b="160">arsenal_rule</texture>
+	</part_icon_frame>
+	<part_name x="72" y="0" width="272" height="18">
+		<text font="letterica16" r="200" g="200" b="200" align="l" vert_align="t" complex_mode="1"/>
+	</part_name>
+	<!-- camos: a part's row, the camo's swatch in the panel, a note under the name -->
+	<camo_swatch x="0" y="0" width="24" height="24" stretch="1"/>
+	<camo_note x="72" y="0" width="272" height="18">
+		<text font="letterica16" r="140" g="140" b="140" align="l" vert_align="t" complex_mode="1"/>
+	</camo_note>
+
+	<!-- list rows: 22 high, as the Guide's; a gun's name may carry a tag, so the gun list is the wide one -->
+	<row_name x="4" y="0" width="240" height="22">
+		<text font="letterica16" r="200" g="200" b="200" align="l" vert_align="c"/>
+	</row_name>
+	<row_count x="0" y="0" width="126" height="22">
+		<text font="letterica16" r="140" g="140" b="140" align="r" vert_align="c"/>
+	</row_count>
+</w>

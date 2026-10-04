@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="windows-1251"?>
+<w>
+	<!-- the launcher tile: four 256 px states of textures/ui/app_arsenal.dds -->
+	<file name="ui\app_arsenal">
+		<texture id="arsenal_app_e" x="0" y="0" width="256" height="256" />
+		<texture id="arsenal_app_h" x="256" y="0" width="256" height="256" />
+		<texture id="arsenal_app_t" x="0" y="256" width="256" height="256" />
+		<texture id="arsenal_app_d" x="256" y="256" width="256" height="256" />
+	</file>
+	<!-- the vanilla button (ui\ui_common, ui_button_ordinary_*) in its pressed look, for what is selected -->
+	<file name="ui\ui_common">
+		<texture id="arsenal_btn_on_e" x="0" y="173" width="117" height="29" />
+		<texture id="arsenal_btn_on_h" x="0" y="173" width="117" height="29" />
+		<texture id="arsenal_btn_on_t" x="0" y="173" width="117" height="29" />
+		<texture id="arsenal_btn_on_d" x="0" y="86" width="117" height="29" />
+	</file>
+	<!-- a 1 px rule; ui_inGame2_pda_line_* are not declared in GAMMA -->
+	<file name="ui\arsenal\ui_rule">
+		<texture id="arsenal_rule" x="0" y="0" width="4" height="4" />
+	</file>
+</w>

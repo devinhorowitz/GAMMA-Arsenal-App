@@ -1,0 +1,180 @@
+--[[
+    Arsenal collection: which guns the player has found. A gun counts as found the first time
+    one of its kind enters the player's inventory, however it got there (picked up, looted,
+    bought, crafted, a reward). With the MCM option "Count guns you see" on, the guns in a
+    body, stash or trader's stock count too, when its window opens. A scoped or silenced
+    combination counts as the gun it was made from (arsenal_data.variant_for). The set only
+    grows: dropping, selling or taking a gun apart changes nothing, so there is nothing to
+    track afterwards.
+
+    Finds are kept per variant (arsenal_data: a gun model has one or more variants, the
+    sections of its name that play the same), so a model's page can show which of its variants
+    were found. A model counts as found once any of its variants is.
+
+    Saved with the game (m_data.arsenal, plain values only). The engine does not send
+    actor_on_item_take for what the player already carries when a save loads, so the
+    inventory is scanned on the first update instead, quietly. A save from an older catalog,
+    or from another mod list or language, can hold finds under sections that now belong to one
+    variant; on the first update they move to it, keeping the earliest find.
+--]]
+
+local VERSION = 1
+
+local found = {}        -- variant section -> { y, mo, d, h, mi, lvl }
+local scanned = false   -- the load-time scan has run; news only after it
+
+local function stamp()
+    local y, mo, d, h, mi = game.get_game_time():get()
+    return { y = y, mo = mo, d = d, h = h, mi = mi, lvl = level.name() }
+end
+
+-- one news line for the variants found at once: up to three by name, then how many more
+local function notify(list)
+    if not db.actor or #list == 0 then return end
+    local names = {}
+    for i = 1, math.min(3, #list) do
+        names[i] = list[i].name
+    end
+    local text = table.concat(names, ", ")
+    if #list > 3 then
+        text = string.format(game.translate_string("st_arsenal_and_more"), text, tostring(#list - 3))
+    end
+    db.actor:give_game_news(game.translate_string("st_arsenal_title"),
+        string.format(game.translate_string("st_arsenal_new_entry"), text), "ui_inGame2_Predmet_poluchen", 0, 5000, 0)
+end
+
+-- count a section as found; returns its variant when that is new
+function mark(sec, quiet)
+    local v = arsenal_data.variant_for(sec)
+    if not v or found[v.sec] then return nil end
+    found[v.sec] = stamp()
+    if not quiet then
+        notify({ v })
+    end
+    return v
+end
+
+-- whether a variant is found
+function is_found(sec)
+    return found[sec] ~= nil
+end
+
+-- when and where a variant was found: { y, mo, d, h, mi, lvl } or nil
+function found_at(sec)
+    return found[sec]
+end
+
+local function earlier(a, b)
+    for _, k in ipairs({ "y", "mo", "d", "h", "mi" }) do
+        local x, y = tonumber(a[k]) or 0, tonumber(b[k]) or 0
+        if x ~= y then return x < y end
+    end
+    return false
+end
+
+-- when and where a gun model was first found, any variant: { y, mo, d, h, mi, lvl } or nil
+function entry_found(e)
+    local first
+    for _, v in ipairs(e and e.variants or {}) do
+        local at = found[v.sec]
+        if at and (not first or earlier(at, first)) then
+            first = at
+        end
+    end
+    return first
+end
+
+-- how many gun models of a list (or of the whole catalog) are found
+function count_found(list)
+    local n = 0
+    if list then
+        for _, e in ipairs(list) do
+            if entry_found(e) then n = n + 1 end
+        end
+    else
+        local seen = {}
+        for sec in pairs(found) do
+            local e = arsenal_data.get(sec)
+            if e and not seen[e] then
+                seen[e] = true
+                n = n + 1
+            end
+        end
+    end
+    return n
+end
+
+-- move finds kept under a section to the variant that holds it now; a gun the catalog does
+-- not have (a mod since removed) keeps its own key
+function regroup()
+    local out = {}
+    for sec, at in pairs(found) do
+        local v = arsenal_data.variant_of(sec)
+        local key = v and v.sec or sec
+        if not out[key] or earlier(at, out[key]) then
+            out[key] = at
+        end
+    end
+    found = out
+end
+
+local function scan()
+    if not db.actor then return end
+    db.actor:iterate_inventory(function(owner, obj)
+        if obj then
+            mark(obj:section(), true)
+        end
+    end, db.actor)
+end
+
+local function actor_on_first_update()
+    regroup()
+    scan()
+    scanned = true
+end
+
+local function actor_on_item_take(obj)
+    if obj then
+        mark(obj:section(), not scanned)
+    end
+end
+
+-- With the option on, the guns in a body, stash or trader's stock count when its window opens
+-- (ui_inventory's partner, iterated as the window iterates it); one news line for the new ones
+local function GUI_on_show(name)
+    if name ~= "UIInventory" or not scanned then return end
+    if not (arsenal_mcm and arsenal_mcm.count_seen()) then return end
+    local gui = ui_inventory and ui_inventory.GUI
+    if not (gui and (gui.mode == "loot" or gui.mode == "trade")) then return end
+    local ok, partner = pcall(gui.GetPartner, gui)
+    if not (ok and partner) then return end
+    local new = {}
+    local function take(_, obj)
+        local v = obj and mark(obj:section(), true)
+        if v then new[#new + 1] = v end
+    end
+    if gui.npc_is_box then
+        partner:iterate_inventory_box(take, partner)
+    else
+        partner:iterate_inventory(take, partner)
+    end
+    notify(new)
+end
+
+local function save_state(m_data)
+    m_data.arsenal = { v = VERSION, found = found }
+end
+
+local function load_state(m_data)
+    local d = m_data.arsenal
+    found = (d and type(d.found) == "table") and d.found or {}
+    scanned = false
+end
+
+function on_game_start()
+    RegisterScriptCallback("actor_on_first_update", actor_on_first_update)
+    RegisterScriptCallback("actor_on_item_take", actor_on_item_take)
+    RegisterScriptCallback("GUI_on_show", GUI_on_show)
+    RegisterScriptCallback("save_state", save_state)
+    RegisterScriptCallback("load_state", load_state)
+end

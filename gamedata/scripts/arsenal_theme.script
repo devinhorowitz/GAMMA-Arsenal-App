@@ -1,0 +1,62 @@
+--[[
+    Arsenal theme: every color and widget texture the app draws with, by role. The app asks
+    for a role ("heading", "body", "button_on", ...) and never for a literal value, so a
+    different look is a change to this file and to the matching values in ui_arsenal.xml.
+
+    The look is the vanilla PDA's: amber for headings and names, light gray for body text,
+    dim gray for what is off, the PDA's own green, orange and red for good, warning and
+    danger, and the base game's widgets (ui_button_ordinary and friends), so whatever UI pack
+    restyles those restyles Arsenal too. It is the palette of the Homestead reskin and of
+    Seasons of the Zone's pages.
+
+    Engine notes: a 3t button re-applies its label color from the XML every frame, so a
+    selected button is marked by its texture (set_active), never by SetTextColor; an inline
+    color code needs four numbers, %c[a,r,g,b] (markup writes them).
+--]]
+
+local colors = {
+    heading = { 238, 196, 112 },
+    body    = { 200, 200, 200 },
+    bright  = { 255, 255, 255 },
+    dim     = { 140, 140, 140 },
+    good    = { 56, 209, 115 },
+    warn    = { 238, 155, 23 },
+    danger  = { 238, 28, 36 },
+}
+
+local textures = {
+    button    = "ui_button_ordinary",
+    button_on = "arsenal_btn_on",
+    rule      = "arsenal_rule",
+}
+
+local function c(role)
+    return colors[role] or colors.body
+end
+
+function rgb(role)
+    local v = c(role)
+    return v[1], v[2], v[3]
+end
+
+function argb(role, alpha)
+    local v = c(role)
+    return GetARGB(alpha or 255, v[1], v[2], v[3])
+end
+
+-- inline markup for SetText: markup("heading") .. text .. markup("body")
+function markup(role)
+    local v = c(role)
+    return string.format("%%c[255,%d,%d,%d]", v[1], v[2], v[3])
+end
+
+function texture(role)
+    return textures[role]
+end
+
+-- mark a button selected or not, by texture
+function set_active(btn, on)
+    if btn and btn.InitTexture then
+        btn:InitTexture(on and textures.button_on or textures.button)
+    end
+end

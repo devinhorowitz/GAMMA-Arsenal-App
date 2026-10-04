@@ -1,0 +1,231 @@
+<?xml version="1.0" encoding="windows-1251"?>
+<string_table>
+	<string id="st_arsenal_title">
+		<text>Арсенал</text>
+	</string>
+	<string id="st_arsenal_cat_pistols">
+		<text>Пистолеты</text>
+	</string>
+	<string id="st_arsenal_cat_smgs">
+		<text>ПП</text>
+	</string>
+	<string id="st_arsenal_cat_shotguns">
+		<text>Дробовики</text>
+	</string>
+	<string id="st_arsenal_cat_rifles">
+		<text>Автоматы</text>
+	</string>
+	<string id="st_arsenal_cat_snipers">
+		<text>Снайперские</text>
+	</string>
+	<string id="st_arsenal_cat_launchers">
+		<text>Гранатомёты</text>
+	</string>
+	<string id="st_arsenal_cat_melee">
+		<text>Холодное</text>
+	</string>
+	<string id="st_arsenal_fire_modes">
+		<text>Режимы огня</text>
+	</string>
+	<string id="st_arsenal_found_count">
+		<text>Найдено %s из %s</text>
+	</string>
+	<string id="st_arsenal_found_on">
+		<text>Найдено %s: %s</text>
+	</string>
+	<string id="st_arsenal_not_found">
+		<text>Ещё не найдено</text>
+	</string>
+	<string id="st_arsenal_found_only">
+		<text>Только найденные</text>
+	</string>
+	<string id="st_arsenal_new_entry">
+		<text>Новое в Арсенале: %s</text>
+	</string>
+	<string id="st_arsenal_back">
+		<text>Назад</text>
+	</string>
+	<string id="st_arsenal_variants">
+		<text>Варианты:</text>
+	</string>
+	<string id="st_arsenal_variant_found">
+		<text>%s, найдено %s: %s</text>
+	</string>
+	<string id="st_arsenal_max">
+		<text>макс. %s</text>
+	</string>
+	<string id="st_arsenal_scopes">
+		<text>Прицелы:</text>
+	</string>
+	<string id="st_arsenal_suppressors">
+		<text>Глушители:</text>
+	</string>
+	<string id="st_arsenal_accessories">
+		<text>Аксессуары:</text>
+	</string>
+	<string id="st_arsenal_parts">
+		<text>Детали:</text>
+	</string>
+	<string id="st_arsenal_builtin">
+		<text>Встроенный</text>
+	</string>
+	<string id="st_arsenal_builtin_on">
+		<text>Встроенный: %s</text>
+	</string>
+	<string id="st_arsenal_builtin_gl">
+		<text>Встроенный гранатомёт</text>
+	</string>
+	<string id="st_arsenal_builtin_gl_on">
+		<text>Встроенный гранатомёт: %s</text>
+	</string>
+	<string id="st_arsenal_builtin_laser">
+		<text>Встроенный лазер</text>
+	</string>
+	<string id="st_arsenal_builtin_laser_on">
+		<text>Встроенный лазер: %s</text>
+	</string>
+	<string id="st_arsenal_makes">
+		<text>превращает в %s</text>
+	</string>
+	<string id="st_arsenal_modes_by_upgrade">
+		<text>%s (%s после улучшения)</text>
+	</string>
+	<string id="st_arsenal_ammo_by_upgrade">
+		<text>После улучшения: %s</text>
+	</string>
+	<string id="st_arsenal_after_upgrade">
+		<text>после улучшения</text>
+	</string>
+	<string id="st_arsenal_magazines">
+		<text>Магазины:</text>
+	</string>
+	<string id="st_arsenal_rounds">
+		<text>%s патр.</text>
+	</string>
+	<string id="ui_mcm_menu_arsenal">
+		<text>Арсенал</text>
+	</string>
+	<string id="ui_mcm_arsenal_flat_key">
+		<text>Открыть Арсенал отдельно</text>
+	</string>
+	<string id="ui_mcm_arsenal_flat_key_desc">
+		<text>Открывает Арсенал в отдельном окне, вне КПК.</text>
+	</string>
+	<string id="ui_mcm_arsenal_about">
+		<text>С трёхмерным КПК его страницы выводятся на экран в руке, и значки теряют чёткость. По этой клавише Арсенал выводится прямо на экран, так же чётко, как инвентарь.</text>
+	</string>
+	<string id="st_arsenal_where">
+		<text>Где найти:</text>
+	</string>
+	<string id="st_arsenal_repair_kits">
+		<text>Ремкомплекты:</text>
+	</string>
+	<string id="st_arsenal_carried_by">
+		<text>Встречается у:</text>
+	</string>
+	<string id="st_arsenal_rank_range">
+		<text>%s – %s</text>
+	</string>
+	<string id="st_arsenal_all_ranks">
+		<text>все ранги</text>
+	</string>
+	<string id="st_arsenal_special">
+		<text>спецотряды</text>
+	</string>
+	<string id="st_arsenal_stashes">
+		<text>В тайниках</text>
+	</string>
+	<string id="st_arsenal_stashes_at">
+		<text>В тайниках, чаще всего: %s</text>
+	</string>
+	<string id="st_arsenal_no_source">
+		<text>Не встречается ни у группировок, ни в тайниках</text>
+	</string>
+	<string id="st_arsenal_nimble_from">
+		<text>У Шустрого, за %s и %s руб.</text>
+	</string>
+	<string id="st_arsenal_nimble_gets">
+		<text>Шустрый даёт %s за него и %s руб.</text>
+	</string>
+	<string id="st_arsenal_made_from">
+		<text>Собирается: %s + %s</text>
+	</string>
+	<string id="st_arsenal_start_kit">
+		<text>Стартовый набор, %s очков: %s</text>
+	</string>
+	<string id="st_arsenal_start_free">
+		<text>Стартовый набор, бесплатно: %s</text>
+	</string>
+	<string id="st_arsenal_start_eco">
+		<text>%s; только %s</text>
+	</string>
+	<string id="st_arsenal_every_faction">
+		<text>все группировки</text>
+	</string>
+	<string id="st_arsenal_camos">
+		<text>Камуфляж:</text>
+	</string>
+	<string id="st_arsenal_camo_found">
+		<text>Обнаружен</text>
+	</string>
+	<string id="st_arsenal_camo_locked">
+		<text>Ещё не обнаружен</text>
+	</string>
+	<string id="st_arsenal_camo_locked_on">
+		<text>Ещё не обнаружен; бывает на оружии: %s</text>
+	</string>
+	<string id="st_arsenal_and_more">
+		<text>%s и ещё %s</text>
+	</string>
+	<string id="ui_mcm_arsenal_count_seen">
+		<text>Учитывать увиденное оружие</text>
+	</string>
+	<string id="ui_mcm_arsenal_count_seen_desc">
+		<text>Учитывать также оружие в трупе, тайнике или у торговца, когда вы их открываете, а не только то, что вы забрали.</text>
+	</string>
+	<string id="st_arsenal_tag_suppressed">
+		<text>с глушителем</text>
+	</string>
+	<string id="st_arsenal_tag_scoped">
+		<text>с прицелом</text>
+	</string>
+	<string id="st_arsenal_tag_gl">
+		<text>с ПГ</text>
+	</string>
+	<string id="st_arsenal_tag_gl_mount">
+		<text>под ПГ</text>
+	</string>
+	<string id="st_arsenal_tag_auto">
+		<text>авто</text>
+	</string>
+	<string id="st_arsenal_tag_rounds">
+		<text>%s патр.</text>
+	</string>
+	<string id="st_arsenal_tag_rpm">
+		<text>%s ВВМ</text>
+	</string>
+	<string id="st_arsenal_tag_accuracy">
+		<text>точность %s</text>
+	</string>
+	<string id="st_arsenal_tag_handling">
+		<text>удобность %s</text>
+	</string>
+	<string id="st_arsenal_tag_damage">
+		<text>урон %s</text>
+	</string>
+	<string id="st_arsenal_tag_speed">
+		<text>%s м/с</text>
+	</string>
+	<string id="st_arsenal_tag_reliability">
+		<text>надёжность %s</text>
+	</string>
+	<string id="st_arsenal_tag_recoil">
+		<text>контроль отдачи %s</text>
+	</string>
+	<string id="st_arsenal_tag_sup_mount">
+		<text>под глушитель</text>
+	</string>
+	<string id="st_arsenal_tag_scope_mount">
+		<text>под прицел</text>
+	</string>
+</string_table>

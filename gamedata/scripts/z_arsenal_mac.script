@@ -1,0 +1,26 @@
+--[[
+    Arsenal's tile in Mod App Creator's launcher (PDA > Launcher). MAC returns the app's page
+    from func() without a guard, so a page that failed to build would raise inside the PDA's
+    own call; here it logs and comes back empty instead.
+--]]
+
+local function safe_ui()
+    local ok, ui = pcall(ui_arsenal.get_ui)
+    if ok then
+        return ui
+    end
+    printf("[arsenal] the page failed to build: %s", tostring(ui))
+end
+
+function on_game_start()
+    if not (mac_mcm and mac_mcm.add_app) then
+        printf("[arsenal] Mod App Creator not found; no tile")
+        return
+    end
+    mac_mcm.add_app("arsenal", {
+        name = "st_arsenal_title",     -- the tile's label
+        texture = "arsenal_app",       -- _e, _h, _t, _d in textures_descr/ui_arsenal.xml
+        tab = "eptArsenal",            -- the PDA section the page lives in
+        func = safe_ui,
+    })
+end

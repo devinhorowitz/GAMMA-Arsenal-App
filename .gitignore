@@ -1,0 +1,5 @@
+__pycache__/
+*.pyc
+build/
+shots/
+arsenal_dupes_preview.png

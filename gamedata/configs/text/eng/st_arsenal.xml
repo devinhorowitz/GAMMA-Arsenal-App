@@ -1,0 +1,231 @@
+<?xml version="1.0" encoding="windows-1251"?>
+<string_table>
+	<string id="st_arsenal_title">
+		<text>Arsenal</text>
+	</string>
+	<string id="st_arsenal_cat_pistols">
+		<text>Pistols</text>
+	</string>
+	<string id="st_arsenal_cat_smgs">
+		<text>SMGs</text>
+	</string>
+	<string id="st_arsenal_cat_shotguns">
+		<text>Shotguns</text>
+	</string>
+	<string id="st_arsenal_cat_rifles">
+		<text>Rifles</text>
+	</string>
+	<string id="st_arsenal_cat_snipers">
+		<text>Sniper rifles</text>
+	</string>
+	<string id="st_arsenal_cat_launchers">
+		<text>Launchers</text>
+	</string>
+	<string id="st_arsenal_cat_melee">
+		<text>Melee</text>
+	</string>
+	<string id="st_arsenal_fire_modes">
+		<text>Fire modes</text>
+	</string>
+	<string id="st_arsenal_found_count">
+		<text>Found %s of %s</text>
+	</string>
+	<string id="st_arsenal_found_on">
+		<text>Found %s in %s</text>
+	</string>
+	<string id="st_arsenal_not_found">
+		<text>Not found yet</text>
+	</string>
+	<string id="st_arsenal_found_only">
+		<text>Found only</text>
+	</string>
+	<string id="st_arsenal_new_entry">
+		<text>New in Arsenal: %s</text>
+	</string>
+	<string id="st_arsenal_back">
+		<text>Back</text>
+	</string>
+	<string id="st_arsenal_variants">
+		<text>Variants:</text>
+	</string>
+	<string id="st_arsenal_variant_found">
+		<text>%s, found %s in %s</text>
+	</string>
+	<string id="st_arsenal_max">
+		<text>max %s</text>
+	</string>
+	<string id="st_arsenal_scopes">
+		<text>Scopes:</text>
+	</string>
+	<string id="st_arsenal_suppressors">
+		<text>Suppressors:</text>
+	</string>
+	<string id="st_arsenal_accessories">
+		<text>Accessories:</text>
+	</string>
+	<string id="st_arsenal_parts">
+		<text>Parts:</text>
+	</string>
+	<string id="st_arsenal_builtin">
+		<text>Built in</text>
+	</string>
+	<string id="st_arsenal_builtin_on">
+		<text>Built in on %s</text>
+	</string>
+	<string id="st_arsenal_builtin_gl">
+		<text>Grenade launcher built in</text>
+	</string>
+	<string id="st_arsenal_builtin_gl_on">
+		<text>Grenade launcher built in on %s</text>
+	</string>
+	<string id="st_arsenal_makes">
+		<text>makes the %s</text>
+	</string>
+	<string id="ui_mcm_menu_arsenal">
+		<text>Arsenal</text>
+	</string>
+	<string id="ui_mcm_arsenal_flat_key">
+		<text>Open Arsenal on its own</text>
+	</string>
+	<string id="ui_mcm_arsenal_flat_key_desc">
+		<text>Opens Arsenal in a window of its own, outside the PDA.</text>
+	</string>
+	<string id="ui_mcm_arsenal_about">
+		<text>With the 3D PDA on, the PDA's pages are drawn onto the screen in your hand, which softens icons. Opened with this key, Arsenal is drawn straight to the screen, as sharp as the inventory.</text>
+	</string>
+	<string id="st_arsenal_modes_by_upgrade">
+		<text>%s (%s by upgrade)</text>
+	</string>
+	<string id="st_arsenal_ammo_by_upgrade">
+		<text>By upgrade: %s</text>
+	</string>
+	<string id="st_arsenal_after_upgrade">
+		<text>after an upgrade</text>
+	</string>
+	<string id="st_arsenal_magazines">
+		<text>Magazines:</text>
+	</string>
+	<string id="st_arsenal_rounds">
+		<text>%s rounds</text>
+	</string>
+	<string id="st_arsenal_tag_suppressed">
+		<text>suppressed</text>
+	</string>
+	<string id="st_arsenal_tag_scoped">
+		<text>scoped</text>
+	</string>
+	<string id="st_arsenal_tag_gl">
+		<text>GL</text>
+	</string>
+	<string id="st_arsenal_tag_gl_mount">
+		<text>GL mount</text>
+	</string>
+	<string id="st_arsenal_tag_auto">
+		<text>auto</text>
+	</string>
+	<string id="st_arsenal_tag_rounds">
+		<text>%s rds</text>
+	</string>
+	<string id="st_arsenal_tag_rpm">
+		<text>%s RPM</text>
+	</string>
+	<string id="st_arsenal_tag_accuracy">
+		<text>accuracy %s</text>
+	</string>
+	<string id="st_arsenal_tag_handling">
+		<text>handling %s</text>
+	</string>
+	<string id="st_arsenal_tag_speed">
+		<text>%s m/s</text>
+	</string>
+	<string id="st_arsenal_tag_reliability">
+		<text>reliability %s</text>
+	</string>
+	<string id="st_arsenal_tag_damage">
+		<text>damage %s</text>
+	</string>
+	<string id="st_arsenal_tag_recoil">
+		<text>recoil control %s</text>
+	</string>
+	<string id="st_arsenal_tag_sup_mount">
+		<text>suppressor mount</text>
+	</string>
+	<string id="st_arsenal_tag_scope_mount">
+		<text>scope mount</text>
+	</string>
+	<string id="st_arsenal_where">
+		<text>Where to find:</text>
+	</string>
+	<string id="st_arsenal_carried_by">
+		<text>Carried by:</text>
+	</string>
+	<string id="st_arsenal_rank_range">
+		<text>%s – %s</text>
+	</string>
+	<string id="st_arsenal_all_ranks">
+		<text>every rank</text>
+	</string>
+	<string id="st_arsenal_special">
+		<text>special squads</text>
+	</string>
+	<string id="st_arsenal_stashes">
+		<text>In stashes</text>
+	</string>
+	<string id="st_arsenal_stashes_at">
+		<text>In stashes, most often at %s</text>
+	</string>
+	<string id="st_arsenal_no_source">
+		<text>No faction carries it and no stash holds it</text>
+	</string>
+	<string id="st_arsenal_nimble_from">
+		<text>From Nimble, for %s and %s RU</text>
+	</string>
+	<string id="st_arsenal_nimble_gets">
+		<text>Nimble gives the %s for it and %s RU</text>
+	</string>
+	<string id="st_arsenal_made_from">
+		<text>Made from the %s with the %s</text>
+	</string>
+	<string id="st_arsenal_start_kit">
+		<text>New-game kit, %s points: %s</text>
+	</string>
+	<string id="st_arsenal_start_free">
+		<text>New-game kit, free: %s</text>
+	</string>
+	<string id="st_arsenal_start_eco">
+		<text>%s; %s only</text>
+	</string>
+	<string id="st_arsenal_every_faction">
+		<text>every faction</text>
+	</string>
+	<string id="st_arsenal_repair_kits">
+		<text>Repair kits:</text>
+	</string>
+	<string id="st_arsenal_builtin_laser">
+		<text>Laser built in</text>
+	</string>
+	<string id="st_arsenal_builtin_laser_on">
+		<text>Laser built in on %s</text>
+	</string>
+	<string id="st_arsenal_camos">
+		<text>Camos:</text>
+	</string>
+	<string id="st_arsenal_camo_found">
+		<text>Discovered</text>
+	</string>
+	<string id="st_arsenal_camo_locked">
+		<text>Not discovered yet</text>
+	</string>
+	<string id="st_arsenal_camo_locked_on">
+		<text>Not discovered yet; on guns carried by %s</text>
+	</string>
+	<string id="st_arsenal_and_more">
+		<text>%s and %s more</text>
+	</string>
+	<string id="ui_mcm_arsenal_count_seen">
+		<text>Count guns you see</text>
+	</string>
+	<string id="ui_mcm_arsenal_count_seen_desc">
+		<text>Also count the guns in a body, stash or trader's stock when you open it, not only the guns you take.</text>
+	</string>
+</string_table>

@@ -1,0 +1,15 @@
+--[[
+    DXML: an invisible PDA tab button for Arsenal's section. The PDA shows its tab bar, clock
+    and caption only for a section that has a button (CUIPdaWnd::SetActiveCaption), so without
+    one they would vanish while Arsenal is open. Parked off screen, zero wide, like MAC's own.
+--]]
+
+function on_xml_read()
+    RegisterScriptCallback("on_xml_read", function(name, xml)
+        if not name:match("^ui[\\/]pda_?%d*%.xml$") then return end
+        local tab = xml:query("tab")[1]
+        if not tab or #xml:query("tab > button[id=eptArsenal]") > 0 then return end
+        xml:insertFromXMLString([[<button x="1000" y="0" width="0" height="0" id="eptArsenal" frame_mode="0">]]
+            .. [[<text align="c" vert_align="c" x="0" y="0" font="letterica16">st_arsenal_title</text></button>]], tab)
+    end)
+end
