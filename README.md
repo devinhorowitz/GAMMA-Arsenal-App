@@ -6,7 +6,7 @@
 it, what fits it, and which ones you have found. You learn of them as you play. Its
 Workbench page plans upgrades on GAMMA's own upgrade trees and hands them to your toolkit.**
 
-![Arsenal's page for the RD 5.45 Custom "ISG"](media/arsenal_screenshot.png)
+![Arsenal's page for the 9A-91: the stat card with each stat fully upgraded, hit power and jams, where to find it, and its ammo](media/arsenal_screenshot.png)
 
 Arsenal is a PDA app for the S.T.A.L.K.E.R. Anomaly modpack GAMMA. It reads the running
 game's own configs, so the catalog is whatever your mod list has, with the numbers your
@@ -58,6 +58,9 @@ Arsenal's tile in MAC's launcher shows how many are waiting.
 - **Ammo,** as a table: each round's damage from this gun, armor piercing, bullet speed and
   the damage left at 100 m; then the calibers a conversion upgrade opens. Rounds have pages of
   their own: damage, armor piercing, speed, pellets, falloff, and the guns that fire them.
+  With ArtiGrok Ballistics, its anomalous rounds are listed too, and a round's page adds its
+  special effects and its damage against mutants, pseudogiants and stalkers; armor piercing
+  and falloff follow ArtiGrok's.
 - **Magazines,** when Mags Redux is on.
 - **Scopes, suppressors and accessories:** launchers with their grenades, laser modules,
   kits, and mounts an upgrade adds.
@@ -66,6 +69,8 @@ Arsenal's tile in MAC's launcher shows how many are waiting.
 - **Parts,** and the **repair kits** that fit it.
 - **R.I.S.K. enhancements,** when Neffi's Randomized Item Stat Kits is installed: what each kind
   of enhancement does to this gun's stats, weakest to strongest, and the worst bad roll.
+
+![Arsenal's page for the Scientific Exoskeleton: the armor card with each stat fully upgraded, and how it fares against bullets](media/armor_screenshot.png)
 
 In English and Russian.
 
@@ -128,6 +133,13 @@ In Mod Organizer 2, use **Install a new mod from archive**, pick the zip, and en
 Arsenal shares no file with any other mod, so its place in the load order does not matter.
 It works in a new game or an existing one.
 
+## Works with
+
+- **Fatal Error:** Arsenal and Workbench keep the PDA's tab bar on every PDA model, and the key
+  below opens Arsenal only while the PDA works.
+- **ArtiGrok Ballistics** and **Leekos Munition Merge:** the anomalous rounds are listed, with
+  their effects.
+
 ## Sharper pages with the 3D PDA
 
 With the 3D PDA on, the game draws PDA pages onto the screen of the PDA in your hands, which
@@ -147,6 +159,12 @@ Workbench there too.
   and Darkasleif's Armor Exchange, Dux's Innumerable Characters Kit.
 - [R.I.S.K.](https://www.moddb.com/mods/stalker-anomaly/addons/risk-randomized-item-stat-kits-for-gamma)
   by Neffi. Arsenal reads its enhancements from the running game and ships none of its files.
+- [ArtiGrok Ballistics](https://github.com/ilrathCXV/ArtiGrok-Ballistics-GAMMA-ilrath-Mo3) by
+  ilrathCXV, and [Leekos Munition Merge](https://github.com/Leekos/Leekos-Munition-Merge) by
+  Leekos: Arsenal asks ArtiGrok's own scripts for its rounds' effects, armor piercing and
+  falloff, reads both mods' recipes as crafting, and ships none of their files.
+- [Fatal Error](https://www.moddb.com/mods/stalker-anomaly/addons/fatal-error-by-ncenka) by
+  Ncenka: Arsenal reads its PDA state and ships none of its files.
 
 ## Development
 

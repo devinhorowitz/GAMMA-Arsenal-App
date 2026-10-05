@@ -108,6 +108,9 @@
 	<string id="ui_mcm_arsenal_flat_key">
 		<text>Открыть Арсенал отдельно</text>
 	</string>
+	<string id="st_arsenal_pda_down">
+		<text>Ваш КПК не работает.</text>
+	</string>
 	<string id="ui_mcm_arsenal_flat_key_desc">
 		<text>Открывает Арсенал в отдельном окне, вне КПК.</text>
 	</string>
@@ -455,6 +458,21 @@
 	</string>
 	<string id="st_arsenal_round_kept">
 		<text>Остаётся на 50/100/200 м</text>
+	</string>
+	<string id="st_arsenal_round_mutants">
+		<text>Против мутантов</text>
+	</string>
+	<string id="st_arsenal_round_giants">
+		<text>Против псевдогигантов</text>
+	</string>
+	<string id="st_arsenal_round_stalkers">
+		<text>Против сталкеров</text>
+	</string>
+	<string id="st_arsenal_round_stopped">
+		<text>При непробитии</text>
+	</string>
+	<string id="st_arsenal_round_effect">
+		<text>Эффект</text>
 	</string>
 	<string id="st_arsenal_fired_by">
 		<text>Используется в:</text>

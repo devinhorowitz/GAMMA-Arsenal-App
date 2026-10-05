@@ -87,6 +87,9 @@
 	<string id="ui_mcm_arsenal_flat_key">
 		<text>Open Arsenal on its own</text>
 	</string>
+	<string id="st_arsenal_pda_down">
+		<text>Your PDA is not working.</text>
+	</string>
 	<string id="ui_mcm_arsenal_flat_key_desc">
 		<text>Opens Arsenal in a window of its own, outside the PDA.</text>
 	</string>
@@ -455,6 +458,21 @@
 	</string>
 	<string id="st_arsenal_round_kept">
 		<text>Left at 50/100/200 m</text>
+	</string>
+	<string id="st_arsenal_round_mutants">
+		<text>Against mutants</text>
+	</string>
+	<string id="st_arsenal_round_giants">
+		<text>Against pseudogiants</text>
+	</string>
+	<string id="st_arsenal_round_stalkers">
+		<text>Against stalkers</text>
+	</string>
+	<string id="st_arsenal_round_stopped">
+		<text>When armor stops it</text>
+	</string>
+	<string id="st_arsenal_round_effect">
+		<text>Effect</text>
 	</string>
 	<string id="st_arsenal_fired_by">
 		<text>Fired by:</text>

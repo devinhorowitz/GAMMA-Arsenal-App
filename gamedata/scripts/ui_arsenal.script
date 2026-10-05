@@ -773,14 +773,14 @@ function ArsenalPDA:ShowEntry(sec)
             game.translate_string("st_kg")))
     end
 
-    -- a round: what it does (its own values; a gun's are in that gun's table), and the guns
-    -- that fire it, those the player knows
+    -- a round: what it does (its own values, with ArtiGrok its effects; a gun's are in that gun's
+    -- table), and the guns that fire it, those the player knows
     if know and e.cat == "ammo" then
         local rs = safe(arsenal_data.round_stats, shown.sec)
         local function row(id, s)
             local n = xml:InitTextWnd("round_stat", entry)
             n:SetWndPos(vector2():set(0, y))
-            n:SetText(game.translate_string(id))
+            n:SetText(id and game.translate_string(id) or "")
             n:AdjustHeightToText()
             local v = xml:InitTextWnd("round_value", entry)
             v:SetWndPos(vector2():set(v:GetWndPos().x, y))
@@ -796,6 +796,9 @@ function ArsenalPDA:ShowEntry(sec)
             if rs.kept and rs.kept[100] then
                 row("st_arsenal_round_kept", string.format("%s / %s / %s", percent(rs.kept[50]), percent(rs.kept[100]),
                     percent(rs.kept[200])))
+            end
+            for _, x in ipairs(rs.effects or {}) do
+                row(x.id, x.text)
             end
         end
         local guns = {}

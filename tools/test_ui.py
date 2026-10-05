@@ -139,7 +139,8 @@ local T = { st_arsenal_found_count = "Found %s of %s", st_arsenal_found_on = "Fo
             ui_inv_rate_of_fire = "Fire Rate" }
 for k, v in pairs(STRINGS) do T[k] = T[k] or v end
 T.st_perc, T.st_stat_rpm = "%", "RPM"
-game = { translate_string = function(k) return T[k] or k end }
+-- the engine's takes a string only
+game = { translate_string = function(k) assert(type(k) == "string", "translate_string: not a string"); return T[k] or k end }
 TEXT = T
 pda_section = nil
 ActorMenu = { get_pda_menu = function() return { SetActiveSubdialog = function(self, s) pda_section = s end } end }
@@ -368,7 +369,9 @@ function arsenal_data.gun_rounds(sec)
 end
 function arsenal_data.round_stats(sec)
     if sec ~= "ammo_545" then return nil end
-    return { damage = 1.14, ap = 27, speed = 1.5, kept = { [50] = 0.965, [100] = 0.932, [200] = 0.872 } }
+    return { damage = 1.14, ap = 27, speed = 1.5, kept = { [50] = 0.965, [100] = 0.932, [200] = 0.872 },
+             effects = { { id = "st_arsenal_round_mutants", text = "+15%" },
+                         { id = "st_arsenal_round_effect", text = "3 Shock stacks" }, { text = "20% chance to stagger" } } }
 end
 -- what fires the 5.45: the AK-74 and the Ghost
 function arsenal_data.fired_by(sec)
@@ -452,6 +455,8 @@ MUTANTS = {
     "rounds_cols": ("c:SetWndPos(vector2():set(ROUND_COLS[i], y))", "c:SetWndPos(vector2():set(0, y))"),
     "rounds_other": ("            if not mine[n] then other[#other + 1] = n end", "            other[#other + 1] = n"),
     "rounds_header_dim": ("            if role then c:SetTextColor(theme.argb(role)) end\n", ""),
+    "round_effects": ("            for _, x in ipairs(rs.effects or {}) do\n                row(x.id, x.text)\n            end\n", ""),
+    "round_blank": ('n:SetText(id and game.translate_string(id) or "")', "n:SetText(game.translate_string(id))"),
     "round_rows": ('            row("st_arsenal_round_ap", tostring(rs.ap))\n', ""),
     "round_value_x": ("local v = xml:InitTextWnd(\"round_value\", entry)\n            v:SetWndPos(vector2():set(v:GetWndPos().x, y))",
                       "local v = xml:InitTextWnd(\"round_value\", entry)\n            v:SetWndPos(vector2():set(0, y))"),
@@ -937,13 +942,16 @@ def main():
     check(ui.sec == "ammo_545" and not stats and not any(t.startswith("Fire modes") or t.startswith("Weight")
                                                          or t.startswith("Hit power") for t in t_rnd),
           "a round: no card, fire modes, hit power or weight: %s" % t_rnd[:6])
-    check(after_in(t_rnd, "Not found yet", 8) == ["Damage", "x1.14", "Armor piercing", "27", "Bullet speed", "x1.5",
-                                                  "Left at 50/100/200 m", "97% / 93% / 87%"],
-          "its values, a row each: %s" % after_in(t_rnd, "Not found yet", 8))
+    check(after_in(t_rnd, "Not found yet", 13) == ["Damage", "x1.14", "Armor piercing", "27", "Bullet speed", "x1.5",
+                                                   "Left at 50/100/200 m", "97% / 93% / 87%", "Against mutants", "+15%",
+                                                   "Effect", "3 Shock stacks", "20% chance to stagger"],
+          "its values, a row each, then ArtiGrok's effects, a second effect under the first's name: %s"
+          % after_in(t_rnd, "Not found yet", 13))
     rs = [c for c in rnd.children.values() if c.path == "round_stat"]
     rv = [c for c in rnd.children.values() if c.path == "round_value"]
-    check(len(rs) == 4 and all(a.y == b.y for a, b in zip(rs, rv)) and rv[0].x == 154,
-          "a value beside its name: %s" % [(a.y, b.y) for a, b in zip(rs, rv)])
+    check(len(rs) == 7 and all(a.y == b.y for a, b in zip(rs, rv)) and rv[0].x == 154 and rs[6].text == ""
+          and len({a.y for a in rs}) == 7,
+          "a value beside its name, the second effect's name blank: %s" % [(a.y, b.y, a.text) for a, b in zip(rs, rv)])
     check(after_in(t_rnd, "Fired by:", 1) == ["AK-74 Tactical Modernized Carbine of the Northern Expedition Special Forces "
                                               "Unit, Ghost"],
           "the guns that fire it: %s" % after_in(t_rnd, "Fired by:", 1))

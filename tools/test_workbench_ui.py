@@ -26,6 +26,7 @@ GD = os.path.join(HERE, "..", "gamedata")
 PAGE = io.open(os.path.join(GD, "scripts", "ui_arsenal_workbench.script"), encoding="latin-1").read()
 DATA = io.open(os.path.join(GD, "scripts", "arsenal_workbench.script"), encoding="latin-1").read()
 PAGES = io.open(os.path.join(GD, "scripts", "arsenal_pages.script"), encoding="latin-1").read()
+MODXML = io.open(os.path.join(GD, "scripts", "modxml_arsenal.script"), encoding="latin-1").read()
 XML = io.open(os.path.join(GD, "configs", "ui", "ui_arsenal.xml"), encoding="cp1251").read()
 STRINGS = dict(re.findall(r'<string id="([^"]+)">\s*<text>(.*?)</text>',
                           io.open(os.path.join(GD, "configs", "text", "eng", "st_arsenal.xml"), encoding="cp1251").read(),
@@ -185,9 +186,101 @@ MUTANTS = {
     "open_no_item": ("        ui_arsenal_workbench.show_next(sec, id)", "        -- forgotten"),
     "open_flat_ignored": ("    if flat_cat or flat_wb then", "    if false then"),
     "no_customize": ("    ui_arsenal.add_action(\"workbench\", {", "    local _ = ({"),
+    # arsenal_pages: Fatal Error's PDA
+    "fe_absent": ("    if not fe then return true end", "    if not fe then return false end"),
+    "fe_npc_pda": ('        if not pda or pda:section():find("itm_pda_") then return false end',
+                   "        if not pda then return false end"),
+    "fe_charge": ("        if not item_device.is_pda_charged(true) then return false end\n", ""),
+    "fe_charge_any": ("item_device.is_pda_charged(true)", "item_device.is_pda_charged()"),
+    "fe_locked": ('        if ini_sys:r_bool_ex(pda:section(), "encrypted") or (tonumber(fe.REBOOT) or 0) > 0 then return false end\n', ""),
+    "fe_bios": ('        if ActorMenu.get_pda_menu():GetActiveSection() == "eptBios" then return false end\n', ""),
+    "fe_bsod": ("        if fe_utils.is_bsod(pda) then return false end\n", ""),
+    "fe_guard": ('local guard = tonumber(upvalue(fe.process_pda_call, "reboot_protection")) or 0', "local guard = 0"),
+    "fe_storm": ("        if not (guard > 0 or overclocked) and (xr_conditions.surge_started() or psi_storm_manager.is_started()) then",
+                 "        if false then"),
+    "fe_sarcophagus": ("        if SARCOPHAGUS[lvl] and not overclocked then return false end\n", ""),
+    "fe_jam": ("        if (fe.MONOLITH_HACKERS or {})[lvl]", "        if false"),
+    "fe_jam_free": ("JAM_FREE[get_actor_true_community()] or ", ""),
+    "fe_fail_closed": ("tostring(works))\n    end\n    return true", "tostring(works))\n    end\n    return false"),
+    "fe_warn_every": ("    if not warned then", "    if true then"),
+    # modxml_arsenal: the tab buttons
+    "dxml_old_names": (r'if not name:match("^ui[\\/]pda[%w_]*%.xml$") then return end',
+                       r'if not name:match("^ui[\\/]pda_?%d*%.xml$") then return end'),
+    "dxml_any_file": (r'if not name:match("^ui[\\/]pda[%w_]*%.xml$") then return end',
+                      r'if not name:match("%.xml$") then return end'),
+    "dxml_no_caption": ('if not (tab and xml:query("caption_static")[1]) then return end', "if not tab then return end"),
+    "dxml_dup": ('if #xml:query("tab > button[id=" .. id .. "]") == 0 then', "if true then"),
+    "dxml_dialogs_twice": ('if #xml:query("dialog[id=arsenal_rumor]") == 0 then', "if true then"),
 }
 
-PAGES_MUTANTS = {"router_all", "router_unsafe", "router_no_varargs", "router_twice", "open_no_item", "open_flat_ignored", "no_customize"}
+PAGES_MUTANTS = {"router_all", "router_unsafe", "router_no_varargs", "router_twice", "open_no_item", "open_flat_ignored", "no_customize",
+                 "fe_absent", "fe_npc_pda", "fe_charge", "fe_charge_any", "fe_locked", "fe_bios", "fe_bsod", "fe_guard",
+                 "fe_storm", "fe_sarcophagus", "fe_jam", "fe_jam_free", "fe_fail_closed", "fe_warn_every"}
+MODXML_MUTANTS = {"dxml_old_names", "dxml_any_file", "dxml_no_caption", "dxml_dup", "dxml_dialogs_twice"}
+
+# Fatal Error as arsenal_pages meets it: the slotted PDA, its charge, encryption and reboot, the
+# PDA's BIOS page, a crash, overclocking, the reboot guard (a local of process_pda_call, as in
+# FE), storms, the level and the player's faction; each case sets one apart from a working PDA
+FE = r"""
+FE_PDA = {}
+FE_ON = {}
+local pda_obj = {}
+function pda_obj:section() return FE_PDA.sec end
+function pda_obj:has_upgrade(u) return FE_PDA.upgrades[u] == true end
+db.actor.item_in_slot = function(self, n) return (n == 8 and FE_PDA.sec) and pda_obj or nil end
+item_device = { is_pda_charged = function(actor_only) return actor_only == true and FE_ON.charged end }
+ini_sys.r_bool_ex = function(self, sec, key) return key == "encrypted" and sec == FE_PDA.sec and FE_ON.encrypted end
+local reboot_protection = 0
+fatal_error_mcm = { REBOOT = 0, MONOLITH_HACKERS = { l10_radar = true } }
+function fatal_error_mcm.process_pda_call() return reboot_protection end
+function fe_guard(n) reboot_protection = n end
+fe_utils = { is_bsod = function(o) return FE_PDA.bsod end, is_overclocked = function(o) return FE_PDA.overclocked end }
+PDA.GetActiveSection = function(self) return FE_ON.tab end
+xr_conditions = { surge_started = function() return FE_ON.surge end }
+psi_storm_manager = { is_started = function() return FE_ON.psi end }
+level.name = function() return FE_ON.level end
+function get_actor_true_community() return FE_ON.community end
+function fe_working()
+    FE_PDA.sec, FE_PDA.upgrades, FE_PDA.bsod, FE_PDA.overclocked = "device_pda_2", {}, false, false
+    FE_ON.charged, FE_ON.encrypted, FE_ON.tab, FE_ON.surge, FE_ON.psi = true, false, "eptArsenal", false, false
+    FE_ON.level, FE_ON.community = "l01_escape", "stalker"
+    fatal_error_mcm.REBOOT = 0
+    fe_guard(0)
+end
+"""
+
+# DXML's xml object as modxml_arsenal uses it: a layout with or without a tab bar and a
+# caption, the buttons it has; query answers the selectors the script asks, insertFromXMLString
+# records what goes in (a button must go into the tab bar)
+DXML = r"""
+function make_xml(has_tab, has_caption, buttons)
+    local x = { tab = has_tab and { buttons = {} } or nil, caption = has_caption, inserted = {}, dialogs = {} }
+    for _, b in ipairs(buttons or {}) do x.tab.buttons[b] = true end
+    function x:query(sel)
+        if sel == "tab" then return self.tab and { self.tab } or {} end
+        if sel == "caption_static" then return self.caption and { {} } or {} end
+        local id = sel:match("^tab > button%[id=(.-)%]$")
+        if id then return (self.tab and self.tab.buttons[id]) and { {} } or {} end
+        local d = sel:match("^dialog%[id=(.-)%]$")
+        if d then return self.dialogs[d] and { {} } or {} end
+        error("query: " .. sel)
+    end
+    function x:insertFromXMLString(s, parent)
+        if s:find("^%s*<dialog") then
+            for d in s:gmatch('<dialog id="([%w_]+)"') do
+                self.dialogs[d] = true
+                self.inserted[#self.inserted + 1] = d
+            end
+            return
+        end
+        assert(parent == self.tab, "a button outside the tab bar")
+        local id = s:match('id="([%w_]+)"')
+        self.tab.buttons[id] = true
+        self.inserted[#self.inserted + 1] = id
+    end
+    return x
+end
+"""
 
 
 def sizes():
@@ -196,13 +289,16 @@ def sizes():
 
 
 def main():
-    page, pages = PAGE, PAGES
+    page, pages, modxml = PAGE, PAGES, MODXML
     mutant = sys.argv[1] if len(sys.argv) > 1 else None
     if mutant:
         old, new = MUTANTS[mutant]
         if mutant in PAGES_MUTANTS:
             assert pages.count(old) == 1, old
             pages = pages.replace(old, new)
+        elif mutant in MODXML_MUTANTS:
+            assert modxml.count(old) == 1, old
+            modxml = modxml.replace(old, new)
         else:
             assert page.count(old) == 1, old
             page = page.replace(old, new)
@@ -257,14 +353,14 @@ WORLD = { [7] = "wpn_test", [3] = "suit_x" }
         return 1
     check(page_ is not None, "the page builds, every element in the layout")
     try:
-        steps(lua, g, ui, data, page_, pages, load, check)
+        steps(lua, g, ui, data, page_, pages, modxml, load, check)
     except L.LuaError as e:
         check(False, "every step runs: %s" % str(e).splitlines()[0])
     print("\n%d failed" % len(fails))
     return 1 if fails else 0
 
 
-def steps(lua, g, ui, data, page_, pages, load, check):
+def steps(lua, g, ui, data, page_, pages, modxml, load, check):
 
     def texts(item_list):
         return [(it.key, it.name.text, it.count and it.count.text) for it in item_list.values()]
@@ -486,6 +582,73 @@ pda = { set_active_subdialog = function(section, a, b) ORIG_CALLS[#ORIG_CALLS + 
                 "ui_arsenal_workbench.open_flat = function() FLAT_WB = FLAT_WB + 1 end")
     pg.open("workbench", "wpn_own")
     check(g.CLOSED is True and g.FLAT_WB == 1, "in the flat window: the catalog's closes, Workbench's opens")
+
+    # Fatal Error: the flat window opens only when the PDA would show the page
+    check(pg.pda_works() is True, "without Fatal Error, the PDA is no condition")
+    lua.execute(FE)
+    cases = [("", True, "a working PDA"),
+             ("FE_PDA.sec = nil", False, "no PDA in its slot"),
+             ("FE_PDA.sec = 'itm_pda_common'", False, "an NPC's PDA in the slot"),
+             ("FE_ON.charged = false", False, "a dead or broken PDA"),
+             ("FE_ON.encrypted = true", False, "an encrypted PDA"),
+             ("fatal_error_mcm.REBOOT = 5", False, "rebooting"),
+             ("FE_ON.tab = 'eptBios'", False, "in its BIOS"),
+             ("FE_PDA.bsod = true", False, "crashed"),
+             ("FE_ON.surge = true", False, "an emission"),
+             ("FE_ON.psi = true", False, "a psi storm"),
+             ("FE_ON.surge = true; fe_guard(30)", True, "an emission just after a reboot"),
+             ("FE_ON.psi = true; FE_PDA.overclocked = true", True, "a psi storm, overclocked"),
+             ("FE_ON.level = 'l12u_sarcofag'", False, "the Sarcophagus"),
+             ("FE_ON.level = 'l12u_sarcofag'; FE_PDA.overclocked = true", True, "the Sarcophagus, overclocked"),
+             ("FE_ON.level = 'l10_radar'", False, "a level the Monolith jams"),
+             ("FE_ON.level = 'l10_radar'; FE_PDA.upgrades.up_seconc_pda = true", True, "there, with the upgrade against it"),
+             ("FE_ON.level = 'l10_radar'; FE_ON.community = 'monolith'", True, "there, as the Monolith"),
+             ("FE_ON.level = 'l10_radar'; FE_PDA.overclocked = true", True, "there, overclocked")]
+    bad = []
+    for setup, want, what in cases:
+        lua.execute("fe_working(); " + setup)
+        got = pg.pda_works()
+        if got is not want:
+            bad.append((what, got))
+    check(not bad, "with Fatal Error, the flat window only when its PDA would show the page, in %d cases: %s"
+          % (len(cases), bad))
+    lua.execute("fe_working(); fe_utils.is_bsod = function() error('changed') end")
+    n = len(g.logs)
+    first, second = pg.pda_works(), pg.pda_works()
+    check(first is True and second is True and len(g.logs) == n + 1,
+          "Fatal Error's state unreadable: it opens anyway, logged once: %s %s %d" % (first, second, len(g.logs) - n))
+    lua.execute("fatal_error_mcm, fe_utils = nil, nil")
+
+    # modxml_arsenal: the tab buttons, in every PDA layout with a tab bar and a caption
+    lua.execute(DXML)
+    try:
+        mx = load("modxml_arsenal", modxml)
+        mx.on_xml_read()
+    except L.LuaError as e:
+        check(False, "modxml_arsenal loads: %s" % e)
+        return
+    read = g.callbacks.on_xml_read
+
+    def inserted(name, tab=True, caption=True, have=()):
+        x = g.make_xml(tab, caption, lua.table_from(list(have)))
+        read(name, x)
+        return sorted(x.inserted.values())
+    both = ["eptArsenal", "eptWorkbench"]
+    layouts = ["ui\\pda.xml", "ui\\pda_16.xml", "ui/pda_16.xml", "ui\\pda_zero.xml", "ui\\pda_zero_16.xml",
+               "ui\\pda_one_16.xml", "ui\\pda_two_16.xml"]
+    missed = [n for n in layouts if inserted(n) != both]
+    check(not missed, "both buttons in the PDA's layouts and Fatal Error's per-model ones: %s" % missed)
+    others = [("ui\\pda_apps_16.xml", False, False), ("ui\\pda_bios_16.xml", False, False),
+              ("ui\\pda_glitched.xml", False, False), ("ui\\pda_widget.xml", True, False),
+              ("ui\\inventory_new.xml", True, True), ("ui\\pda_16.xml.bak", True, True)]
+    wrong = [(n, inserted(n, t, c)) for n, t, c in others if inserted(n, t, c)]
+    check(not wrong, "none where there is no tab bar and caption, or in another file: %s" % wrong)
+    check(inserted("ui\\pda_16.xml", have=("eptArsenal",)) == ["eptWorkbench"], "a button already there, not twice")
+    x = g.make_xml(False, False)
+    read("gameplay\\dialogs.xml", x)
+    read("gameplay\\dialogs.xml", x)
+    check(sorted(x.inserted.values()) == ["arsenal_gunsmith", "arsenal_rumor"], "the talks go into the dialogs once: %s"
+          % sorted(x.inserted.values()))
 
 
 

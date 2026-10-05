@@ -1,7 +1,8 @@
 """Run arsenal_mcm.script under LuaJIT against stubs of MCM and ui_arsenal, and check the key:
 its MCM option has a real default (unbound, -1; a nil default once crashed another mod's
 startup), an unbound key or a missing MCM reads as no key, and only the bound key opens the
-flat window.
+flat window, while the PDA works (arsenal_pages.pda_works: Fatal Error's PDA); else the HUD says
+why not.
 
     python test_mcm.py            the real script
     python test_mcm.py MUTANT     a broken copy (see MUTANTS); the run must fail
@@ -22,6 +23,11 @@ options = {}
 ui_mcm = { get = function(path) return options[path] end }
 opened = 0
 ui_arsenal = { open_flat = function() opened = opened + 1 end }
+PDA_WORKS = true
+arsenal_pages = { pda_works = function() return PDA_WORKS end }
+game = { translate_string = function(k) return "T:" .. k end }
+msgs = {}
+actor_menu = { set_msg = function(typ, msg, tm) msgs[#msgs + 1] = { typ, msg, tm } end }
 """
 
 MUTANTS = {
@@ -34,6 +40,8 @@ MUTANTS = {
     "seen_any": ("return ok and v == true", "return ok"),
     "jail_def": ('{ id = "jailbreak", type = "check", val = 1, def = false }', '{ id = "jailbreak", type = "check", val = 1 }'),
     "jail_any": ("return (ok and v == true) or false", "return ok"),
+    "pda_ignored": ("if arsenal_pages.pda_works() then", "if true then"),
+    "pda_silent": ('            actor_menu.set_msg(1, game.translate_string("st_arsenal_pda_down"), 3)\n', ""),
 }
 
 
@@ -93,6 +101,16 @@ def main():
         press(30)
         press(65)
     check(g.opened == 1, "only the bound key opens the window: %d" % g.opened)
+    g.PDA_WORKS = False
+    if press is not None:
+        press(65)
+    msgs = [list(x.values()) for x in g.msgs.values()]
+    check(g.opened == 1 and msgs == [[1, "T:st_arsenal_pda_down", 3]],
+          "with the PDA out of use, the key opens nothing and the HUD says why: %d %s" % (g.opened, msgs))
+    g.PDA_WORKS = True
+    if press is not None:
+        press(65)
+    check(g.opened == 2 and len(g.msgs) == 1, "and opens it again once the PDA works: %d" % g.opened)
     g.ui_mcm = None
     check(m.flat_key() is None, "without MCM, no key")
     print("\n%d failed" % len(fails))

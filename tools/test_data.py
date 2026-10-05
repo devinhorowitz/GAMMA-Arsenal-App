@@ -33,7 +33,7 @@ SRC = io.open(os.path.join(HERE, "..", "gamedata", "scripts", "arsenal_data.scri
 
 # section -> fields; a stand-in for system.ltx after inheritance and DLTX
 SECTIONS = {
-    "wpn_ak74": dict(kind="w_rifle", inv_name="st_ak74", inv_grid_x="10", repair_type="rifle_5", ammo_class="ammo_545, ammo_545_bad, ammo_545_alt, ammo_545_ap",
+    "wpn_ak74": dict(kind="w_rifle", inv_name="st_ak74", inv_grid_x="10", repair_type="rifle_5", ammo_class="ammo_545, ammo_545_bad, ammo_545_alt, ammo_545_ap, ammo_545_ap_bad, ammo_545_verybad",
                      hit_power="0.5, 0.5, 0.5, 0.5",
                      bullet_speed="900", condition_shot_dec="0.0005", zoom_cam_dispersion="0.5",
                      fire_modes="1, -1", inv_weight="3.3", description="st_ak74_descr", parent_section="wpn_ak74",
@@ -86,6 +86,12 @@ SECTIONS = {
                          **{"class": "AMMO"}),
     "ammo_545_alt": dict(kind="w_ammo", inv_name="st_545", inv_name_short="st_545_s", inv_grid_x="1", k_ap="0.03",
                          **{"class": "AMMO"}),
+    # ArtiGrok's: a _bad round named apart from its fresh round, a round of its own (a Grav
+    # round), and a _verybad one under a name of its own, which its converter still swaps
+    "ammo_545_ap_bad": dict(kind="w_ammo", inv_name="st_545_grav", inv_name_short="st_545_grav_s", inv_grid_x="1",
+                            k_hit="0.78", k_ap="0.0326", k_air_resistance="0.01", k_bullet_speed="5.625",
+                            **{"class": "AMMO"}),
+    "ammo_545_verybad": dict(kind="w_ammo", inv_name="st_545_vb", inv_grid_x="1", **{"class": "AMMO"}),
     "ammo_9x18": dict(kind="w_ammo", inv_name="st_918", inv_grid_x="1", k_hit="0.76", k_ap="0.014",
                       k_air_resistance="0.8", k_bullet_speed="1.875", **{"class": "AMMO"}),
     "ammo_unfired": dict(kind="w_ammo", inv_name="st_unfired", inv_grid_x="1", **{"class": "AMMO"}),
@@ -168,6 +174,8 @@ SECTIONS = {
     "up_t1": dict(section="up_sect_t1", property="prop_dispersion"),
     "up_sect_t1": dict(fire_dispersion_base="-1.5"),
     # values only, for the card's handling as the engine keeps PDM (float32); no kind, so not listed
+    "wpn_ak74_bad": dict(kind="w_rifle", inv_name="st_ak74"),
+    "val_probe": dict(silencer_status="1", bullet_speed="300"),
     "pdm_probe": dict(PDM_disp_base="0.93", control_inertion_factor="1.5", fire_dispersion_base="0.3", rpm="600",
                       installed_upgrades="up_probe"),
     "up_probe": dict(section="up_sect_probe"),
@@ -176,7 +184,7 @@ SECTIONS = {
     "wpn_gl": dict(inv_name="st_gl"),
     "ammo_vog": dict(kind="w_ammo", inv_name="st_vog", inv_grid_x="1", grenade_ammo="true", k_hit="0.8",
                      k_ap="0.035", **{"class": "S_VOG25"}),
-    "ammo_vog_bad": dict(kind="w_ammo", inv_name="st_vog_bad", inv_grid_x="1", **{"class": "S_VOG25"}),
+    "ammo_vog_bad": dict(kind="w_ammo", inv_name="st_vog", inv_grid_x="1", **{"class": "S_VOG25"}),
     "scope_toz": dict(scope_name="pu_scope"),
     "pu_scope": dict(inv_name="st_pu"),
     "prt_barrel": dict(inv_name="st_barrel"),
@@ -315,10 +323,11 @@ TEXT = {"st_saiga": "Saiga-12", "st_buck": "12x70 Buckshot", "st_zhekan": "12x76
         "st_ak74": "AK-74", "st_pm": "PM", "st_aps": "Stechkin APS", "st_toz": "TOZ-34", "st_rpg": "RPG-7",
         "st_f1": "F1", "st_knife": "Knife", "st_scope": "Scope", "st_noicon": "No icon",
         "st_545": "5.45x39 FMJ", "st_545_s": "5.45 FMJ", "st_545_worn": "5.45 FMJ (worn)", "st_545ap": "5.45x39 AP", "st_918": "9x18",
+        "st_545_grav": "5.45x39 Grav", "st_545_grav_s": "5.45 AP+", "st_545_vb": "5.45x39 Surplus",
         "st_ak74_descr": "A rifle.", "st_fort": "Fort-17", "st_usp": "USP", "st_919": "9x19 FMJ",
         "st_45": "Cartridge .45 ACP", "st_mp5": "MP5", "st_twin": "Twin", "st_mount": "Mount",
         "st_kobra": "Kobra", "st_kit": "Tactical Kit", "st_ak74_tac": "AK-74 Tactical", "st_sil": "PBS-1",
-        "st_gl": "GP-25", "st_vog": "VOG-25", "st_vog_bad": "VOG-25 (worn)", "st_pu": "PU", "st_upg": "Upgr",
+        "st_gl": "GP-25", "st_vog": "VOG-25", "st_pu": "PU", "st_upg": "Upgr",
         "st_barrel": "Barrel", "st_bolt": "Bolt", "st_lam": "LAM", "st_kurtz": "MP5K kit", "st_kit2": "Fort kit",
         "st_mag30": "AK-74 Magazine", "st_mag60": "AK-74 Drum", "st_mp5_nimble": "MP5 Frasier",
         "st_pm_kit": "PM kit", "st_pm_tac": "PM Tactical", "st_ck_r5": "Type C Cleaning Kit",
@@ -451,11 +460,66 @@ TASKS = {"task_a": [("on_complete", "%=reward_item(wpn_task) =give_money(100)%")
          "task_b": [("on_complete", "{+done} %=reward_random_item(helm_reward:wpn_task2)%")],
          "task_spy": [("task_loadout_other", "wpn_spy")]}
 CRAFT = {"1": [("title", "st_craft"), ("x_helm_crafted", "1, recipe_basic_0, prt_o_fabrics_1,5")]}
+# the ammo maker's recipes (items\ammo\importer.ltx): a round, ArtiGrok's numbered recipe for its
+# anomalous round, and a round the game lacks
+AMMO_RECIPES = {"ammo_vanilla": [("ammo_9x18", "5, recipe_ammo_0, casing_p,1"),
+                                 ("ammo_545_ap_bad_1", "5, recipe_ammo_0, ammo_545_ap,1, powder_battery,2"),
+                                 ("ammo_gone", "5, recipe_ammo_0, casing_p,1")]}
+# ArtiGrok's ini_ammo (ammo\importer.ltx): the Grav round's effects and how it fares against
+# mutants, pseudogiants and stalkers; an ordinary round at ArtiGrok's mutant default; buckshot
+# with a second effect only
+ARTI_AMMO = {"ammo_545_ap_bad": [("special", "grav"), ("special_2", "flinch"), ("flinch", "20"), ("mutant_mod", "1"),
+                                 ("gigant_mod", "0.9"), ("stalker_mod", "1.1")],
+             "ammo_545": [("mutant_mod", "0.85")],
+             "ammo_12x70_buck": [("special_2", "fire"), ("burn_stacks", "3")]}
 FILES = {r"items\settings\npc_loadouts\npc_loadouts.ltx": NPC, r"items\settings\new_game_loadouts.ltx": KITS,
          "treasure": TREASURE, "tiers": TIERS, r"items\settings\outfit_speed.ltx": SPEED,
          r"plugins\arsenal_census.ltx": CENSUS, "death": DEATH, r"items\trade\trade_a.ltx": TRADE_A,
          r"items\trade\trade_unused.ltx": TRADE_UNUSED, r"items\trade\trade_b.ltx": TRADE_B,
-         r"items\trade\trade_generic_mechanic.ltx": TRADE_MECH, r"items\trade\trade_nobody.ltx": TRADE_NOBODY, "tasks": TASKS, "craft": CRAFT}
+         r"items\trade\trade_generic_mechanic.ltx": TRADE_MECH, r"items\trade\trade_nobody.ltx": TRADE_NOBODY, "tasks": TASKS, "craft": CRAFT,
+         r"items\ammo\importer.ltx": AMMO_RECIPES, r"ammo\importer.ltx": ARTI_AMMO}
+
+# ArtiGrok Ballistics' scripts as Arsenal meets them, written from what they do: cxv_artigrok_bo
+# (its ini_ammo, true_falloff, integrated_silencer, hp_rounds and momo_do_falloff, which records
+# each call) and cxv_ammo_stats_tbl (its tooltip's functions); and the ammo maker
+ARTIGROK = r"""
+local ini = ini_file("ammo\\importer.ltx")
+local function imp(sec, key) return ini:r_float_ex(sec, key) end
+FALLOFF_CALLS = {}
+cxv_artigrok_bo = { ini_ammo = ini, true_falloff = true, integrated_silencer = { wpn_saiga = true },
+    hp_rounds = { ammo_545_ap_bad = 2 } }
+-- all of it up to 5 m plus the gun's bullet speed times the round's, then less by the round's
+-- air resistance (less still past a faster gun's own speed), to 1/50 at most; to three decimals
+function cxv_artigrok_bo.momo_do_falloff(dist, sec, w_speed, a_speed, air, w_base, boost)
+    FALLOFF_CALLS[#FALLOFF_CALLS + 1] = { dist, sec, w_speed, a_speed, air, w_base, boost }
+    if dist == 0 then return 1 end
+    local reach = 5 + w_speed * a_speed * boost
+    air = air * boost / math.max(w_speed / w_base, 1)
+    local f = math.min(math.max(1 + (dist - reach) * 0.05 * (air * 0.5 / (1.2 - air)), 1), 50)
+    return math.floor(1 / f * 1000 + 0.5) / 1000
+end
+cxv_ammo_stats_tbl = {}
+function cxv_ammo_stats_tbl.prop_ap(obj, sec) return math.floor((ini_sys:r_float_ex(sec, "k_ap") or 0) * 1000) end
+local function against(key, default)
+    return function(obj, sec)
+        local v = imp(sec, key) or default
+        return v ~= default and math.floor(100 * (v - default) + 0.5) or 0
+    end
+end
+cxv_ammo_stats_tbl.prop_mutant_mod = against("mutant_mod", 0.85)
+cxv_ammo_stats_tbl.prop_gigant_mod = against("gigant_mod", 0.85)
+cxv_ammo_stats_tbl.prop_stalker_mod = against("stalker_mod", 1)
+function cxv_ammo_stats_tbl.prop_nopen(obj, sec)
+    local hp = cxv_artigrok_bo.hp_rounds[sec]
+    return hp and ((1 + (imp(sec, "flinch") or 0) * 0.01) / hp - 1) * 100 or 0
+end
+function cxv_ammo_stats_tbl.get_special_string(s, sec)
+    if s == "flinch" then return imp(sec, "flinch") .. "% chance to stagger" end
+    if s == "fire" then return imp(sec, "burn_stacks") .. " burn stacks" end
+    return s
+end
+ammo_maker, workshop_autoinject = {}, {}
+"""
 
 STUBS = r"""
 local S, T, R, P, F = ...
@@ -813,7 +877,7 @@ MUTANTS = {
     "standin": ("gr = live and gr or standin_row(gr, standin)", "gr = gr"),
     "order": ("table.sort(by_cat[c], by_name)", "-- unsorted"),
     "speed": ("bs = bs * 0.70", "bs = bs * 0.75"),
-    "worn": ('if not (r:find("_bad$") or r:find("_verybad$") or HIDDEN_ROUNDS[r]) then', "if true then"),
+    "worn": ('if not (worn_round(r) or HIDDEN_ROUNDS[r]) then', "if true then"),
     "dedupe": ("if n and not seen[n] then\n                seen[n] = true\n                out[#out + 1] = n",
                "if n then\n                seen[n] = true\n                out[#out + 1] = n"),
     "nimble_dedupe": ("if n and not seen[n] then\n                        seen[n] = true\n                        names",
@@ -917,8 +981,7 @@ MUTANTS = {
     "ammo_device": ('if ok and cat and cat ~= "melee" and not ARMOR[cat] then', "if not ARMOR[cat or \"\"] then"),
     "ammo_hidden": ("or worn_round(sec) or HIDDEN_ROUNDS[sec] then return nil end", "or worn_round(sec) then return nil end"),
     "rounds_hidden": ("and not worn_round(a) and not HIDDEN_ROUNDS[a] and", "and not worn_round(a) and"),
-    "names_hidden": ('if not (r:find("_bad$") or r:find("_verybad$") or HIDDEN_ROUNDS[r]) then',
-                     'if not (r:find("_bad$") or r:find("_verybad$")) then'),
+    "names_hidden": ('if not (worn_round(r) or HIDDEN_ROUNDS[r]) then', 'if not worn_round(r) then'),
     "damage_decimal": ("return math.floor(above0(hp / 1.5) * 100 + 1e-6)", "return math.floor(above0(hp / 1.5) * 100)"),
     "ammo_launcher": ('for a in (ini_sys:r_string_ex(sec, "grenade_class") or ""):gmatch("[^,%s]+") do fired_set[a] = true end',
                       "-- no grenades"),
@@ -965,9 +1028,9 @@ MUTANTS = {
     "trades_generic": ("if TRADES[cfg] or #names == 0 then", "if #names == 0 then"),
     "sold_sort": ("if a.tier ~= b.tier then return a.tier < b.tier end", "if a.tier ~= b.tier then return a.tier > b.tier end"),
     "sold_best": ("if not best[cfg] or t.tier < best[cfg].tier then best[cfg] = t end", "best[cfg] = t"),
-    "body_count": ('if (n or 0) > 0 then mark_up(fresh_round(a), "corpse") end', 'mark_up(fresh_round(a), "corpse")'),
-    "body_fresh": ('if (n or 0) > 0 then mark_up(fresh_round(a), "corpse") end', 'if (n or 0) > 0 then mark_up(a, "corpse") end'),
-    "body_swap": ("for _, alt in ipairs(ROUND_SWAP[fresh_round(a)] or {}) do", "for _, alt in ipairs({}) do"),
+    "body_count": ('if (n or 0) > 0 then mark_up(as_found(a), "corpse") end', 'mark_up(as_found(a), "corpse")'),
+    "body_fresh": ('if (n or 0) > 0 then mark_up(as_found(a), "corpse") end', 'if (n or 0) > 0 then mark_up(a, "corpse") end'),
+    "body_swap": ("for _, alt in ipairs(ROUND_SWAP[as_found(a)] or {}) do", "for _, alt in ipairs({}) do"),
     "body_grenade": ("body_round(g, most[g] or 2)", "body_round(g, most[g])"),
     "body_list_skip": ('\n                            and not (is_bullet(x.k) or ini_sys:r_bool_ex(x.k, "grenade_ammo")) then', " then"),
     "pen_tie": ("if class >= ap then", "if class > ap then"),
@@ -1014,12 +1077,32 @@ MUTANTS = {
     "camo_belongs": ("if d and belongs(fd, s, t) then", "if d then"),
     "camo_guard": ("    if not (e and type(files) == \"table\" and belongs and label_for and unlocked) then return out end\n", ""),
     "risk_upgrades": ("if not g:find(NOT_UPGRADES) then queue[#queue + 1] = g end", "queue[#queue + 1] = g"),
-    "risk_zero": ("if v and v ~= 0 then", "if v then"),
+    "risk_zero": ("            if v and v ~= 0 then\n                local x", "            if v then\n                local x"),
     "risk_worst": ("local bad = f.lower_better and math.max or math.min", "local bad = math.min"),
     "risk_damage": ("                elseif f.stat == \"damage\" then\n                    x = v\n", ""),
     "risk_weight": ("x = kg(weight(sec) + (ini_sys:r_float_ex(ps, \"inv_weight\") or 0))", "x = kg(weight(sec))"),
     "risk_sign": ("if x and v > 0 then", "if x then"),
     "kit_sort": ("table.sort(g.factions, function(a, b) return FACTION_AT[a] < FACTION_AT[b] end)", "-- unsorted"),
+    "worn_named": ("w = sec:find(\"_verybad$\") ~= nil or mine == theirs or translated(mine) == translated(theirs)",
+                   "w = true"),
+    "worn_verybad": ("w = sec:find(\"_verybad$\") ~= nil or mine == theirs", "w = mine == theirs"),
+    "worn_names": ("if not (worn_round(r) or HIDDEN_ROUNDS[r]) then", "if not HIDDEN_ROUNDS[r] then"),
+    "maker_trim": ("if not ini_sys:section_exist(item) and item:find(\"_bad\") then item = item:sub(1, -3) end", ""),
+    "maker_guard": ("if ammo_maker and workshop_autoinject then", "if true then"),
+    "ap_tip": ("if tip and tip.prop_ap then", "if false then"),
+    "kept_grav": ("if s == \"grav\" then return 1 end", ""),
+    "kept_list": ("local built_in = (ag.integrated_silencer or {})[base] or", "local built_in ="),
+    "kept_status": ("or status(sec, \"silencer_status\") == 1\n", "\n"),
+    "kept_parent": ("local base = ini_sys:r_string_ex(sec, \"parent_section\") or sec\n        local built_in",
+                    "local base = sec\n        local built_in"),
+    "kept_base_speed": ("ini_sys:r_float_ex(base, \"bullet_speed\") or 1,", "p.bullet_speed,"),
+    "kept_true": ("if ag and ag.true_falloff and ag.momo_do_falloff then", "if ag and ag.momo_do_falloff then"),
+    "kept_gun": ("kept = kept_at(a, 100, sec, p) }", "kept = kept_at(a, 100) }"),
+    "effects_zero": ("        if v and v ~= 0 then\n            out[#out + 1] = { id = r[2]",
+                     "        if v then\n            out[#out + 1] = { id = r[2]"),
+    "effects_named": ("id = not named and \"st_arsenal_round_effect\" or nil", "id = \"st_arsenal_round_effect\""),
+    "as_found": ("return worn_round(a) and fresh_round(a) or a", "return a"),
+    "effects_stats": ("        effects = effects(sec) }", "        effects = {} }"),
 }
 
 
@@ -1049,7 +1132,7 @@ def main():
     secs = lambda cat: [e.sec for e in m.list(cat).values()]
     names = lambda cat: [e.name for e in m.list(cat).values()]
     vnames = lambda e: [v.name for v in e.variants.values()] if e is not None else None
-    check(m.count() == 49, "thirty-five gun models, seven suits and helmets and seven rounds listed: %d" % m.count())
+    check(m.count() == 50, "thirty-five gun models, seven suits and helmets and eight rounds listed: %d" % m.count())
     check(m.get("wpn_ak74_pso") is None and m.entry_for("wpn_ak74_pso") is not None
           and same(m.entry_for("wpn_ak74_pso"), m.get("wpn_ak74")),
           "a scoped combination is not listed, and counts as its gun")
@@ -1388,17 +1471,21 @@ def main():
     # rounds: listed when a weapon fires them (a launcher's grenades with the launcher), not a
     # worn copy, a knife's stand-in ammo or a cartridge no gun fires; a worn round found counts
     # as the fresh one. Golden values: scratchpad rounds_golden.py, from the game's formulas.
+    # A _bad round named apart from its fresh round (ArtiGrok's anomalous rounds) is a round.
     secs = lambda c: [e.sec for e in m.list(c).values()]
-    check(secs("ammo") == ["ammo_12x70_buck", "ammo_12x76_dart", "ammo_545_ap", "ammo_545", "ammo_9x18",
-                           "ammo_9x19", "ammo_vog"], "rounds listed, by name: %s" % secs("ammo"))
-    unlisted = [s for s in ("ammo_545_bad", "ammo_vog_bad", "ammo_knife", "ammo_unfired", "ammo_12x70_buck_self",
-                            "ammo_battery") if m.get(s) is not None]
+    check(secs("ammo") == ["ammo_12x70_buck", "ammo_12x76_dart", "ammo_545_ap", "ammo_545", "ammo_545_ap_bad",
+                           "ammo_9x18", "ammo_9x19", "ammo_vog"], "rounds listed, by name: %s" % secs("ammo"))
+    unlisted = [s for s in ("ammo_545_bad", "ammo_545_verybad", "ammo_vog_bad", "ammo_knife", "ammo_unfired",
+                            "ammo_12x70_buck_self", "ammo_battery") if m.get(s) is not None]
     check(unlisted == [], "not a worn round, a knife's ammo, a cartridge no gun fires, a round the inventory hides, a "
           "device's: %s" % unlisted)
     check(list(m.ammo_names("wpn_saiga").values()) == ["12x70 Buckshot", "12x76 Dart"], "names: not the hidden round: %s"
           % list(m.ammo_names("wpn_saiga").values()))
-    worn = [m.entry_for(s) and m.entry_for(s).sec for s in ("ammo_545_bad", "ammo_vog_bad", "wpn_ak74_bad")]
-    check(worn == ["ammo_545", "ammo_vog", None], "a worn round counts as the fresh one; only a round: %s" % worn)
+    worn = [m.entry_for(s) and m.entry_for(s).sec
+            for s in ("ammo_545_bad", "ammo_545_verybad", "ammo_vog_bad", "ammo_545_ap_bad", "wpn_ak74_bad")]
+    check(worn == ["ammo_545", "ammo_545", "ammo_vog", "ammo_545_ap_bad", None],
+          "a worn round counts as the fresh one, a _verybad one under a name of its own too (the converter swaps "
+          "it); a _bad round named apart is its own; only a round: %s" % worn)
     check(vnames(m.get("ammo_545")) == ["5.45x39 FMJ (AP 27)", "5.45x39 FMJ (AP 30)"],
           "rounds of one name told apart by AP: %s" % vnames(m.get("ammo_545")))
 
@@ -1410,9 +1497,14 @@ def main():
     check(rounds("wpn_saiga") == want, "a gun's rounds: damage (hit power x k_hit / 1.5), AP, the card's speed with "
           "each, pellets, damage left at 100 m: %s" % rounds("wpn_saiga"))
     check([r[0:3] for r in rounds("wpn_ak74")] == [("ammo_545", "5.45 FMJ", 38), ("ammo_545_alt", "5.45 FMJ", 33),
-                                                  ("ammo_545_ap", "5.45x39 AP", 36)],
-          "a gun's rounds leave the worn one out; 0.5 x 1.14 / 1.5 is 38, as the descriptions read: %s"
-          % [r[0:3] for r in rounds("wpn_ak74")])
+                                                  ("ammo_545_ap", "5.45x39 AP", 36), ("ammo_545_ap_bad", "5.45 AP+", 26)],
+          "a gun's rounds leave the worn ones out, not an anomalous one; 0.5 x 1.14 / 1.5 is 38, as the descriptions "
+          "read: %s" % [r[0:3] for r in rounds("wpn_ak74")])
+    grav = m.round_stats("ammo_545_ap_bad")
+    check(m.ap_of("ammo_545_ap_bad") == 33 and grav.ap == 33 and len(grav.effects) == 0
+          and round(m.kept_at("ammo_545_ap_bad", 100), 12) == round(1 / (1 + 0.5 * (0.005 / 1.09)), 12),
+          "without ArtiGrok an anomalous round reads as any: AP 32.6 rounded, no effects, GBO's falloff: %s %s %s"
+          % (m.ap_of("ammo_545_ap_bad"), len(grav.effects), m.kept_at("ammo_545_ap_bad", 100)))
     rs = m.round_stats("ammo_12x70_buck")
     kept = rs.kept and [round(rs.kept[d], 12) for d in (50, 100, 200)]
     check((rs.damage, rs.ap, rs.pellets, rs.speed, kept) == (0.42, 3, 9, 1.425, [0.444444444444, 0.285714285714,
@@ -1426,8 +1518,9 @@ def main():
           % ((gs.damage, gs.ap, gs.speed, gs.kept),))
     fb = lambda sec: [e.sec for e in m.fired_by(sec).values()]
     check(fb("ammo_9x18") == ["wpn_fort", "wpn_pm", "wpn_pm_pm_kit"] and fb("ammo_vog") == ["wpn_ak74"]
-          and fb("ammo_545_bad") == ["wpn_ak74"], "fired by: the guns that chamber it, a launcher its grenade (not a "
-          "gun without one), by category then name: %s %s %s" % (fb("ammo_9x18"), fb("ammo_vog"), fb("ammo_545_bad")))
+          and fb("ammo_545_bad") == ["wpn_ak74"] and fb("ammo_545_ap_bad") == ["wpn_ak74"],
+          "fired by: the guns that chamber it, a launcher its grenade (not a gun without one), by category then name: "
+          "%s %s %s %s" % (fb("ammo_9x18"), fb("ammo_vog"), fb("ammo_545_bad"), fb("ammo_545_ap_bad")))
     check(m.hit_power("wpn_saiga") == 0.6, "hit power: the first of its four values, which r_float_ex cannot read: %s"
           % m.hit_power("wpn_saiga"))
 
@@ -1571,7 +1664,9 @@ def main():
     check([x.name for x in m.parts("wpn_ak74_pso").values()] == ["Barrel", "Bolt"],
           "parts of the gun a combination was made from, unknown parts left out: %s"
           % [x.name for x in m.parts("wpn_ak74_pso").values()])
-    check(list(m.ammo_names("wpn_ak74").values()) == ["5.45 FMJ", "5.45x39 AP"], "ammo names, short first, worn rounds left out, each once")
+    check(list(m.ammo_names("wpn_ak74").values()) == ["5.45 FMJ", "5.45x39 AP", "5.45 AP+"],
+          "ammo names, short first, worn rounds left out (not an anomalous one), each once: %s"
+          % list(m.ammo_names("wpn_ak74").values()))
     check(m.fire_modes("wpn_ak74") == "1 / A" and m.fire_modes("wpn_pm") == "1", "fire modes")
     check(m.has_stat_card("wpn_ak74") and m.has_stat_card("wpn_pm") and not m.has_stat_card("wpn_knife"),
           "a stat card for a gun, none for a knife (fake ammo), as in the inventory")
@@ -1636,6 +1731,67 @@ def main():
     want = (1 / 0.5) * (1 / (3 * 0.25 + 0.1)) * 100
     check(abs(m.standin_recoil(None, "wpn_ak74") - want) < 1e-9, "recoil as Momopate's: %s" % m.standin_recoil(None, "wpn_ak74"))
     check(m.standin_recoil(None, "wpn_pm") is None, "no recoil entry: no value")
+
+    # ArtiGrok Ballistics (stand-ins, ARTIGROK) and the ammo maker. Without them an anomalous
+    # round turns up nowhere and the ammo maker's recipes count for nothing.
+    m.reset()
+    up = m.turns_up_as("ammo_9x18")
+    check(not m.obtainable("ammo_545_ap_bad") and not (up and up.craft),
+          "without the ammo maker its recipes are no crafting: %s" % (up and dict(up.items())))
+    lua.execute(ARTIGROK)
+    m.reset()
+    g = lua.globals()
+    grav = m.round_stats("ammo_545_ap_bad")
+    eff = [(x.id, x.text) for x in grav.effects.values()]
+    check(m.ap_of("ammo_545_ap_bad") == 32 and grav.ap == 32,
+          "with ArtiGrok, AP as its tooltip shows it (32.6 rounded down): %s" % m.ap_of("ammo_545_ap_bad"))
+    check(eff == [("st_arsenal_round_mutants", "+15%"), ("st_arsenal_round_giants", "+5%"),
+                  ("st_arsenal_round_stalkers", "+10%"), ("st_arsenal_round_stopped", "-40%"),
+                  ("st_arsenal_round_effect", "grav"), (None, "20% chance to stagger")],
+          "a round's effects: its damage against mutants, pseudogiants and stalkers, when armor stops it, and its "
+          "special effects, the second under the first's name: %s" % eff)
+    buck = [(x.id, x.text) for x in m.round_stats("ammo_12x70_buck").effects.values()]
+    check(buck == [("st_arsenal_round_effect", "3 burn stacks")] and len(m.round_stats("ammo_545").effects) == 0
+          and len(m.round_stats("ammo_9x18").effects) == 0,
+          "a second effect alone takes the name; a round at ArtiGrok's defaults, or one it does not list, has none: %s"
+          % buck)
+    calls = g.FALLOFF_CALLS
+    last = lambda: tuple(calls[len(calls)][i] for i in range(1, 8))
+    p = m.params("wpn_ak74")
+    near, far = m.kept_at("ammo_545", 100, "wpn_ak74", p), m.kept_at("ammo_545", 1200, "wpn_ak74", p)
+    check(near == 1 and far == round(1 / (1 + 205 * 0.05 * (0.125 / 0.95)), 3) == 0.426
+          and last() == (1200, "wpn_ak74", 900, 1.1, 0.25, 900, 1),
+          "ArtiGrok's falloff: all of it to 5 + 900 x 1.1 m, then less; from the gun's bullet speed, the round's and "
+          "its air resistance: %s %s %s" % (near, far, last()))
+    n = len(calls)
+    check(m.kept_at("ammo_545_ap_bad", 1200, "wpn_ak74", p) == 1 and len(calls) == n,
+          "a Grav round keeps all of it, without asking: %s" % m.kept_at("ammo_545_ap_bad", 1200, "wpn_ak74", p))
+    m.kept_at("ammo_12x70_buck", 50, "wpn_saiga", m.params("wpn_saiga"))
+    saiga = last()
+    m.kept_at("ammo_545_alt", 50, "val_probe", m.params("val_probe"))
+    val = last()
+    m.kept_at("ammo_545", 50, "wpn_ak74_pso", m.params("wpn_ak74"))
+    pso = last()
+    p.bullet_speed = 1000
+    m.kept_at("ammo_545", 50, "wpn_ak74", p)
+    faster = last()
+    check(saiga[1:] == ("wpn_saiga", 400, 1.425, 1.0, 400, 1.03) and val[1:] == ("val_probe", 300, 1, 0.05, 300, 1.03)
+          and pso[1] == "wpn_ak74" and faster[2:7:3] == (1000, 900),
+          "a suppressor built in (ArtiGrok's list, or silencer_status 1) boosts it; a combination asks as its gun; a "
+          "gun made faster gives its speed and its section's: %s %s %s %s" % (saiga, val, pso, faster))
+    check(m.kept_at("ammo_545", 100) is None and m.round_stats("ammo_545").kept[100] is None
+          and [r.kept and round(r.kept, 3) for r in m.gun_rounds("wpn_ak74").values()] == [1, 1, 1, 1],
+          "no gun, no falloff to tell (a round's page leaves it out); a gun's table has it: %s"
+          % [r.kept for r in m.gun_rounds("wpn_ak74").values()])
+    g.cxv_artigrok_bo.true_falloff = False
+    check(round(m.kept_at("ammo_545_alt", 100, "wpn_ak74", p), 12) == 0.988235294118 == round(m.kept_at("ammo_545_alt", 100), 12),
+          "its falloff off: GBO's, with a gun or without: %s" % m.kept_at("ammo_545_alt", 100, "wpn_ak74", p))
+    a, b, gone = m.turns_up_as("ammo_545_ap_bad"), m.turns_up_as("ammo_9x18"), m.turns_up_as("ammo_gone")
+    check(bool(a and a.craft and b and b.craft) and gone is None and m.obtainable("ammo_545_ap_bad"),
+          "the ammo maker's recipes are crafting, ArtiGrok's numbered one for its round; a round the game lacks is "
+          "none: %s %s %s" % (a and dict(a.items()), b and dict(b.items()), gone))
+    lua.execute("cxv_artigrok_bo, cxv_ammo_stats_tbl, ammo_maker, workshop_autoinject = nil, nil, nil, nil")
+    m.reset()
     print("\n%d failed" % len(fails))
     return 1 if fails else 0
 

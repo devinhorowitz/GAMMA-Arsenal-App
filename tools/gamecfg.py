@@ -280,13 +280,14 @@ class Loader:
 
         if is_root:
             # DLTX mod files for this root: mod_<name>_*.ltx in the same folder
+            # (the folder's own files: listdir's '*' crosses into subfolders, which DLTX does not)
             stem = rel.rsplit("\\", 1)[-1][:-4]
-            ambiguous = [f[:-4] for f in self.vfs.listdir(cur_dir, stem + "_*.ltx")]
+            ambiguous = [f[:-4] for f in self.vfs.listdir(cur_dir, stem + "_*.ltx") if "\\" not in f]
             mods = self.vfs.listdir(cur_dir, "mod_" + stem + "_*.ltx")
             d = -200
             self.mod_files = []
             for mf in mods:
-                if any(re.fullmatch("mod_" + a + "_.+.ltx", mf) for a in ambiguous):
+                if any(re.fullmatch("mod_" + re.escape(a) + r"_.+\.ltx", mf) for a in ambiguous):
                     continue
                 self.mod_files.append(mf)
                 self.load((cur_dir + "\\" if cur_dir else "") + mf, d)

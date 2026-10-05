@@ -4,8 +4,9 @@
     has (Arsenal otherwise lists what the player has learned of: arsenal_intel). With the 3D PDA
     on, the PDA's pages are drawn onto the in-hand screen, which softens them; the flat window is
     drawn straight to the screen, as sharp as the inventory. The key is unbound (-1) until the
-    player picks one; the PDA tile works either way. Seen guns and the jailbreak are off until
-    the player turns them on.
+    player picks one; the PDA tile works either way. With Fatal Error, the key opens Arsenal only
+    while its PDA works (arsenal_pages.pda_works). Seen guns and the jailbreak are off until the
+    player turns them on.
 --]]
 
 function on_mcm_load()
@@ -43,10 +44,16 @@ function jailbreak()
     return (ok and v == true) or false
 end
 
+-- the key opens Arsenal flat, when the PDA would show it (arsenal_pages.pda_works: Fatal Error's
+-- PDA out of use); else a line on the HUD says why not
 local function on_key_press(key)
     local k = flat_key()
     if k and key == k then
-        ui_arsenal.open_flat()
+        if arsenal_pages.pda_works() then
+            ui_arsenal.open_flat()
+        else
+            actor_menu.set_msg(1, game.translate_string("st_arsenal_pda_down"), 3)
+        end
     end
 end
 

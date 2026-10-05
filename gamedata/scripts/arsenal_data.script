@@ -62,15 +62,31 @@ local fired_set
 -- buckshot
 local HIDDEN_ROUNDS = { ammo_12x70_buck_self = true }
 
--- A worn round (_bad, _verybad): GAMMA's ammo converter swaps it for a fresh box the moment it
--- reaches an inventory (item_weapon's ammo_aggregation, _NO_DAMAGED_AMMO), so the catalog lists
--- the fresh round only, and a worn one found counts as it
-local function worn_round(sec)
-    return sec:find("_verybad$") or sec:find("_bad$")
-end
-
+-- A worn round (_bad, _verybad): a copy of a fresh round under its name, which GAMMA's ammo
+-- converter swaps for a fresh box the moment it reaches an inventory (item_weapon's
+-- ammo_aggregation, _NO_DAMAGED_AMMO), so the catalog lists the fresh round only, and a worn one
+-- found counts as it. ArtiGrok Ballistics makes the _bad rounds rounds of their own, its
+-- anomalous rounds, named apart from the fresh ones, and keeps them (its copy of the converter
+-- swaps _verybad rounds only): a _bad round with a name of its own is no worn round. Neither is
+-- one without a fresh round to swap for.
 local function fresh_round(sec)
     return (sec:gsub("_verybad$", ""):gsub("_bad$", ""))
+end
+
+local worn_rounds = {}   -- section -> whether it is a worn round
+
+local function worn_round(sec)
+    local w = worn_rounds[sec]
+    if w == nil then
+        local fresh = fresh_round(sec)
+        w = false
+        if fresh ~= sec and ini_sys:section_exist(fresh) then
+            local mine, theirs = ini_sys:r_string_ex(sec, "inv_name"), ini_sys:r_string_ex(fresh, "inv_name")
+            w = sec:find("_verybad$") ~= nil or mine == theirs or translated(mine) == translated(theirs)
+        end
+        worn_rounds[sec] = w
+    end
+    return w
 end
 
 local function build_fired()
@@ -143,7 +159,7 @@ end
 local function ammo_key(sec)
     local list = {}
     for a in (ini_sys:r_string_ex(sec, "ammo_class") or ""):gmatch("[^,%s]+") do
-        if not (a:find("_bad$") or a:find("_verybad$")) then
+        if not worn_round(a) then
             list[#list + 1] = a
         end
     end
@@ -373,19 +389,86 @@ local function hit_damage(sec, ammo)
     return math.floor(above0(hp / 1.5) * 100 + 1e-6)
 end
 
--- a round's armor penetration as GAMMA's ammo descriptions give it ("AP BR2 (27)"): k_ap x 1000,
--- the scale of an armor's ballistic class x 100
+-- ArtiGrok Ballistics, when it runs (cxv_artigrok_bo), deals the player's damage to NPCs and
+-- mutants in GBO's place, with more values for a round in its ammo\importer.ltx (its ini_ammo),
+-- and its inventory tooltip shows them (cxv_ammo_stats_tbl). Arsenal asks ArtiGrok's own
+-- functions, so its pages read as that tooltip does.
+
+-- the special effects of a round ArtiGrok gives it, its special and special_2
+local function specials_of(ammo)
+    local ini = cxv_artigrok_bo and cxv_artigrok_bo.ini_ammo
+    local out = {}
+    if not (ini and ini:section_exist(ammo)) then return out end
+    for _, k in ipairs({ "special", "special_2" }) do
+        local s = ini:r_string_ex(ammo, k)
+        if s and s ~= "" then out[#out + 1] = s end
+    end
+    return out
+end
+
+-- A round's armor penetration as the game shows it: in GAMMA's ammo descriptions ("AP BR2
+-- (27)"), k_ap x 1000 rounded, the scale of an armor's ballistic class x 100; with ArtiGrok, in
+-- its tooltip (prop_ap: k_ap x 1000 rounded down, scaled by the difficulty when its MCM says so)
 function ap_of(ammo)
+    local tip = cxv_ammo_stats_tbl
+    if tip and tip.prop_ap then
+        local ok, v = pcall(tip.prop_ap, nil, ammo)
+        if ok and tonumber(v) then return tonumber(v) end
+    end
     return math.floor((ini_sys:r_float_ex(ammo, "k_ap") or 0) * 1000 + 0.5)
 end
 
--- The share of a round's damage and penetration left at d meters, as GBO takes it off the
--- player's shots (grok_bo: over 1 + d / 200 * (air * 0.5 / (1 - air + 0.1)), air the round's
--- k_air_resistance, 0.05 when it has none); nil where the formula breaks down (air 1.1 or more)
-function kept_at(ammo, d)
+-- The share of a round's damage and penetration left at d meters, nil where it cannot be told.
+-- GBO takes it off the player's shots over 1 + d / 200 * (air * 0.5 / (1 - air + 0.1)), air the
+-- round's k_air_resistance (0.05 when it has none); nil where that breaks down (air 1.1 or more).
+-- ArtiGrok with its more accurate falloff on (true_falloff) keeps it all up to a distance the
+-- gun's bullet speed sets, then takes it off (momo_do_falloff), so it takes the gun, sec with its
+-- values p, and a built-in suppressor's boost; its Grav rounds keep it all.
+function kept_at(ammo, d, sec, p)
+    local ag = cxv_artigrok_bo
+    if ag and ag.true_falloff and ag.momo_do_falloff then
+        if not (sec and p) then return nil end
+        for _, s in ipairs(specials_of(ammo)) do
+            if s == "grav" then return 1 end
+        end
+        local base = ini_sys:r_string_ex(sec, "parent_section") or sec
+        local built_in = (ag.integrated_silencer or {})[base] or status(sec, "silencer_status") == 1
+        local ok, k = pcall(ag.momo_do_falloff, d, base, p.bullet_speed, ini_sys:r_float_ex(ammo, "k_bullet_speed") or 1,
+            ini_sys:r_float_ex(ammo, "k_air_resistance") or 0.05, ini_sys:r_float_ex(base, "bullet_speed") or 1,
+            built_in and 1.03 or 1)
+        return ok and tonumber(k) or nil
+    end
     local air = ini_sys:r_float_ex(ammo, "k_air_resistance") or 0.05
     if 1 - air + 0.1 <= 0 then return nil end
     return 1 / (1 + d / 200 * (air * 0.5 / (1 - air + 0.1)))
+end
+
+-- What ArtiGrok's tooltip adds for a round, in its order, the rows it leaves out left out:
+-- { { id = the row's name (nil: the row above's goes on), text }, ... }: the damage it deals
+-- mutants, pseudogiants and stalkers against an ordinary round's, the damage of a hit the armor
+-- stops, and its special effects
+local EFFECT_ROWS = { { "prop_mutant_mod", "st_arsenal_round_mutants" }, { "prop_gigant_mod", "st_arsenal_round_giants" },
+    { "prop_stalker_mod", "st_arsenal_round_stalkers" }, { "prop_nopen", "st_arsenal_round_stopped" } }
+
+local function effects(ammo)
+    local tip, out = cxv_ammo_stats_tbl, {}
+    if not tip then return out end
+    for _, r in ipairs(EFFECT_ROWS) do
+        local ok, v = pcall(tip[r[1]], nil, ammo)
+        v = ok and tonumber(v)
+        if v and v ~= 0 then
+            out[#out + 1] = { id = r[2], text = string.format("%+.4g%%", v) }
+        end
+    end
+    local named = false
+    for _, s in ipairs(specials_of(ammo)) do
+        local ok, text = pcall(tip.get_special_string, s, ammo)
+        if ok and type(text) == "string" and text ~= "" then
+            out[#out + 1] = { id = not named and "st_arsenal_round_effect" or nil, text = text }
+            named = true
+        end
+    end
+    return out
 end
 
 -- A stat as the inventory's stat card shows it (utils_ui and ish_item_stats), from a gun's
@@ -736,12 +819,12 @@ function icon(sec)
     return tex, a
 end
 
--- the names of rounds (ammo or grenades), each once, short names first; GAMMA's worn rounds
--- (_bad, _verybad) share their names with the good ones and are left out
+-- the names of rounds (ammo or grenades), each once, short names first; worn rounds share
+-- their names with the fresh ones and are left out
 local function round_names(list)
     local out, seen = {}, {}
     for _, r in ipairs(list) do
-        if not (r:find("_bad$") or r:find("_verybad$") or HIDDEN_ROUNDS[r]) then
+        if not (worn_round(r) or HIDDEN_ROUNDS[r]) then
             local n = translated(ini_sys:r_string_ex(r, "inv_name_short"))
                 or translated(ini_sys:r_string_ex(r, "inv_name"))
             if n and not seen[n] then
@@ -781,7 +864,7 @@ end
 -- The rounds a gun fires (utils_item.get_ammo, as the game reads it), a row each, worn rounds
 -- left out:
 --     { sec, name = the short name, damage (hit_damage), ap (ap_of), speed = the card's bullet
---       speed with it, pellets = its buck_shot when above 1, kept = kept_at 100 m }
+--       speed with it, pellets = its buck_shot when above 1, kept = kept_at 100 m from it }
 function gun_rounds(sec)
     if is_armor(sec) or not has_stat_card(sec) then return {} end
     local ok, list = pcall(utils_item.get_ammo, sec, nil)
@@ -793,7 +876,7 @@ function gun_rounds(sec)
             local pellets = math.floor(ini_sys:r_float_ex(a, "buck_shot") or 1)
             out[#out + 1] = { sec = a, name = short_name(a), damage = hit_damage(sec, a), ap = ap_of(a),
                 speed = math.ceil(bspeed(p, a) * 1000), pellets = pellets > 1 and pellets or nil,
-                kept = kept_at(a, 100) }
+                kept = kept_at(a, 100, sec, p) }
         end
     end
     return out
@@ -806,10 +889,12 @@ function is_bullet(sec)
 end
 
 -- A round's own values: { damage = k_hit, ap (ap_of), speed = k_bullet_speed, pellets (more
--- than one), kept = { [50], [100], [200] = kept_at } }; a grenade's only what it has
+-- than one), kept = { [50], [100], [200] = kept_at, without a gun }, effects = what ArtiGrok's
+-- tooltip adds (effects) }; a grenade's only what it has
 function round_stats(sec)
     local pellets = math.floor(ini_sys:r_float_ex(sec, "buck_shot") or 1)
-    local out = { damage = ini_sys:r_float_ex(sec, "k_hit") or 1, ap = ap_of(sec), pellets = pellets > 1 and pellets or nil }
+    local out = { damage = ini_sys:r_float_ex(sec, "k_hit") or 1, ap = ap_of(sec), pellets = pellets > 1 and pellets or nil,
+        effects = effects(sec) }
     if is_bullet(sec) then
         out.speed = ini_sys:r_float_ex(sec, "k_bullet_speed") or 1
         out.kept = {}
@@ -1729,13 +1814,16 @@ local function build_turns_up()
         -- slug or buckshot instead, a Barrikada round as shrapnel), and a launcher's grenades,
         -- up to two of each without an item_count. A worn round counts as the fresh one.
         if not carried then build_carried() end
+        local function as_found(a)
+            return worn_round(a) and fresh_round(a) or a
+        end
         local function body_round(a, n)
-            if (n or 0) > 0 then mark_up(fresh_round(a), "corpse") end
+            if (n or 0) > 0 then mark_up(as_found(a), "corpse") end
         end
         for s in pairs(npc_attach) do
             for _, a in ipairs(list_of(s, "ammo_class")) do
                 body_round(a, most[a])
-                for _, alt in ipairs(ROUND_SWAP[fresh_round(a)] or {}) do
+                for _, alt in ipairs(ROUND_SWAP[as_found(a)] or {}) do
                     body_round(alt, most[alt])
                 end
             end
@@ -1794,6 +1882,21 @@ local function build_turns_up()
                 if item then mark_up(item, "craft") end
             end
         end)
+    end
+    -- and the ammo maker's: ammo_maker.script adds every line of items\ammo\importer.ltx to the
+    -- workshop's ammo page, the line's key the round it makes (ArtiGrok's copy takes a _bad
+    -- round's numbered recipe, ammo_vog-25_bad_1, for the round, its last two characters off)
+    if ammo_maker and workshop_autoinject then
+        local ok, ini = pcall(ini_file, "items\\ammo\\importer.ltx")
+        if ok and ini then
+            ini:section_for_each(function(sec)
+                for _, x in ipairs(lines(ini, sec)) do
+                    local item = x.k
+                    if not ini_sys:section_exist(item) and item:find("_bad") then item = item:sub(1, -3) end
+                    mark_up(item, "craft")
+                end
+            end)
+        end
     end
 end
 
@@ -3007,7 +3110,7 @@ end
 -- forget the catalog (a new game, or a test)
 function reset()
     by_var, by_cat, total = nil, nil, 0
-    trees = {}
+    trees, worn_rounds = {}, {}
     carried, stashed, stashed_eco, made, kits, worn = nil, nil, nil, nil, nil, nil
     speeds, turns_up, addon_ok, rolled, reach, model_up = nil, nil, nil, nil, nil, nil
     sold, trade_names, fired_by_index = nil, nil, nil

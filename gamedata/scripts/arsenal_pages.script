@@ -60,6 +60,62 @@ local function route()
     wrapped = true
 end
 
+-- Fatal Error (fatal_error_mcm), when it runs, puts the PDA on error pages of its own while the
+-- PDA is out of use, deciding as the PDA opens (process_pda_call). The flat window is the PDA's
+-- page drawn sharp, so it opens only when the PDA would show the page. Its checks, in its order:
+-- a PDA of the player's own in its slot (not an NPC's), charged and whole
+-- (item_device.is_pda_charged), not encrypted, rebooting, in its BIOS or crashed; no emission
+-- or psi storm, unless it was just rebooted (reboot_protection, a local of process_pda_call) or
+-- is overclocked; not the Sarcophagus unless overclocked, nor a level the Monolith jams unless
+-- the PDA has the upgrade against it, the player's faction is one the jam spares, or it is
+-- overclocked. Without Fatal Error the flat window always opens.
+local JAM_FREE = { monolith = true, greh = true, zombied = true }
+local SARCOPHAGUS = { l12u_sarcofag = true }
+local warned = false
+
+-- a local of another script, through a function of that script that uses it
+local function upvalue(fn, name)
+    if type(fn) ~= "function" then return nil end
+    for i = 1, 255 do
+        local n, v = debug.getupvalue(fn, i)
+        if n == nil then return nil end
+        if n == name then return v end
+    end
+end
+
+-- whether the PDA would show its pages now; true without Fatal Error, or when its state cannot
+-- be read (logged once)
+function pda_works()
+    local fe = fatal_error_mcm
+    if not fe then return true end
+    local ok, works = pcall(function()
+        local pda = db.actor:item_in_slot(8)
+        if not pda or pda:section():find("itm_pda_") then return false end
+        if not item_device.is_pda_charged(true) then return false end
+        if ini_sys:r_bool_ex(pda:section(), "encrypted") or (tonumber(fe.REBOOT) or 0) > 0 then return false end
+        if ActorMenu.get_pda_menu():GetActiveSection() == "eptBios" then return false end
+        if fe_utils.is_bsod(pda) then return false end
+        local overclocked = fe_utils.is_overclocked(pda)
+        local guard = tonumber(upvalue(fe.process_pda_call, "reboot_protection")) or 0
+        if not (guard > 0 or overclocked) and (xr_conditions.surge_started() or psi_storm_manager.is_started()) then
+            return false
+        end
+        local lvl = level.name()
+        if SARCOPHAGUS[lvl] and not overclocked then return false end
+        if (fe.MONOLITH_HACKERS or {})[lvl]
+            and not (pda:has_upgrade("up_seconc_pda") or JAM_FREE[get_actor_true_community()] or overclocked) then
+            return false
+        end
+        return true
+    end)
+    if ok then return works == true end
+    if not warned then
+        warned = true
+        say("Fatal Error's PDA state could not be read, so the flat window opens anyway: " .. tostring(works))
+    end
+    return true
+end
+
 -- Customize, on the catalog's gun, suit and helmet pages: Workbench on that model
 local function customize(sec)
     open("workbench", sec)

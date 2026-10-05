@@ -5,7 +5,10 @@
     The PDA shows its tab bar, clock and caption only for a section that has a button
     (CUIPdaWnd::SetActiveCaption), and switches only to a section that has one, so without them
     the bar would vanish while Arsenal is open and Workbench could not open. Parked off screen,
-    zero wide, like MAC's own.
+    zero wide, like MAC's own. They go into every PDA layout with a tab bar and a caption, the
+    two the PDA window reads: pda.xml and pda_16.xml, and the layouts Fatal Error swaps in per
+    PDA model (SetPdaXml: pda_zero, pda_one, pda_two and their _16), not MAC's launcher page or
+    other pda_ files.
 
     The talks (arsenal_intel): asking anyone about gear they have seen, and asking a technician
     or trader about special guns. Their dialogs go into gameplay\dialogs.xml, and every
@@ -68,9 +71,9 @@ function on_xml_read()
             end
             return
         end
-        if not name:match("^ui[\\/]pda_?%d*%.xml$") then return end
+        if not name:match("^ui[\\/]pda[%w_]*%.xml$") then return end
         local tab = xml:query("tab")[1]
-        if not tab then return end
+        if not (tab and xml:query("caption_static")[1]) then return end
         for id, title in pairs(PAGES) do
             if #xml:query("tab > button[id=" .. id .. "]") == 0 then
                 xml:insertFromXMLString([[<button x="1000" y="0" width="0" height="0" id="]] .. id .. [[" frame_mode="0">]]
