@@ -40,7 +40,10 @@ end
 local st = fresh()
 local pending = {}     -- news to send: { e, how }
 local scheduled = false
-local talks = {}       -- npc id -> the rumor or offer picked for this talk
+-- What a talk picked, per npc id, apart for each of the two: a trader or technician has both,
+-- and the game checks both before the player picks one
+local rumors = {}      -- npc id -> the word he has: { g = gear, f = its faction, specs }
+local offers = {}      -- npc id -> the special gun he sells word of: { e, price, told }
 
 -- whether the jailbreak is on: everything listed and shown
 function jailbroken()
@@ -480,18 +483,18 @@ end
 function rumor_ok(a, b)
     local npc = npc_of(a, b)
     if not willing(npc) or st.talked[npc:id()] == day() then return false end
-    local t = talks[npc:id()]
-    if not (t and t.kind == "rumor") then
+    local t = rumors[npc:id()]
+    if not t then
         local rank = ranks.get_obj_rank_name(npc)
         local g, f = word_of(npc:character_community(), rank)
-        t = g and { kind = "rumor", g = g, f = f, specs = KNOWS_SPECS[rank] == true } or nil
-        talks[npc:id()] = t
+        t = g and { g = g, f = f, specs = KNOWS_SPECS[rank] == true } or nil
+        rumors[npc:id()] = t
     end
     return t ~= nil
 end
 
 function rumor_text(a, b)
-    local t = talks[npc_of(a, b):id()]
+    local t = rumors[npc_of(a, b):id()]
     if not t then return game.translate_string("st_arsenal_rumor_none") end
     return string.format(game.translate_string(t.specs and "st_arsenal_rumor_specs" or "st_arsenal_rumor"),
         faction_name(t.f), t.g.e.name)
@@ -499,8 +502,8 @@ end
 
 function rumor_told(a, b)
     local npc = npc_of(a, b)
-    local t = talks[npc:id()]
-    talks[npc:id()] = nil
+    local t = rumors[npc:id()]
+    rumors[npc:id()] = nil
     st.talked[npc:id()] = day()
     if t then
         reveal(t.g.e, { kind = "talk", who = npc:character_name() }, gear_fact(t.g, t.f), t.specs)
@@ -518,34 +521,34 @@ end
 function gunsmith_ok(a, b)
     local npc = npc_of(a, b)
     if not willing(npc) then return false end
-    local t = talks[npc:id()]
-    if not (t and t.kind == "gunsmith") then
+    local t = offers[npc:id()]
+    if not t then
         local list = {}
         for _, c in ipairs(arsenal_data.CATEGORIES) do
             for _, e in ipairs(arsenal_data.list(c)) do
                 if not st.known[e.sec] and arsenal_data.special(e.sec) then list[#list + 1] = e end
             end
         end
-        t = #list > 0 and { kind = "gunsmith", e = list[math.random(#list)] } or nil
+        t = #list > 0 and { e = list[math.random(#list)] } or nil
         if t then t.price = price_of(t.e) end
-        talks[npc:id()] = t
+        offers[npc:id()] = t
     end
     return t ~= nil
 end
 
 function gunsmith_offer(a, b)
-    local t = talks[npc_of(a, b):id()]
+    local t = offers[npc_of(a, b):id()]
     return string.format(game.translate_string("st_arsenal_gunsmith_offer"), tostring(t and t.price or 0))
 end
 
 function gunsmith_can_pay(a, b)
-    local t = talks[npc_of(a, b):id()]
+    local t = offers[npc_of(a, b):id()]
     return t ~= nil and db.actor:money() >= t.price
 end
 
 function gunsmith_pay(a, b)
     local npc = npc_of(a, b)
-    local t = talks[npc:id()]
+    local t = offers[npc:id()]
     if not t then return end
     dialogs.relocate_money_from_actor(a, b, t.price)
     local ways = { gunsmith = true }
@@ -555,8 +558,8 @@ end
 
 function gunsmith_told(a, b)
     local npc = npc_of(a, b)
-    local t = talks[npc:id()]
-    talks[npc:id()] = nil
+    local t = offers[npc:id()]
+    offers[npc:id()] = nil
     return string.format(game.translate_string("st_arsenal_gunsmith_told"), t and t.e.name or "")
 end
 
@@ -591,7 +594,7 @@ local function load_state(m_data)
     for _, field in ipairs({ "known", "studied", "facts", "new", "tally", "pdas", "talked" }) do
         st[field] = st[field] or {}
     end
-    pending, talks = {}, {}
+    pending, rumors, offers = {}, {}, {}
 end
 
 local function actor_on_first_update()
@@ -615,7 +618,7 @@ end
 
 -- for tests: the whole state, and a fresh one
 function state() return st end
-function reset() st, pending, talks, scheduled = fresh(), {}, {}, false end
+function reset() st, pending, rumors, offers, scheduled = fresh(), {}, {}, {}, false end
 
 function on_game_start()
     RegisterScriptCallback("actor_on_first_update", actor_on_first_update)

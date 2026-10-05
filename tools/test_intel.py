@@ -176,6 +176,8 @@ MUTANTS = {
                        "if arsenal_data.special(e.sec) then list[#list + 1] = e end"),
     "gunsmith_money": ("    return t ~= nil and db.actor:money() >= t.price", "    return t ~= nil"),
     "gunsmith_full": ("    local ways = { gunsmith = true }", "    local ways = {}"),
+    "talks_shared": ("function reset() st, pending, rumors, offers, scheduled = fresh(), {}, {}, {}, false end",
+                     "function reset() st, pending, rumors, scheduled = fresh(), {}, {}, false; offers = rumors end"),
     "news_batch": ("        if not groups[key] then", "        if true then"),
     "news_more": ("        if #names > 3 then", "        if false then"),
     "new_flag": ("            st.new[k] = true\n", ""),
@@ -373,6 +375,31 @@ def main():
           % (ok2, offer, known()))
     check(run(lambda: m.gunsmith_ok(g.db.actor, g.person(601, "stalker", "expert"))) is False,
           "nothing more to sell once it is known")
+
+    # A trader or technician has both talks, and the game checks both before the player picks
+    # one, rumor first: either then works, in either order (a shared slot once lost the rumor's
+    # faction, and asking crashed the game: "attempt to concatenate local 'f' (a nil value)")
+    m.reset()
+    g.math.randomseed(5)
+    trader = g.person(610, "dolg", "veteran", None, lua.table_from({"name": "Mangun"}))
+    both = (run(lambda: m.rumor_ok(g.db.actor, trader)), run(lambda: m.gunsmith_ok(g.db.actor, trader)))
+    said = run(lambda: m.rumor_text(g.db.actor, trader))
+    run(lambda: m.rumor_told(g.db.actor, trader))
+    told = known()
+    g.MONEY = 100
+    poor = run(lambda: m.gunsmith_can_pay(g.db.actor, trader))
+    offer = run(lambda: m.gunsmith_offer(g.db.actor, trader))
+    named = lambda s: isinstance(s, str) and not s.startswith("error") and any(
+        f in s for f in ("Duty", "Freedom", "Military", "Ecologist", "Monolith", "Loner"))
+    check(both == (True, True) and named(said) and len(told) == 1 and poor is False and "3000" in str(offer),
+          "a trader's two talks keep apart, the rumor checked first: %s %r %s %r %r" % (both, said, told, poor, offer))
+    m.reset()
+    both = (run(lambda: m.gunsmith_ok(g.db.actor, trader)), run(lambda: m.rumor_ok(g.db.actor, trader)))
+    g.MONEY = 20000
+    rich = run(lambda: m.gunsmith_can_pay(g.db.actor, trader))
+    said = run(lambda: m.rumor_text(g.db.actor, trader))
+    check(both == (True, True) and rich is True and named(said),
+          "and the offer checked first: %s %r %r" % (both, rich, said))
 
     # news: one line per source, three names then how many more; seen pages no longer new
     m.reset()

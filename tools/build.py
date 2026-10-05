@@ -23,7 +23,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 GD = os.path.join(ROOT, "gamedata")
 MOD = r"D:\GAMMA\mods\Arsenal"
-VERSION = "1.2.0"
+VERSION = "1.2.1"
 
 META = """[General]
 modid=0
