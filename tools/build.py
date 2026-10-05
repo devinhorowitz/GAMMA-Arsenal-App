@@ -2,7 +2,8 @@
 
 Writes the generated files (the 1 px rule texture, the Russian string table), then checks:
 every XML parses (string tables as windows-1251), every script compiles under LuaJIT, and the
-tests pass (test_data, test_collection, test_ui, test_mcm, test_intel, test_mac). Only then mirrors gamedata/ into
+tests pass (test_data, test_collection, test_ui, test_mcm, test_intel, test_mac, test_workbench,
+test_workbench_ui). Only then mirrors gamedata/ into
 D:\\GAMMA\\mods\\Arsenal\\gamedata (files that are no longer in the source are removed there)
 and writes its meta.ini.
 
@@ -22,7 +23,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 GD = os.path.join(ROOT, "gamedata")
 MOD = r"D:\GAMMA\mods\Arsenal"
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 
 META = """[General]
 modid=0
@@ -77,7 +78,8 @@ def check():
                 if err:
                     bad.append("%s: %s" % (p, err))
     print("xml parse: %d, scripts compile: %d" % (n_xml, n_lua))
-    for t in ("test_data.py", "test_collection.py", "test_ui.py", "test_mcm.py", "test_intel.py", "test_mac.py"):
+    for t in ("test_data.py", "test_collection.py", "test_ui.py", "test_mcm.py", "test_intel.py", "test_mac.py",
+              "test_workbench.py", "test_workbench_ui.py"):
         r = subprocess.run([sys.executable, os.path.join(HERE, t)], capture_output=True, text=True)
         last = r.stdout.strip().splitlines()[-1] if r.stdout.strip() else r.stderr.strip()[-200:]
         print("%-20s %s" % (t, last))

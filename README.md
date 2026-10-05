@@ -3,7 +3,8 @@
 # Arsenal
 
 **Every gun, round, suit and helmet in your GAMMA game, in the PDA: its stats, where to find
-it, what fits it, and which ones you have found. You learn of them as you play.**
+it, what fits it, and which ones you have found. You learn of them as you play. Its
+Workbench page plans upgrades on GAMMA's own upgrade trees and hands them to your toolkit.**
 
 ![Arsenal's page for the RD 5.45 Custom "ISG"](media/arsenal_screenshot.png)
 
@@ -68,6 +69,33 @@ Arsenal's tile in MAC's launcher shows how many are waiting.
 
 In English and Russian.
 
+## Workbench
+
+Arsenal's second page; the switch at the top left of both pages moves between them, and
+**Customize** on a gun, suit or helmet opens Workbench on it.
+
+![Workbench planning an MP5A3: the card now and planned, GAMMA's upgrade tree, the kits](media/workbench_screenshot.png)
+
+- **GAMMA's upgrade tree,** drawn as the toolkit's Upgrade tab draws it, with the kit each
+  upgrade takes and how many of that kit you have. Click an upgrade to plan it: what it needs
+  first comes along, and the other of a pair makes way. Installed upgrades are green, planned
+  ones yellow, shut ones dark.
+- **The stat card, now and planned,** worked out the way the inventory card does it, down to
+  the engine's float32 rounding, with the planned value green where it is better and red
+  where it is worse.
+- **The kits** the plan takes, against what you have with you (and, with Craft From Stashes,
+  in stashes nearby).
+- **Attachments:** the scopes, suppressor and launcher a gun takes with the plan, with their
+  weight on the card and what a suppressor does in play.
+- **Install** closes the PDA and opens your toolkit on the item with the plan checked. Upgrade
+  there puts the upgrades in and spends the kits, as it always does: the toolkit's rules and
+  costs stay GAMMA's. It needs a toolkit with you (or in a stash nearby) and the item in your
+  inventory. The one upgrade the engine refuses in a single visit (the Kiparis' fourth row,
+  which needs the fifth row's first) is marked red and goes in on a second.
+
+Items you carry are listed with their plans; models customized from the catalog stay listed
+for planning. Plans are kept in your save.
+
 ## Collecting
 
 An item counts as found the first time it enters your inventory: picked up, looted, bought,
@@ -104,7 +132,8 @@ It works in a new game or an existing one.
 
 With the 3D PDA on, the game draws PDA pages onto the screen of the PDA in your hands, which
 softens small text and icons. **MCM > Arsenal > Open Arsenal on its own** takes a key that
-opens Arsenal straight on the screen, as sharp as the inventory.
+opens Arsenal straight on the screen, as sharp as the inventory; the switch takes it to
+Workbench there too.
 
 ## Credits
 

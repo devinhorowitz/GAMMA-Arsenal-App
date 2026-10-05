@@ -1,0 +1,794 @@
+--[[
+    Workbench, Arsenal's second page: plan upgrades and attachments for an item on GAMMA's own
+    upgrade tree and watch its stat card change, then hand a carried item to GAMMA's toolkit to
+    install them. This file is its data: the tree and the rules on a plan, the plans, the kits a
+    plan takes, the card with a plan, what attaches, and the handoff. The page is
+    ui_arsenal_workbench.script.
+
+    The tree is GAMMA's own (utils_item.get_upgrades_tree, G.A.M.M.A. Upgrades Overhaul's):
+    tree[row][col], up to five rows of six columns, each cell an upgrade with its change section
+    (stats), icon, the kit it takes (tool) and the upgrades it opens (effect). The toolkit's
+    rules decide what can join a plan:
+      - one upgrade of each pair of columns (1-2, 3-4, 5-6), unless the column stands alone;
+      - from column 3 on, an upgrade of the same row whose effect lists it, installed or planned;
+      - the kit it takes, which the toolkit checks when it installs.
+    The engine adds one more (Group::can_install): an upgrade's group needs an upgrade in every
+    group whose upgrades open it, in any row. The toolkit installs row by row, so an upgrade
+    opened from a later row too waits for a second visit (the Kiparis' fourth row).
+--]]
+
+ROWS, COLS = 5, 6
+
+local function copy(t)
+    local out = {}
+    for k, v in pairs(t) do
+        out[k] = v
+    end
+    return out
+end
+
+local function union(a, b)
+    local out = copy(a)
+    for k in pairs(b) do
+        out[k] = true
+    end
+    return out
+end
+
+local function each(sec, key)
+    return (ini_sys:r_string_ex(sec, key) or ""):gmatch("[^,%s]+")
+end
+
+local function name_of(sec)
+    local key = ini_sys:r_string_ex(sec, "inv_name")
+    local s = key and game.translate_string(key)
+    return (s and s ~= "") and s or sec
+end
+
+---------------------------------------------------------------------------------------------
+-- the tree and its rules
+---------------------------------------------------------------------------------------------
+
+-- the item's upgrade groups as the engine links them: each element's group, each group's
+-- upgrades, and the groups whose upgrades open a group (the item itself, for a group it lists,
+-- is no parent)
+local function link(t, sec)
+    t.group_of, t.members, t.parents = {}, {}, {}
+    local seen, queue, i = {}, {}, 1
+    for g in each(sec, "upgrades") do
+        queue[#queue + 1] = g
+    end
+    while queue[i] do
+        local g = queue[i]
+        i = i + 1
+        if not seen[g] and ini_sys:section_exist(g) then
+            seen[g] = true
+            t.members[g] = {}
+            for el in each(g, "elements") do
+                t.group_of[el] = g
+                table.insert(t.members[g], el)
+                for nxt in each(el, "effects") do
+                    t.parents[nxt] = t.parents[nxt] or {}
+                    t.parents[nxt][g] = true
+                    queue[#queue + 1] = nxt
+                end
+            end
+        end
+    end
+end
+
+-- The tree of a section, or an empty one; with the engine's links (above) and `at`, each
+-- upgrade's cell.
+function tree(sec)
+    local t = {}
+    if sec and utils_item and utils_item.get_upgrades_tree and (ini_sys:r_string_ex(sec, "upgrades") or "") ~= "" then
+        local ok, got = pcall(utils_item.get_upgrades_tree, sec, true)
+        if not ok then
+            printf("[arsenal] no upgrade tree for %s: %s", tostring(sec), tostring(got))
+        elseif type(got) == "table" then
+            t = got
+        end
+    end
+    t.at = {}
+    for row = 1, ROWS do
+        for col = 1, COLS do
+            local c = t[row] and t[row][col]
+            if c then t.at[c.section] = { row = row, col = col } end
+        end
+    end
+    link(t, sec or "")
+    return t
+end
+
+-- each cell of a tree with its place, in the toolkit's install order: row by row, column by
+-- column, so every upgrade comes after the one of its row that opens it
+function cells(t)
+    local out = {}
+    for row = 1, ROWS do
+        for col = 1, COLS do
+            local c = t[row] and t[row][col]
+            if c then
+                out[#out + 1] = { row = row, col = col, cell = c }
+            end
+        end
+    end
+    return out
+end
+
+function has_tree(sec)
+    return #cells(tree(sec)) > 0
+end
+
+-- the other upgrade of a cell's pair, if it has one (GAMMA marks an odd column without one
+-- `solo`; an even column always has one)
+function partner(t, row, col)
+    return t[row][(col % 2 == 1) and col + 1 or col - 1]
+end
+
+-- the columns of a cell's row whose upgrades open it
+function parents(t, row, col)
+    local sec, out = t[row][col].section, {}
+    for c = 1, COLS do
+        local p = t[row][c]
+        if p and p.effect and p.effect[sec] then
+            out[#out + 1] = c
+        end
+    end
+    return out
+end
+
+-- the toolkit's rule: from column 3 on, an upgrade of the row that opens it is in `have`
+local function opened(t, row, col, have)
+    if col <= 2 then return true end
+    for _, c in ipairs(parents(t, row, col)) do
+        if have[t[row][c].section] then return true end
+    end
+    return false
+end
+
+-- the engine's: every group whose upgrades open this one's has one in `have`; returns the
+-- first that has none
+local function groups_missing(t, el, have)
+    local g = t.group_of and t.group_of[el]
+    for pg in pairs(g and t.parents[g] or {}) do
+        local ok = false
+        for _, m in ipairs(t.members[pg] or {}) do
+            if have[m] then ok = true end
+        end
+        if not ok then return pg end
+    end
+    return nil
+end
+
+local function allowed(t, row, col, have)
+    return opened(t, row, col, have) and not groups_missing(t, t[row][col].section, have)
+end
+
+-- A cell's state with the item's upgrades (`installed`) and a plan, both sets of sections:
+-- "installed", "planned", "open" (it can join the plan), "partner" (the other of its pair is
+-- installed or planned) or "parent" (what opens it is neither).
+function state(t, row, col, installed, planned)
+    local c = t[row] and t[row][col]
+    if not c then return nil end
+    if installed[c.section] then return "installed" end
+    if planned[c.section] then return "planned" end
+    local have = union(installed, planned)
+    local p = partner(t, row, col)
+    if p and have[p.section] then return "partner" end
+    if not allowed(t, row, col, have) then return "parent" end
+    return "open"
+end
+
+-- drop planned upgrades the rules no longer allow, until none is left
+local function prune(t, installed, plan)
+    local changed = true
+    while changed do
+        changed = false
+        local have = union(installed, plan)
+        for _, x in ipairs(cells(t)) do
+            local sec = x.cell.section
+            if plan[sec] and not allowed(t, x.row, x.col, have) then
+                plan[sec] = nil
+                changed = true
+            end
+        end
+    end
+end
+
+local join
+
+-- bring into `plan` an upgrade of a group: the first of its members, in install order, that
+-- can join
+local function join_group(t, g, installed, plan, depth)
+    local list = {}
+    for _, m in ipairs(t.members[g] or {}) do
+        if t.at[m] then list[#list + 1] = m end
+    end
+    table.sort(list, function(a, b)
+        local x, y = t.at[a], t.at[b]
+        return x.row < y.row or (x.row == y.row and x.col < y.col)
+    end)
+    for _, m in ipairs(list) do
+        local trial = copy(plan)
+        if join(t, t.at[m].row, t.at[m].col, installed, trial, depth + 1) then
+            for k in pairs(plan) do plan[k] = nil end
+            for k in pairs(trial) do plan[k] = true end
+            return true
+        end
+    end
+    return false
+end
+
+-- Add a cell to `plan` (changed in place): what it needs first comes along, the first of its
+-- row that can join, then an upgrade in any other group it needs; a planned partner makes way,
+-- with what only it opened. An installed partner, or no way to open it, keeps it out.
+join = function(t, row, col, installed, plan, depth)
+    local c = t[row][col]
+    if installed[c.section] or plan[c.section] then return true end
+    if depth > ROWS * COLS then return false, "parent" end
+    local p = partner(t, row, col)
+    if p and installed[p.section] then return false, "partner" end
+    if not opened(t, row, col, union(installed, plan)) then
+        local done = false
+        for _, pc in ipairs(parents(t, row, col)) do
+            local trial = copy(plan)
+            if join(t, row, pc, installed, trial, depth + 1) then
+                for k in pairs(plan) do plan[k] = nil end
+                for k in pairs(trial) do plan[k] = true end
+                done = true
+                break
+            end
+        end
+        if not done then return false, "parent" end
+    end
+    local g = groups_missing(t, c.section, union(installed, plan))
+    while g do
+        if not join_group(t, g, installed, plan, depth) then return false, "parent" end
+        g = groups_missing(t, c.section, union(installed, plan))
+    end
+    plan[c.section] = true
+    if p and plan[p.section] then
+        plan[p.section] = nil
+        prune(t, installed, plan)
+    end
+    return true
+end
+
+-- The plan after clicking a cell, a new set: a planned upgrade leaves it, with what only it
+-- opened; any other joins it as join() allows. Returns nil and the reason when nothing changes.
+function toggle(t, row, col, installed, planned)
+    local c = t[row] and t[row][col]
+    if not c then return nil, "none" end
+    if installed[c.section] then return nil, "installed" end
+    local plan = copy(planned)
+    if plan[c.section] then
+        plan[c.section] = nil
+        prune(t, installed, plan)
+        return plan
+    end
+    local ok, why = join(t, row, col, installed, plan, 0)
+    if not ok then return nil, why end
+    return plan
+end
+
+-- A plan checked against the item as it is now: what the item has since got, or what is not
+-- in its tree, leaves it, and so does what the rules no longer allow. A new set.
+function valid(t, installed, planned)
+    local plan = {}
+    for _, x in ipairs(cells(t)) do
+        local sec = x.cell.section
+        if planned[sec] and not installed[sec] then
+            plan[sec] = true
+        end
+    end
+    -- one of a pair, the first in install order
+    for _, x in ipairs(cells(t)) do
+        local sec = x.cell.section
+        local p = plan[sec] and partner(t, x.row, x.col)
+        if p and (plan[p.section] or installed[p.section]) and (installed[p.section] or x.col % 2 == 0) then
+            plan[sec] = nil
+        end
+    end
+    prune(t, installed, plan)
+    return plan
+end
+
+-- the planned upgrades in the toolkit's install order
+function order(t, planned)
+    local out = {}
+    for _, x in ipairs(cells(t)) do
+        if planned[x.cell.section] then
+            out[#out + 1] = x
+        end
+    end
+    return out
+end
+
+-- The planned upgrades the engine would refuse on this visit: the toolkit installs in its order,
+-- and an upgrade whose group needs one from a later row finds that one not yet in. They go in on
+-- a second visit, once the rest is.
+function later(t, installed, planned)
+    local done, out = copy(installed), {}
+    for _, x in ipairs(order(t, planned)) do
+        local sec = x.cell.section
+        if groups_missing(t, sec, done) then
+            out[sec] = true
+        else
+            done[sec] = true
+        end
+    end
+    return out
+end
+
+-- the kits a plan takes, one per upgrade: { { sec = kit, n = count }, ... } by kit
+function kits(t, planned)
+    local n = {}
+    for _, x in ipairs(order(t, planned)) do
+        local tool = x.cell.tool
+        if tool then
+            n[tool] = (n[tool] or 0) + 1
+        end
+    end
+    local out = {}
+    for sec, k in pairs(n) do
+        out[#out + 1] = { sec = sec, n = k }
+    end
+    table.sort(out, function(a, b) return a.sec < b.sec end)
+    return out
+end
+
+-- Craft From Stashes' range, when it runs: the toolkit counts kits and toolkits in stashes that
+-- near too
+local function stash_range()
+    if type(IterateStashesInRange) ~= "function" then return nil end
+    return ui_mcm and ui_mcm.get("craft_from_stashes/range") or 10
+end
+
+-- How many uses of each kit in `secs` (a set) the player has where the toolkit looks for them:
+-- carried, and with Craft From Stashes, in the stashes within its range.
+function kits_held(secs)
+    local held = {}
+    local function count(_, obj)
+        local s = obj:section()
+        if secs[s] then
+            held[s] = (held[s] or 0) + (utils_item.get_item_remaining_uses(obj) or 1)
+        end
+    end
+    if db.actor then
+        db.actor:iterate_inventory(count)
+    end
+    local range = stash_range()
+    if range then
+        local ok, err = pcall(IterateStashesInRange, count, range)
+        if not ok then
+            printf("[arsenal] stashes in range: %s", tostring(err))
+        end
+    end
+    return held
+end
+
+-- the upgrades an item has: an object's, in the order they went in, or a section's own (a
+-- pre-upgraded variant's), as a list and as a set
+function installed_on(obj)
+    local list = {}
+    local ok, err = pcall(function()
+        obj:iterate_installed_upgrades(function(u)
+            list[#list + 1] = u
+        end)
+    end)
+    if not ok then
+        printf("[arsenal] the upgrades of %s: %s", tostring(obj and obj:section()), tostring(err))
+    end
+    return list
+end
+
+function installed_in(sec)
+    local list = {}
+    for u in each(sec, "installed_upgrades") do
+        list[#list + 1] = u
+    end
+    return list
+end
+
+function as_set(list)
+    local out = {}
+    for _, u in ipairs(list) do
+        out[u] = true
+    end
+    return out
+end
+
+---------------------------------------------------------------------------------------------
+-- the items: what the player carries that has a tree, guns first, then suits, then helmets
+---------------------------------------------------------------------------------------------
+local KIND_ORDER = { gun = 1, suit = 2, helmet = 3 }
+
+local function kind_of(obj, sec)
+    if IsWeapon(obj) then return "gun" end
+    if arsenal_data.is_helmet(sec) then return "helmet" end
+    if IsOutfit(obj) then return "suit" end
+    return nil
+end
+
+-- The accuracy check: a carried gun's base dispersion as the engine has it against the float32
+-- model Arsenal's card uses (matched on five guns in game, 2026-10-04); a disagreement goes to
+-- the log, once a session per section. Anomaly's printf fills %s only.
+local checked = {}
+local function check_model(obj, sec, ups)
+    if checked[sec] then return end
+    checked[sec] = true
+    local w = obj:cast_Weapon()
+    if not (w and w.GetFireDispersion) then return end
+    local ok, live = pcall(w.GetFireDispersion, w)
+    if not ok then return end
+    local p = arsenal_data.params_with(sec, ups)
+    if live ~= p.rad then
+        printf("[arsenal] the card's accuracy model disagrees with the engine on %s: engine %s rad, model %s rad",
+            sec, string.format("%.10g", live), string.format("%.10g", p.rad))
+    end
+end
+
+-- { { id, sec, obj, name, kind }, ... }
+function carried()
+    local out = {}
+    if not db.actor then return out end
+    db.actor:iterate_inventory(function(_, obj)
+        local sec = obj:section()
+        local kind = kind_of(obj, sec)
+        local e = kind and arsenal_data.entry_for(sec)
+        if e and e.cat ~= "melee" and e.cat ~= "ammo" and has_tree(sec) then
+            out[#out + 1] = { id = obj:id(), sec = sec, obj = obj, name = name_of(sec), kind = kind }
+            if kind == "gun" then
+                pcall(check_model, obj, sec, installed_on(obj))
+            end
+        end
+    end)
+    table.sort(out, function(a, b)
+        if a.kind ~= b.kind then return KIND_ORDER[a.kind] < KIND_ORDER[b.kind] end
+        if a.name ~= b.name then return a.name < b.name end
+        return a.id < b.id
+    end)
+    return out
+end
+
+-- whether a section is a gun, a suit or a helmet Workbench can plan for
+function plannable(sec)
+    if not (sec and has_tree(sec)) then return false end
+    local e = arsenal_data.get(sec)
+    return e ~= nil and e.cat ~= "melee" and e.cat ~= "ammo"
+end
+
+---------------------------------------------------------------------------------------------
+-- the card: a gun's or a suit's rows as the inventory card shows them, now and with a plan
+---------------------------------------------------------------------------------------------
+
+-- the gun a scoped one is made of (its parent_section), or the gun itself
+function base_of(sec)
+    local p = ini_sys:r_string_ex(sec, "parent_section")
+    return (p and p ~= "" and ini_sys:section_exist(p)) and p or sec
+end
+
+-- The section a gun becomes with a scope (nil: as it is; false: none): GAMMA's scope swaps the
+-- gun for its combination with the scope, which keeps its upgrades (item_weapon.attach_scope)
+function with_scope(sec, scope)
+    if scope == nil then return sec end
+    local base = base_of(sec)
+    if not scope then return base end
+    local combo = base .. "_" .. scope
+    return ini_sys:section_exist(combo) and combo or base
+end
+
+-- the scope a gun section carries: what its combination adds to the gun it is made of
+function scope_of(sec)
+    local base = base_of(sec)
+    if base == sec then return nil end
+    local s = sec:sub(#base + 2)
+    return (s ~= "" and ini_sys:section_exist(s)) and s or nil
+end
+
+-- A gun's weight as the inventory adds it up, its magazine empty (every upgrade unloads it):
+-- its own and its upgrades' (float32), its scope's (3DSS adds it to the combination), and the
+-- suppressor's and launcher's on it
+local function gun_weight(p, scope, att)
+    return p.inv_weight + weight_of(scope) + weight_of(att.silencer) + weight_of(att.launcher)
+end
+
+local function value_text(gr, v)
+    if v == nil then return nil end
+    local unit = (gr.unit and gr.unit ~= "") and game.translate_string(gr.unit) or ""
+    local s = tostring(v)
+    if gr.sign and v > 0 then s = "+" .. s end
+    return unit ~= "" and (s .. " " .. unit) or s
+end
+
+-- which way is better for a row: lower for a row the card shows the other way round
+local function better(gr, a, b)
+    if a == nil or b == nil or a == b then return nil end
+    if gr.sign_inverse then return b < a end
+    return b > a
+end
+
+-- The rows for an item now and with a plan: { { stat, gr, now, plan, now_text, plan_text,
+-- better } }, the card's rows in its order (those the formulas here do not cover show the
+-- card's own value, the same both ways), then weight. `now` and `plan` are the installed
+-- upgrades and those plus the plan, lists in install order; `att_now` what is attached now
+-- (silencer, launcher) and `att` the plan's (scope: nil as it is, false none; silencer and
+-- launcher: a section or nothing).
+function card(sec, now, plan, att_now, att)
+    att_now, att = att_now or {}, att or {}
+    local rows = {}
+    local armor = arsenal_data.is_armor(sec)
+    local a, b, wa, wb
+    if armor then
+        a, b = arsenal_data.armor_params_with(sec, now), arsenal_data.armor_params_with(sec, plan)
+        wa, wb = a.inv_weight, b.inv_weight
+    else
+        local planned = with_scope(sec, att.scope)
+        local scope = scope_of(sec)
+        if att.scope ~= nil then scope = att.scope or nil end
+        a = arsenal_data.params_with(sec, now)
+        b = arsenal_data.params_with(planned, plan)
+        wa, wb = gun_weight(a, scope_of(sec), att_now), gun_weight(b, scope, att)
+    end
+    for _, r in ipairs(arsenal_data.stat_rows(false, sec)) do
+        local x, y
+        if armor then
+            x, y = arsenal_data.armor_value(r.stat, a), arsenal_data.armor_value(r.stat, b)
+        else
+            local f = arsenal_data.CARD[r.stat]
+            if f and r.stat ~= "damage" then x, y = f(a), f(b) end
+        end
+        local row = { stat = r.stat, gr = r.gr }
+        if x ~= nil or y ~= nil then
+            row.now, row.plan = x, y
+            row.now_text, row.plan_text = value_text(r.gr, x), value_text(r.gr, y)
+            row.better = better(r.gr, x, y)
+        else
+            local ok, s = pcall(utils_ui.get_stats_string_value, nil, sec, r.gr, r.stat)
+            row.now_text = ok and type(s) == "string" and s or nil
+            row.plan_text = row.now_text
+        end
+        if row.now_text or row.plan_text then
+            rows[#rows + 1] = row
+        end
+    end
+    local kg = arsenal_data.kg
+    local w = { stat = "weight", now = kg(wa), plan = kg(wb),
+        now_text = tostring(kg(wa)) .. " " .. game.translate_string("st_kg"),
+        plan_text = tostring(kg(wb)) .. " " .. game.translate_string("st_kg") }
+    if w.now ~= w.plan then w.better = w.plan < w.now end
+    rows[#rows + 1] = w
+    return rows
+end
+
+---------------------------------------------------------------------------------------------
+-- attachments
+---------------------------------------------------------------------------------------------
+
+-- The mounts a gun has with these upgrades (element sections): its own, or one an upgrade adds
+-- (GAMMA's suppressor and launcher upgrades set the status to 2 and name what fits). Returns
+-- { silencer = { sec, own }, launcher = { sec, own } }, each nil when there is no mount.
+function mounts(sec, ups)
+    local out = {}
+    local function from(s, own)
+        if math.floor(ini_sys:r_float_ex(s, "silencer_status") or 0) == 2 then
+            local n = ini_sys:r_string_ex(s, "silencer_name")
+            if n and ini_sys:section_exist(n) then out.silencer = { sec = n, own = own } end
+        end
+        if math.floor(ini_sys:r_float_ex(s, "grenade_launcher_status") or 0) == 2 then
+            local n = ini_sys:r_string_ex(s, "grenade_launcher_name")
+            if n and ini_sys:section_exist(n) then out.launcher = { sec = n, own = own } end
+        end
+    end
+    from(sec, true)
+    for _, u in ipairs(ups) do
+        local ps = ini_sys:section_exist(u) and ini_sys:r_string_ex(u, "section")
+        if ps and ini_sys:section_exist(ps) then from(ps, false) end
+    end
+    return out
+end
+
+-- What a gun takes with these upgrades: { scopes = { sec, ... }, silencer = mount, launcher =
+-- mount } (scopes as Arsenal lists them: kits and laser modules are not scopes)
+function fits(sec, ups)
+    local base = ini_sys:r_string_ex(sec, "parent_section") or sec
+    local ok, a = pcall(arsenal_data.attachments, base)
+    local scopes = {}
+    for _, s in ipairs(ok and a and a.scopes or {}) do
+        scopes[#scopes + 1] = s.sec
+    end
+    local m = mounts(base, ups)
+    return { scopes = scopes, silencer = m.silencer, launcher = m.launcher }
+end
+
+-- an attachment's weight
+function weight_of(sec)
+    return sec and ini_sys:r_float_ex(sec, "inv_weight") or 0
+end
+
+---------------------------------------------------------------------------------------------
+-- the plans: one per carried item (by id) and one per model (by section), kept in the save;
+-- each a set of upgrades and the attachments chosen (scope, silencer, launcher: a section, or
+-- false for none)
+---------------------------------------------------------------------------------------------
+local plans = { id = {}, sec = {} }
+
+local function key_of(id, sec)
+    if id then return "id", id end
+    return "sec", sec
+end
+
+function plan_of(id, sec)
+    local kind, k = key_of(id, sec)
+    local p = plans[kind][k]
+    if not p or (id and p.sec ~= sec) then return {}, {} end
+    return copy(p.set), copy(p.att or {})
+end
+
+function set_plan(id, sec, set, att)
+    local kind, k = key_of(id, sec)
+    if next(set) == nil and next(att or {}) == nil then
+        plans[kind][k] = nil
+    else
+        plans[kind][k] = { sec = sec, set = copy(set), att = copy(att or {}) }
+    end
+end
+
+-- the models with a plan (sections), by name
+function planned_models()
+    local out = {}
+    for sec in pairs(plans.sec) do
+        if ini_sys:section_exist(sec) then out[#out + 1] = sec end
+    end
+    table.sort(out, function(a, b) return name_of(a) < name_of(b) end)
+    return out
+end
+
+-- forget the plans of items that are gone from the world, or whose id another item now has; an
+-- item left in a stash keeps its plan
+function forget_gone()
+    for id, p in pairs(plans.id) do
+        local se = alife_object(id)
+        if not (se and se:section_name() == p.sec) then plans.id[id] = nil end
+    end
+end
+
+local function save_state(m_data)
+    local out = { id = {}, sec = {} }
+    for kind, t in pairs(plans) do
+        for k, p in pairs(t) do
+            local list = {}
+            for u in pairs(p.set) do
+                list[#list + 1] = u
+            end
+            table.sort(list)
+            out[kind][k] = { sec = p.sec, list = list, att = copy(p.att or {}) }
+        end
+    end
+    m_data.arsenal_workbench = out
+end
+
+local function load_state(m_data)
+    plans = { id = {}, sec = {} }
+    local saved = m_data.arsenal_workbench
+    if type(saved) ~= "table" then return end
+    for _, kind in ipairs({ "id", "sec" }) do
+        for k, p in pairs(saved[kind] or {}) do
+            if type(p) == "table" and type(p.list) == "table" then
+                plans[kind][k] = { sec = p.sec, set = as_set(p.list), att = type(p.att) == "table" and copy(p.att) or {} }
+            end
+        end
+    end
+end
+
+---------------------------------------------------------------------------------------------
+-- the handoff: GAMMA's toolkit window, on its Upgrade tab, on the item, the plan checked
+---------------------------------------------------------------------------------------------
+TOOLKITS = { "itm_expertkit", "itm_advancedkit", "itm_basickit" }
+
+-- the best toolkit the player has where the toolkit window looks (carried, or with Craft From
+-- Stashes in a stash nearby): 3 expert, 2 advanced, 1 basic, or nil
+function toolkit()
+    local have = {}
+    local function count(_, obj)
+        have[obj:section()] = true
+    end
+    if db.actor then db.actor:iterate_inventory(count) end
+    local range = stash_range()
+    if range then pcall(IterateStashesInRange, count, range) end
+    for i, s in ipairs(TOOLKITS) do
+        if have[s] then return 4 - i end
+    end
+    return nil
+end
+
+-- whether a carried item can go to the toolkit with this plan now: nil, or why not
+function cannot_install(id, sec, planned)
+    local obj = id and level.object_by_id(id)
+    if not (obj and obj:parent() and obj:parent():id() == AC_ID and obj:section() == sec) then
+        return "not_carried"
+    end
+    if next(planned) == nil then return "nothing" end
+    if not toolkit() then return "no_toolkit" end
+    if not (ui_workshop and ui_workshop.get_workshop_ui) then return "no_workshop" end
+    return nil
+end
+
+-- the toolkit window open on the item, the plan's upgrades checked one by one in its order, those
+-- it cannot check (no kit, or for a second visit) left; returns the sections left, or nil and
+-- an error
+local function open_toolkit(id, sec, planned)
+    local obj = level.object_by_id(id)
+    if not obj then return nil, "the item is gone" end
+    local level_of = toolkit() or 1
+    local flags = { level_of == 1, level_of == 2, level_of == 3, false, false }
+    local ui = ui_workshop.get_workshop_ui(nil, nil, flags, false)
+    if not ui then return nil, "the toolkit window is already open" end
+    ui:OnButton_upgrade()
+    local dlg = ui.dlg_upgrade
+    local idx = dlg and dlg.CC and dlg.CC:GetCell_ID(id, true)
+    if not idx then return nil, "the item is not on the Upgrade tab" end
+    dlg.CC:On_Select(idx)
+    dlg:On_CC_Mouse1(dlg.CC.ID, idx)
+    local t = tree(sec)
+    local skip = later(t, as_set(installed_on(obj)), planned)
+    local left = {}
+    -- column by column, so each upgrade's opener is checked before it
+    for col = 1, COLS do
+        for row = 1, ROWS do
+            local info = dlg.upgr and dlg.upgr[row] and dlg.upgr[row][col]
+            if info and planned[info.section] and not dlg.inst_upgr[info.section] then
+                local st = dlg.upgr_xml[row] and dlg.upgr_xml[row][col]
+                if not skip[info.section] and st and st.btn:IsEnabled() then
+                    st.btn:SetCheck(true)
+                    dlg:EvaluateUpgrades()
+                else
+                    left[#left + 1] = info.section
+                end
+            end
+        end
+    end
+    return left
+end
+
+-- what is waiting to go to the toolkit, and how the last handoff went: { left, err }
+local pending
+last_install = nil
+
+function install_tick()
+    local p = ActorMenu.get_pda_menu()
+    if not pending then return true end
+    if p and p:IsShown() and time_global() - pending.t0 < 3000 then
+        ResetTimeEvent("arsenal_workbench", "install", 0.1)
+        return false
+    end
+    local job = pending
+    pending = nil
+    local ok, left, err = pcall(open_toolkit, job.id, job.sec, job.planned)
+    if not ok then
+        left, err = nil, left
+    end
+    if err then printf("[arsenal] Workbench could not open the toolkit: %s", tostring(err)) end
+    last_install = { sec = job.sec, left = left, err = err }
+    return true
+end
+
+-- Close the PDA, then open the toolkit window once it is down (the 3D PDA lowers itself first).
+function install(id, sec, planned)
+    local pda = ActorMenu.get_pda_menu()
+    if pda and pda:IsShown() then
+        if get_console_cmd(1, "g_3d_pda") then
+            db.actor:activate_slot(0)
+        else
+            pda:HideDialog()
+        end
+    end
+    pending = { id = id, sec = sec, planned = copy(planned), t0 = time_global() }
+    RemoveTimeEvent("arsenal_workbench", "install")
+    CreateTimeEvent("arsenal_workbench", "install", 0.1, install_tick)
+end
+
+function on_game_start()
+    RegisterScriptCallback("save_state", save_state)
+    RegisterScriptCallback("load_state", load_state)
+end

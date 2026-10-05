@@ -1,0 +1,842 @@
+--[[
+    Workbench, Arsenal's second page (its data is arsenal_workbench): on the left the items the
+    player carries that take upgrades and the models customized from the catalog, the chosen
+    one's stat card now and as planned, and its attachments; on the right GAMMA's upgrade tree
+    as its toolkit draws it, the kits the plan takes, and what the upgrade under the cursor
+    does. A click plans or unplans an upgrade, with what it needs or what only it opened;
+    Install hands a carried item to GAMMA's toolkit window with the plan checked, where Upgrade
+    installs it, so the toolkit's kits and rules stay GAMMA's.
+
+    The tree's widgets are made once, five rows of six cells where the toolkit puts them
+    (ui_workshop_16.xml), and only filled for each item: rebuilt, their buttons would pile up
+    callbacks.
+--]]
+
+local theme = arsenal_theme
+local SINGLETON, FLAT
+local PDA_X, PDA_Y = 112, 34    -- where the PDA puts its pages (ui_arsenal.script)
+local ROW_H = 22
+local CARD_ROW = 20
+-- the toolkit's row: three pairs, odd columns over even ones, a lone one between their places
+local SLOT_X = { 32, 32, 176, 176, 320, 320 }
+local SLOT_Y = { 26, 76, 26, 76, 26, 76 }
+local SOLO_DY = 25
+local KIT_STEP, MAX_KITS = 52, 6
+local ATT_STEP = 46             -- attachment rows apart
+local CARD_H, CARD_H_ARMOR = 228, 374
+local ATT = { "scope", "silencer", "launcher" }
+local MARKS = {
+    installed = "ui_inGame2_workshop_upgr_green",
+    planned = "ui_inGame2_workshop_upgr_yellow",
+    later = "ui_inGame2_workshop_upgr_red",
+    partner = "ui_inGame2_workshop_upgr_dark",
+    parent = "ui_inGame2_workshop_upgr_dark",
+}
+local pending    -- what to show next time the page opens: { sec, id }
+
+local function T(id, ...)
+    local s = game.translate_string(id)
+    if select("#", ...) > 0 then return string.format(s, ...) end
+    return s
+end
+
+local function name_of(sec)
+    local key = sec and ini_sys:r_string_ex(sec, "inv_name")
+    local s = key and game.translate_string(key)
+    return (s and s ~= "") and s or tostring(sec)
+end
+
+-- a string without the inline color codes the game's card puts in its row names
+local function plain(s)
+    return (s:gsub("%%c%[[^%]]*%]", ""))
+end
+
+-- a name short enough for a button: without a closing "(...)" or what follows " w/ "
+local function short(s)
+    s = s:gsub("%s*%b()%s*$", "")
+    s = s:gsub("%s+w/%s.*$", "")
+    return s
+end
+
+local function count(set)
+    local n = 0
+    for _ in pairs(set) do n = n + 1 end
+    return n
+end
+
+-- an inventory icon on a static made once: fitted into a box at most at its own size, centered
+local function fit_icon(st, x, y, w, h, sec)
+    local tex, a = arsenal_data.icon(sec)
+    if not (tex and a and a.w > 0 and a.h > 0) then
+        st:Show(false)
+        return
+    end
+    local wide = utils_xml.is_widescreen() and 0.8 or 1
+    local k = math.min(w / (a.w * wide), h / a.h, 1)
+    local iw, ih = a.w * wide * k, a.h * k
+    st:InitTexture(tex)
+    st:SetTextureRect(Frect():set(a.x1, a.y1, a.x1 + a.w, a.y1 + a.h))
+    st:SetStretchTexture(true)
+    st:SetWndSize(vector2():set(iw, ih))
+    st:SetWndPos(vector2():set(x + (w - iw) / 2, y + (h - ih) / 2))
+    st:Show(true)
+end
+
+---------------------------------------------------------------------------------------------
+-- a list row: an item's name, and how many upgrades it has planned
+---------------------------------------------------------------------------------------------
+class "WorkbenchRow" (CUIListBoxItem)
+
+function WorkbenchRow:__init(xml, key, text, role, n) super(ROW_H)
+    self.key = key
+    self.name = xml:InitTextWnd("wb_row_name", self)
+    self.name:SetText(text)
+    self.name:SetTextColor(theme.argb(role))
+    if n then
+        self.count = xml:InitTextWnd("wb_row_count", self)
+        self.count:SetText(n)
+    end
+end
+
+---------------------------------------------------------------------------------------------
+-- the page
+---------------------------------------------------------------------------------------------
+class "WorkbenchPDA" (CUIScriptWnd)
+
+function WorkbenchPDA:__init(flat) super()
+    self.flat = flat == true
+    local x, y = self.flat and PDA_X or 0, self.flat and PDA_Y or 0
+    self:SetWndRect(Frect():set(x, y, x + 1024, y + 768))
+    local xml = CScriptXmlInit()
+    xml:ParseFile("ui_arsenal.xml")
+    self.xml = xml
+
+    if self.flat then
+        xml:InitStatic("flat_bezel", self)
+        xml:InitTextWnd("flat_caption", self)
+    end
+
+    -- the header: the switch (this page pressed), the item's name, Clear, Install, Back
+    self.page_catalog = xml:Init3tButton("page_catalog", self)
+    self:Register(self.page_catalog, "page_catalog")
+    self:AddCallback("page_catalog", ui_events.BUTTON_CLICKED, self.OnCatalog, self)
+    self.page_workbench = xml:Init3tButton("page_workbench", self)
+    theme.set_active(self.page_workbench, true)
+    self.title = xml:InitTextWnd("wb_title", self)
+    self.btn_clear = xml:Init3tButton("wb_clear", self)
+    self:Register(self.btn_clear, "wb_clear")
+    self:AddCallback("wb_clear", ui_events.BUTTON_CLICKED, self.OnClear, self)
+    self.btn_install = xml:Init3tButton("wb_install", self)
+    self:Register(self.btn_install, "wb_install")
+    self:AddCallback("wb_install", ui_events.BUTTON_CLICKED, self.OnInstall, self)
+    self.btn_back = xml:Init3tButton("btn_back", self)
+    self:Register(self.btn_back, "btn_back")
+    self:AddCallback("btn_back", ui_events.BUTTON_CLICKED, self.OnBack, self)
+    xml:InitStatic("rule_top", self)
+
+    -- left: the items, the card, the attachments
+    self.list = xml:InitListBox("wb_list", self)
+    self:Register(self.list, "wb_list")
+    self:AddCallback("wb_list", ui_events.LIST_ITEM_SELECT, self.OnItem, self)
+    xml:InitStatic("wb_rule_list", self)
+    self.card = xml:InitScrollView("wb_card", self)
+    self.att_rows = {}
+    for i, slot in ipairs(ATT) do
+        local lbl = xml:InitTextWnd("wb_att_lbl", self)
+        local btn = xml:Init3tButton("wb_att_btn", self)
+        local dy = (i - 1) * ATT_STEP
+        for _, w in ipairs({ lbl, btn }) do
+            local p = w:GetWndPos()
+            w:SetWndPos(vector2():set(p.x, p.y + dy))
+        end
+        lbl:SetText(T("st_arsenal_wb_" .. slot))
+        self:Register(btn, "wb_att_" .. i)
+        self:AddCallback("wb_att_" .. i, ui_events.BUTTON_CLICKED, function() self:OnAttachment(i) end, self)
+        self.att_rows[i] = { slot = slot, lbl = lbl, btn = btn }
+    end
+
+    -- right: the tree, the kits, the details
+    xml:InitStatic("wb_tree_bg", self)
+    self.tree_view = xml:InitScrollView("wb_tree", self)
+    self.forms = {}
+    for r = 1, arsenal_workbench.ROWS do
+        local form = xml:InitStatic("wb_form", nil)
+        local f = { st = form, idx = xml:InitTextWnd("wb_form_idx", form), slots = {} }
+        f.idx:SetText(tostring(r))
+        for c = 1, arsenal_workbench.COLS do
+            local s = {}
+            s.back = xml:InitStatic("wb_kit_frame", form)
+            s.kit = xml:InitStatic("wb_kit_icon", form)
+            s.num = xml:InitTextWnd("wb_kit_num", form)
+            s.pic = xml:InitStatic("wb_pic", form)
+            s.mark = xml:InitStatic("wb_mark", form)
+            s.btn = xml:Init3tButton("wb_cell", form)
+            self:Register(s.btn, "wb_cell_" .. r .. "_" .. c)
+            self:AddCallback("wb_cell_" .. r .. "_" .. c, ui_events.BUTTON_CLICKED, function() self:OnCell(r, c) end, self)
+            f.slots[c] = s
+        end
+        form:SetAutoDelete(false)
+        self.forms[r] = f
+    end
+    self.kits_lbl = xml:InitTextWnd("wb_kits_lbl", self)
+    self.kit_cells = {}
+    for i = 1, MAX_KITS do
+        local k = {}
+        k.back = xml:InitStatic("wb_kits_frame", self)
+        k.icon = xml:InitStatic("wb_kits_icon", self)
+        k.num = xml:InitTextWnd("wb_kits_num", self)
+        for _, w in ipairs({ k.back, k.num }) do
+            local p = w:GetWndPos()
+            w:SetWndPos(vector2():set(p.x + (i - 1) * KIT_STEP, p.y))
+        end
+        self.kit_cells[i] = k
+    end
+    xml:InitStatic("wb_rule_info", self)
+    self.info = xml:InitScrollView("wb_info", self)
+
+    self.entries, self.cur = {}, nil
+    self.hover = nil
+end
+
+function WorkbenchPDA:__finalize()
+    if self.flat then
+        FLAT = nil
+    else
+        SINGLETON = nil
+    end
+end
+
+---------------------------------------------------------------------------------------------
+-- the items
+---------------------------------------------------------------------------------------------
+
+-- Every time the page opens: what the player carries may have changed. `want` ({ sec, id })
+-- picks the item to show: a carried one by id, else one of that section, else the model;
+-- without it the item shown last, else the first.
+function WorkbenchPDA:Reset(want)
+    local carried = arsenal_workbench.carried()
+    local ids, secs = {}, {}
+    self.entries = {}
+    for _, it in ipairs(carried) do
+        ids[it.id] = true
+        secs[it.sec] = secs[it.sec] or it
+        self.entries[#self.entries + 1] = { key = "id:" .. it.id, id = it.id, sec = it.sec, obj = it.obj, name = it.name,
+            kind = it.kind }
+    end
+    arsenal_workbench.forget_gone()
+    local models = arsenal_workbench.planned_models()
+    if want and want.sec and not want.id and not secs[want.sec] then
+        local have = false
+        for _, s in ipairs(models) do
+            if s == want.sec then have = true end
+        end
+        if not have and arsenal_workbench.plannable(want.sec) then models[#models + 1] = want.sec end
+    end
+    self.first_model = #self.entries + 1
+    for _, s in ipairs(models) do
+        self.entries[#self.entries + 1] = { key = "sec:" .. s, sec = s, name = name_of(s) }
+    end
+    local key = self.cur and self.cur.key
+    if want then
+        if want.id and ids[want.id] then
+            key = "id:" .. want.id
+        elseif want.sec and secs[want.sec] then
+            key = "id:" .. secs[want.sec].id
+        elseif want.sec then
+            key = "sec:" .. want.sec
+        end
+    end
+    self.cur = nil
+    for _, e in ipairs(self.entries) do
+        if e.key == key then self.cur = e end
+    end
+    self.cur = self.cur or self.entries[1]
+    self:FillList()
+    self:Select(self.cur)
+end
+
+-- the list: what the player carries, then the models planned from the catalog
+function WorkbenchPDA:FillList()
+    local xml = self.xml
+    self.list:RemoveAll()
+    self.rows = {}
+    local sel
+    for i, e in ipairs(self.entries) do
+        if i == 1 and e.id then
+            self.list:AddExistingItem(WorkbenchRow(xml, nil, T("st_arsenal_wb_carried"), "dim"))
+        end
+        if i == self.first_model then
+            self.list:AddExistingItem(WorkbenchRow(xml, nil, T("st_arsenal_wb_models"), "dim"))
+        end
+        local plan = arsenal_workbench.plan_of(e.id, e.sec)
+        local n = count(plan)
+        local row = WorkbenchRow(xml, e.key, e.name, "body", n > 0 and ("+" .. n) or nil)
+        self.list:AddExistingItem(row)
+        self.rows[e.key] = row
+        if e == self.cur then sel = self.list:GetSize() - 1 end
+    end
+    if sel then self.list:SetSelectedIndex(sel) end
+end
+
+function WorkbenchPDA:OnItem()
+    local item = self.list:GetSelectedItem()
+    if not item then return end
+    if not item.key then
+        -- a heading: back to the item shown
+        self:FillList()
+        return
+    end
+    for _, e in ipairs(self.entries) do
+        if e.key == item.key and e ~= self.cur then
+            self:Select(e)
+        end
+    end
+end
+
+-- show an item: its tree, its upgrades, its plan checked against it as it is now
+function WorkbenchPDA:Select(e)
+    self.cur = e
+    self.hover = nil
+    if not e then
+        self.t = nil
+        self:Refresh()
+        return
+    end
+    local W = arsenal_workbench
+    self.t = W.tree(e.sec)
+    self.inst_list = e.obj and W.installed_on(e.obj) or W.installed_in(e.sec)
+    self.installed = W.as_set(self.inst_list)
+    local plan, att = W.plan_of(e.id, e.sec)
+    self.plan = W.valid(self.t, self.installed, plan)
+    self.att = att
+    if count(self.plan) ~= count(plan) then
+        W.set_plan(e.id, e.sec, self.plan, self.att)
+    end
+    -- what is attached now: a carried gun's suppressor and launcher
+    self.att_now = {}
+    if e.obj and e.kind == "gun" then
+        local m = W.mounts(e.sec, self.inst_list)
+        local ok, sil = pcall(e.obj.weapon_is_silencer_attached, e.obj)
+        if ok and sil and m.silencer then self.att_now.silencer = m.silencer.sec end
+        local ok2, gl = pcall(e.obj.weapon_is_grenadelauncher_attached, e.obj)
+        if ok2 and gl and m.launcher then self.att_now.launcher = m.launcher.sec end
+    end
+    self:Refresh()
+end
+
+-- the planned upgrades after the installed ones, as lists in install order
+function WorkbenchPDA:Lists()
+    local plan = {}
+    for _, u in ipairs(self.inst_list) do
+        plan[#plan + 1] = u
+    end
+    for _, x in ipairs(arsenal_workbench.order(self.t, self.plan)) do
+        plan[#plan + 1] = x.cell.section
+    end
+    return self.inst_list, plan
+end
+
+-- the attachments with the plan: a scope (nil: as now, false: none), a suppressor and a
+-- launcher (a section, or nil)
+function WorkbenchPDA:Planned()
+    local a = { scope = self.att.scope }
+    for _, slot in ipairs({ "silencer", "launcher" }) do
+        if self.att[slot] == nil then
+            a[slot] = self.att_now[slot]
+        else
+            a[slot] = self.att[slot] or nil
+        end
+    end
+    return a
+end
+
+---------------------------------------------------------------------------------------------
+-- drawing
+---------------------------------------------------------------------------------------------
+
+function WorkbenchPDA:Refresh()
+    local e = self.cur
+    self.title:SetText(e and e.name or "")
+    self:FillTree()
+    self:FillCard()
+    self:FillKits()
+    self:FillAttachments()
+    self:UpdateButtons()
+    self:ShowInfo(nil)
+end
+
+function WorkbenchPDA:FillTree()
+    self.tree_view:Clear()
+    local t = self.t
+    if not t then return end
+    local W = arsenal_workbench
+    local later = W.later(t, self.installed, self.plan)
+    local tools = {}
+    for _, x in ipairs(W.cells(t)) do
+        if x.cell.tool then tools[x.cell.tool] = true end
+    end
+    local held = W.kits_held(tools)
+    self.later = later
+    for r = 1, W.ROWS do
+        local f = self.forms[r]
+        if t[r] and next(t[r]) then
+            for c = 1, W.COLS do
+                local s, cell = f.slots[c], t[r][c]
+                local shown = cell ~= nil
+                for _, w in ipairs({ s.back, s.kit, s.num, s.pic, s.mark, s.btn }) do
+                    w:Show(shown)
+                end
+                if shown then
+                    local dy = (cell.solo and c % 2 == 1) and SOLO_DY or 0
+                    local x, y = SLOT_X[c], SLOT_Y[c] + dy
+                    s.pic:SetWndPos(vector2():set(x, y))
+                    s.mark:SetWndPos(vector2():set(x, y))
+                    s.btn:SetWndPos(vector2():set(x, y))
+                    s.back:SetWndPos(vector2():set(x + 64, y))
+                    s.num:SetWndPos(vector2():set(x + 108, y + 26))
+                    s.pic:InitTexture(cell.icon or "")
+                    s.pic:SetStretchTexture(true)
+                    local st = W.state(t, r, c, self.installed, self.plan)
+                    if st == "planned" and later[cell.section] then st = "later" end
+                    s.mark:Show(MARKS[st] ~= nil)
+                    if MARKS[st] then s.mark:InitTexture(MARKS[st]) end
+                    s.pic:SetTextureColor(theme.argb("bright", (st == "partner" or st == "parent") and 110 or 255))
+                    if cell.tool and ini_sys:section_exist(cell.tool) then
+                        fit_icon(s.kit, x + 72, y + 4, 46, 36, cell.tool)
+                        local n = held[cell.tool] or 0
+                        s.kit:SetTextureColor(theme.argb("bright", n > 0 and 255 or 90))
+                        s.num:SetText(tostring(n))
+                        s.num:SetTextColor(theme.argb(n > 0 and "good" or "danger"))
+                    else
+                        s.kit:Show(false)
+                        s.num:SetText("")
+                    end
+                end
+            end
+            self.tree_view:AddWindow(f.st, false)
+        end
+    end
+end
+
+-- the card now and as planned: "now >> planned", the planned value green when better, red when
+-- worse (the arrow is a string, st_arsenal_wb_to: a script's own bytes are not the font's code
+-- page)
+function WorkbenchPDA:FillCard()
+    self.card:Clear()
+    local e = self.cur
+    if not (e and self.t) then return end
+    local xml = self.xml
+    local now, plan = self:Lists()
+    local att = self:Planned()
+    local ok, rows = pcall(arsenal_workbench.card, e.sec, now, plan, self.att_now, att)
+    if not ok then
+        printf("[arsenal] Workbench card for %s: %s", tostring(e.sec), tostring(rows))
+        return
+    end
+    -- a gun's card leaves room for its attachments, a suit's takes it
+    local h = arsenal_data.is_armor(e.sec) and CARD_H_ARMOR or CARD_H
+    self.card:SetWndSize(vector2():set(self.card:GetWidth(), h))
+    local box = xml:InitStatic("wb_card_box", nil)
+    local y = 0
+    for _, r in ipairs(rows) do
+        if r.gr and r.gr.icon_p then
+            local icon = xml:InitStatic("wb_card_icon", box)
+            icon:InitTexture(r.gr.icon_p)
+            icon:SetWndPos(vector2():set(0, y + 2))
+        end
+        local name = xml:InitTextWnd("wb_card_name", box)
+        name:SetText(plain(T((r.gr and r.gr.name) or "st_arsenal_wb_weight")))
+        name:SetWndPos(vector2():set(20, y))
+        local cols = {}
+        for _, id in ipairs({ "wb_card_now", "wb_card_to", "wb_card_plan" }) do
+            local c = xml:InitTextWnd(id, box)
+            c:SetWndPos(vector2():set(c:GetWndPos().x, y))
+            cols[#cols + 1] = c
+        end
+        if r.plan_text and r.plan_text ~= r.now_text then
+            cols[1]:SetText(r.now_text or "-")
+            cols[2]:SetText(T("st_arsenal_wb_to"))
+            cols[3]:SetText(r.plan_text)
+            cols[3]:SetTextColor(theme.argb((r.better == true and "good") or (r.better == false and "danger") or "body"))
+        else
+            cols[3]:SetText(r.now_text or "")
+        end
+        y = y + CARD_ROW
+    end
+    -- what the card does not show: a suppressor's effects in play, the condition the values are at
+    local notes = {}
+    if att.silencer then
+        local m = arsenal_workbench.mounts(e.sec, plan).silencer
+        notes[#notes + 1] = T(m and m.own and "st_arsenal_wb_sil_own" or "st_arsenal_wb_sil_upgrade")
+    end
+    if arsenal_data.is_armor(e.sec) then
+        notes[#notes + 1] = T("st_arsenal_wb_full_condition")
+    end
+    for _, n in ipairs(notes) do
+        local l = xml:InitTextWnd("wb_line", box)
+        l:SetWndPos(vector2():set(0, y + 4))
+        l:SetText(n)
+        l:SetTextColor(theme.argb("dim"))
+        l:AdjustHeightToText()
+        y = y + 4 + l:GetHeight()
+    end
+    box:SetWndSize(vector2():set(box:GetWidth(), y))
+    self.card:AddWindow(box, true)
+end
+
+function WorkbenchPDA:FillKits()
+    local kits = self.t and arsenal_workbench.kits(self.t, self.plan) or {}
+    local secs = {}
+    for _, k in ipairs(kits) do
+        secs[k.sec] = true
+    end
+    local held = arsenal_workbench.kits_held(secs)
+    self.kits_lbl:SetText(#kits > 0 and T("st_arsenal_wb_kits") or "")
+    -- more kinds than frames: the last frame counts the rest
+    local more = #kits > MAX_KITS and (#kits - MAX_KITS + 1) or 0
+    for i, cell in ipairs(self.kit_cells) do
+        local k = kits[i]
+        cell.back:Show(k ~= nil)
+        cell.num:Show(k ~= nil)
+        cell.icon:Show(false)
+        if k and more > 0 and i == MAX_KITS then
+            cell.num:SetText(T("st_arsenal_wb_more", more))
+            cell.num:SetTextColor(theme.argb("dim"))
+        elseif k then
+            local p = cell.back:GetWndPos()
+            fit_icon(cell.icon, p.x + 2, p.y + 2, cell.back:GetWidth() - 4, cell.back:GetHeight() - 18, k.sec)
+            local have = held[k.sec] or 0
+            cell.num:SetText(T("st_arsenal_wb_kit_count", k.n, have))
+            cell.num:SetTextColor(theme.argb(have >= k.n and "good" or "danger"))
+        end
+    end
+    self.kits = kits
+end
+
+-- a gun's three attachment rows, each a button that steps through what fits; none for a suit
+function WorkbenchPDA:FillAttachments()
+    local e = self.cur
+    local gun = e and e.kind ~= "suit" and e.kind ~= "helmet" and self.t and not arsenal_data.is_armor(e.sec)
+    local _, plan = self:Lists()
+    local fits = gun and arsenal_workbench.fits(e.sec, plan) or {}
+    self.fits = fits
+    local att = gun and self:Planned() or {}
+    for _, row in ipairs(self.att_rows) do
+        local slot = row.slot
+        local choice
+        local any = false
+        if slot == "scope" then
+            any = fits.scopes and #fits.scopes > 0
+            local s = att.scope
+            if s == nil then s = arsenal_workbench.scope_of(e and e.sec or "") end
+            choice = s and short(name_of(s)) or T("st_arsenal_wb_att_none")
+        else
+            any = fits[slot] ~= nil
+            choice = att[slot] and short(name_of(att[slot])) or T("st_arsenal_wb_att_none")
+        end
+        row.lbl:Show(gun and any or false)
+        row.btn:Show(gun and any or false)
+        row.btn:TextControl():SetText(choice)
+    end
+end
+
+function WorkbenchPDA:UpdateButtons()
+    local e = self.cur
+    local why = "nothing"
+    if e then why = arsenal_workbench.cannot_install(e.id, e.sec, self.plan) end
+    self.install_why = why
+    self.btn_install:Enable(why == nil)
+    self.btn_clear:Enable(e ~= nil and (next(self.plan or {}) ~= nil or next(self.att or {}) ~= nil))
+end
+
+-- The details: the upgrade or attachment under the cursor (`what`: { cell = r, c } or
+-- { att = i }), else what the plan comes to and what Install will do.
+function WorkbenchPDA:ShowInfo(what)
+    self.info:Clear()
+    local xml = self.xml
+    local box = xml:InitStatic("wb_info_box", nil)
+    local y = 0
+    local function line(s, role, id)
+        if not s or s == "" then return end
+        local l = xml:InitTextWnd(id or "wb_info_line", box)
+        l:SetWndPos(vector2():set(0, y))
+        l:SetText(s)
+        if role then l:SetTextColor(theme.argb(role)) end
+        l:AdjustHeightToText()
+        y = y + l:GetHeight() + 2
+    end
+    local e = self.cur
+    if not e then
+        line(T("st_arsenal_wb_empty"), "body")
+    elseif what and what.cell then
+        self:CellInfo(what.cell[1], what.cell[2], line)
+    elseif what and what.att then
+        self:AttachmentInfo(what.att, line)
+    else
+        local n = count(self.plan)
+        if n == 0 then
+            line(T("st_arsenal_wb_nothing"), "body")
+        else
+            line(T("st_arsenal_wb_planned_n", n), "body")
+            local l = count(self.later or {})
+            if l > 0 then line(T("st_arsenal_wb_later_n", l), "warn") end
+        end
+        local why = self.install_why
+        if why == "not_carried" then
+            line(T("st_arsenal_wb_not_carried"), "dim")
+        elseif why == "no_toolkit" then
+            line(T("st_arsenal_wb_no_toolkit"), "dim")
+        elseif why == nil then
+            line(T("st_arsenal_wb_install_hint"), "dim")
+        end
+        local last = arsenal_workbench.last_install
+        if last and last.sec == e.sec and last.left and #last.left > 0 then
+            local names = {}
+            for _, u in ipairs(last.left) do
+                names[#names + 1] = T(ini_sys:r_string_ex(u, "name") or u)
+            end
+            line(T("st_arsenal_wb_left", table.concat(names, ", ")), "warn")
+        end
+    end
+    box:SetWndSize(vector2():set(box:GetWidth(), y))
+    self.info:AddWindow(box, true)
+end
+
+-- an upgrade's name, where it stands, the kit it takes, what it does (GAMMA's own lines for it,
+-- as the toolkit's tooltip shows them)
+function WorkbenchPDA:CellInfo(r, c, line)
+    local t = self.t
+    local cell = t[r] and t[r][c]
+    if not cell then return end
+    local W = arsenal_workbench
+    line(T(cell.name or cell.section), "heading", "wb_info_name")
+    local st = W.state(t, r, c, self.installed, self.plan)
+    if st == "planned" and self.later and self.later[cell.section] then
+        line(T("st_arsenal_wb_state_later"), "warn")
+    elseif st == "partner" then
+        local p = W.partner(t, r, c)
+        line(T("st_arsenal_wb_state_partner", T(p.name or p.section)), "dim")
+    elseif st == "parent" then
+        local names = {}
+        for _, pc in ipairs(W.parents(t, r, c)) do
+            names[#names + 1] = T(t[r][pc].name or t[r][pc].section)
+        end
+        line(#names > 0 and T("st_arsenal_wb_state_parent", table.concat(names, T("st_arsenal_wb_or")))
+            or T("st_arsenal_wb_state_group"), "dim")
+    else
+        line(T("st_arsenal_wb_state_" .. st), st == "installed" and "good" or (st == "planned" and "heading" or "dim"))
+    end
+    if cell.tool and ini_sys:section_exist(cell.tool) then
+        local held = W.kits_held({ [cell.tool] = true })[cell.tool] or 0
+        line(T("st_arsenal_wb_kit", name_of(cell.tool), held), held > 0 and "body" or "danger")
+    end
+    line(cell.desc and T(cell.desc) or nil, "dim")
+    for _, prop in ipairs(cell.prop or {}) do
+        local f = ini_sys:r_string_ex(prop, "functor")
+        local mod, fn = (f or ""):match("^([%w_]+)%.([%w_]+)$")
+        if mod and _G[mod] and _G[mod][fn] then
+            local ok, s = pcall(_G[mod][fn], cell.stats, prop)
+            if ok and type(s) == "string" and s ~= "" then line(s, "body") end
+        end
+    end
+end
+
+function WorkbenchPDA:AttachmentInfo(i, line)
+    local row = self.att_rows[i]
+    local att = self:Planned()
+    local sec = att[row.slot]
+    if row.slot == "scope" and sec == nil then sec = arsenal_workbench.scope_of(self.cur.sec) end
+    line(sec and name_of(sec) or T("st_arsenal_wb_att_none"), "heading", "wb_info_name")
+    line(T("st_arsenal_wb_att_how"), "dim")
+    if sec then
+        line(string.format("%s %s", arsenal_data.kg(arsenal_workbench.weight_of(sec)), T("st_kg")), "body")
+    end
+    if row.slot == "silencer" and sec then
+        local m = self.fits and self.fits.silencer
+        line(T(m and m.own and "st_arsenal_wb_sil_own" or "st_arsenal_wb_sil_upgrade"), "body")
+    end
+end
+
+-- the details follow the cursor over the tree and the attachment buttons
+function WorkbenchPDA:Update()
+    CUIScriptWnd.Update(self)
+    local over
+    if self.t then
+        for r, f in ipairs(self.forms) do
+            for c, s in ipairs(f.slots) do
+                if not over and self.t[r] and self.t[r][c] and s.btn:IsCursorOverWindow() then
+                    over = { cell = { r, c }, key = r .. "_" .. c }
+                end
+            end
+        end
+        for i, row in ipairs(self.att_rows) do
+            if not over and row.btn:IsShown() and row.btn:IsCursorOverWindow() then
+                over = { att = i, key = "att" .. i }
+            end
+        end
+    end
+    local key = over and over.key
+    if key ~= self.hover then
+        self.hover = key
+        self:ShowInfo(over)
+    end
+end
+
+---------------------------------------------------------------------------------------------
+-- what the player does
+---------------------------------------------------------------------------------------------
+
+function WorkbenchPDA:Save()
+    local e = self.cur
+    arsenal_workbench.set_plan(e.id, e.sec, self.plan, self.att)
+    local row = self.rows and self.rows[e.key]
+    if row then
+        local n = count(self.plan)
+        if not row.count then row.count = self.xml:InitTextWnd("wb_row_count", row) end
+        row.count:SetText(n > 0 and ("+" .. n) or "")
+    end
+end
+
+function WorkbenchPDA:OnCell(r, c)
+    if not (self.cur and self.t) then return end
+    local plan, why = arsenal_workbench.toggle(self.t, r, c, self.installed, self.plan)
+    if not plan then
+        self.hover = nil
+        self:ShowInfo({ cell = { r, c } })
+        return
+    end
+    self.plan = plan
+    self:Save()
+    self:Refresh()
+    self.hover = r .. "_" .. c
+    self:ShowInfo({ cell = { r, c } })
+end
+
+-- a step to the next choice: a scope through what fits, then none, then as it is; a suppressor
+-- or launcher on and off
+function WorkbenchPDA:OnAttachment(i)
+    local e = self.cur
+    if not e then return end
+    local slot = self.att_rows[i].slot
+    local fits = self.fits or {}
+    if slot == "scope" then
+        -- first as it is, then each other scope that fits, then none if it has one now
+        local now = arsenal_workbench.scope_of(e.sec)
+        local list, n = {}, 1
+        for _, s in ipairs(fits.scopes or {}) do
+            if s ~= now then
+                n = n + 1
+                list[n] = s
+            end
+        end
+        if now then
+            n = n + 1
+            list[n] = false
+        end
+        local cur = 1
+        for k = 1, n do
+            if list[k] == self.att.scope then cur = k end
+        end
+        self.att.scope = list[cur % n + 1]
+    else
+        local mount = fits[slot]
+        if not mount then return end
+        local on = self:Planned()[slot] ~= nil
+        local want = not on and mount.sec or false
+        if (want or nil) == self.att_now[slot] then want = nil end
+        self.att[slot] = want
+    end
+    self:Save()
+    self:Refresh()
+    self.hover = "att" .. i
+    self:ShowInfo({ att = i })
+end
+
+function WorkbenchPDA:OnClear()
+    if not self.cur then return end
+    self.plan, self.att = {}, {}
+    self:Save()
+    self:Refresh()
+end
+
+function WorkbenchPDA:OnInstall()
+    local e = self.cur
+    if not e or arsenal_workbench.cannot_install(e.id, e.sec, self.plan) then
+        self:UpdateButtons()
+        self:ShowInfo(nil)
+        return
+    end
+    if self.flat then self:Close() end
+    arsenal_workbench.install(e.id, e.sec, self.plan)
+end
+
+function WorkbenchPDA:OnCatalog()
+    arsenal_pages.open("catalog")
+end
+
+function WorkbenchPDA:OnBack()
+    if self.flat then
+        self:Close()
+        return
+    end
+    local pda = ActorMenu.get_pda_menu()
+    if pda then
+        pda:SetActiveSubdialog("eptLauncher")
+    end
+end
+
+function WorkbenchPDA:Close()
+    if self:IsShown() then
+        self:HideDialog()
+    end
+end
+
+-- flat: Escape or the MCM key closes the window; the PDA handles its own keys
+function WorkbenchPDA:OnKeyboard(dik, action)
+    local res = CUIScriptWnd.OnKeyboard(self, dik, action)
+    if self.flat and not res and action == ui_events.WINDOW_KEY_PRESSED then
+        if dik == DIK_keys.DIK_ESCAPE or dik == arsenal_mcm.flat_key() then
+            self:Close()
+            return true
+        end
+    end
+    return res
+end
+
+---------------------------------------------------------------------------------------------
+-- the way in
+---------------------------------------------------------------------------------------------
+
+-- the page, for the PDA's section (arsenal_pages); shows what open_on asked for, if anything
+function get_ui()
+    SINGLETON = SINGLETON or WorkbenchPDA()
+    local want = pending
+    pending = nil
+    SINGLETON:Reset(want)
+    return SINGLETON
+end
+
+-- show this item next time the page opens (a model from the catalog: its section)
+function show_next(sec, id)
+    pending = { sec = sec, id = id }
+end
+
+-- the page in a window of its own, when the player is up and about; returns the window
+function open_flat()
+    if not (db.actor and db.actor:alive()) then return nil end
+    FLAT = FLAT or WorkbenchPDA(true)
+    local want = pending
+    pending = nil
+    if not FLAT:IsShown() then
+        FLAT:Reset(want)
+        FLAT:ShowDialog(true)
+    elseif want then
+        FLAT:Reset(want)
+    end
+    return FLAT
+end
+
+-- the flat window, if open
+function flat_window()
+    return FLAT and FLAT:IsShown() and FLAT or nil
+end

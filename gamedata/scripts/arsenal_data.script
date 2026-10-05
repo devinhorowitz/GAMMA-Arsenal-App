@@ -224,8 +224,36 @@ end
 
 -- A gun's values as the stat card reads them for a section: its own plus the upgrades it
 -- ships with, which utils_item.get_param adds (a pre-upgraded variant's card shows them).
+-- The base dispersion and PDM the card reads from the engine instead, which keeps them as
+-- float32 and adds an upgrade's change in float32, the dispersion in radians
+-- (ShootingObject.cpp, WeaponUpgrade.cpp): summed as decimals, accuracy lands a point high on
+-- about a quarter of the guns.
 PARAMS = { "fire_dispersion_base", "PDM_disp_base", "control_inertion_factor", "rpm",
     "ammo_mag_size", "bullet_speed", "condition_shot_dec", "zoom_cam_dispersion" }
+
+-- the engine's deg2rad on a float: val * PI / 180, left to right (vector.h)
+local function deg2rad32(v)
+    return f32(f32(f32(v) * f32(math.pi)) / 180)
+end
+
+-- the change sections of the upgrades a section ships with, in their order
+local function shipped(sec)
+    local out = {}
+    for u in each_of(sec, "installed_upgrades") do
+        local ps = ini_sys:section_exist(u) and ini_sys:r_string_ex(u, "section")
+        if ps and ini_sys:section_exist(ps) then out[#out + 1] = ps end
+    end
+    return out
+end
+
+local function add_engine(p, ps)
+    local d = ini_sys:r_float_ex(ps, "fire_dispersion_base")
+    if d then p.rad = f32(p.rad + deg2rad32(d)) end
+    d = ini_sys:r_float_ex(ps, "PDM_disp_base")
+    if d then p.PDM_disp_base = f32(p.PDM_disp_base + f32(d)) end
+    -- what the card reads: utils_item's factor times the engine's radians
+    p.fire_dispersion_base = (180.0 / math.pi) * p.rad
+end
 
 function params(sec)
     local p = { sec = sec }
@@ -233,15 +261,69 @@ function params(sec)
         local ok, v = pcall(utils_item.get_param, sec, nil, k, "float", true)
         p[k] = (ok and tonumber(v)) or ini_sys:r_float_ex(sec, k) or 0
     end
+    p.rad = deg2rad32(ini_sys:r_float_ex(sec, "fire_dispersion_base") or 0)
+    p.PDM_disp_base = f32(ini_sys:r_float_ex(sec, "PDM_disp_base") or 0)
+    p.fire_dispersion_base = (180.0 / math.pi) * p.rad
+    for _, ps in ipairs(shipped(sec)) do
+        add_engine(p, ps)
+    end
+    return p
+end
+
+-- An upgrade's changes added to a gun's values (`p` from params, changed in place), as the game
+-- adds them: the engine's two in float32, the card's sums as decimals (no upgrade here changes
+-- control_inertion_factor); a caliber conversion's rounds replace the gun's, and the card's
+-- speed is then the new first round's.
+function add_change(p, ps)
+    for _, k in ipairs(PARAMS) do
+        if k ~= "fire_dispersion_base" and k ~= "PDM_disp_base" then
+            local d = ini_sys:r_float_ex(ps, k)
+            if d then p[k] = p[k] + d end
+        end
+    end
+    add_engine(p, ps)
+    local ammo = (ini_sys:r_string_ex(ps, "ammo_class") or ""):match("^%s*([^,%s]+)")
+    if ammo then p.ammo = ammo end
+    if p.inv_weight then
+        p.inv_weight = f32(p.inv_weight + f32(ini_sys:r_float_ex(ps, "inv_weight") or 0))
+    end
+end
+
+-- control_inertion_factor as utils_item reads it: a value written "1.0f" loses its "f"
+local function inertion(sec)
+    local s = ini_sys:r_string_ex(sec, "control_inertion_factor")
+    if not s then return nil end
+    if s:find("f") then return tonumber(s:sub(1, -2)) end
+    return tonumber(s)
+end
+
+-- A gun's values with exactly these upgrades (element sections, in install order) on its own:
+-- a carried gun's, whose upgrades the engine lists, the ones it shipped with among them. Its
+-- first round to start with is its own, and `inv_weight` its weight, which upgrades add to in
+-- float32.
+function params_with(sec, elements)
+    local p = { sec = sec }
+    for _, k in ipairs(PARAMS) do
+        p[k] = (k == "control_inertion_factor" and inertion(sec)) or ini_sys:r_float_ex(sec, k) or 0
+    end
+    p.rad = deg2rad32(p.fire_dispersion_base)
+    p.PDM_disp_base = f32(p.PDM_disp_base)
+    p.fire_dispersion_base = (180.0 / math.pi) * p.rad
+    p.ammo = (ini_sys:r_string_ex(sec, "ammo_class") or ""):match("^%s*([^,%s]+)")
+    p.inv_weight = f32(ini_sys:r_float_ex(sec, "inv_weight") or 0)
+    for _, u in ipairs(elements) do
+        local ps = ini_sys:section_exist(u) and ini_sys:r_string_ex(u, "section")
+        if ps and ini_sys:section_exist(ps) then add_change(p, ps) end
+    end
     return p
 end
 
 -- Momopate's bullet speed (as a fraction of 1000 m/s) and recoil control (nil without a recoil
 -- profile) from a gun's values; momopate_weaponstats.script. The speed is the gun's first
--- round's, or `ammo`'s.
+-- round's (after a caliber conversion, the new first round's), or `ammo`'s.
 local function bspeed(p, ammo)
     local bs = p.bullet_speed
-    ammo = ammo or first_ammo(p.sec)
+    ammo = ammo or p.ammo or first_ammo(p.sec)
     if ammo then
         local k = ini_sys:r_float_ex(ammo, "k_bullet_speed") or 1
         bs = (bs ~= 0) and (k * bs) or k
@@ -268,10 +350,11 @@ local function recoil(p)
         if v > 0 then e[#e + 1] = v end
     end
     local zcd = p.zoom_cam_dispersion
-    if #s == 0 or zcd <= 0 then return nil end
+    if #s == 0 or zcd == 0 then return nil end
     local mean = 0
     for _, v in ipairs(s) do mean = mean + v end
     mean = mean / #s
+    -- upgrades that take the zoom dispersion below zero leave the card at its floor, 1
     local r = (1 / zcd) * (1 / (3 * mean + (e[2] or 1))) * 100
     return math.max(1, r)
 end
@@ -306,16 +389,16 @@ function kept_at(ammo, d)
 end
 
 -- A stat as the inventory's stat card shows it (utils_ui and ish_item_stats), from a gun's
--- values: the same formula in the same order, rounded the same way, so a tag or a maximum
--- reads like the card. Keyed by the card's row names. The percentages stop at 100: stacked
--- upgrades can take a dispersion past zero in the configs, which no gun reaches in play.
+-- values: the same formula in the same order, rounded the same way, so a tag, a maximum or a
+-- planned upgrade reads like the card. Keyed by the card's row names. Nothing caps them: a
+-- dispersion an upgrade takes past zero shows past 100 on the card too.
 CARD = {
     accuracy = function(p)
-        return math.min(100, math.floor(above0((p.fire_dispersion_base - 1.5) / (0 - 1.5)) * 100))
+        return math.floor(above0((p.fire_dispersion_base - 1.5) / (0 - 1.5)) * 100)
     end,
     handling = function(p)
-        return math.min(100, math.floor((above0((p.PDM_disp_base - 2.1) / (0 - 2.1))
-            + above0((p.control_inertion_factor - 3) / (1 - 3))) / 2 * 100))
+        return math.floor((above0((p.PDM_disp_base - 2.1) / (0 - 2.1))
+            + above0((p.control_inertion_factor - 3) / (1 - 3))) / 2 * 100)
     end,
     fire_rate = function(p)
         return math.ceil(above0((p.rpm - 0) / (1000 - 0)) * 1000)
@@ -327,7 +410,7 @@ CARD = {
         return math.ceil(bspeed(p) * 1000)
     end,
     reliability = function(p)
-        return math.min(100, math.ceil((1.0 - p.condition_shot_dec - 0.99) * 10000))
+        return math.ceil((1.0 - p.condition_shot_dec - 0.99) * 10000)
     end,
     recoil = function(p)
         local r = recoil(p)
@@ -426,10 +509,7 @@ function max_stat(sec, stat)
             for k, v in pairs(p) do
                 q[k] = v
             end
-            for _, k in ipairs(PARAMS) do
-                local d = ini_sys:r_float_ex(ps, k)
-                if d then q[k] = q[k] + d end
-            end
+            add_change(q, ps)
             local v = f(q)
             if v and v > cur then
                 cur, pick = v, q
@@ -897,6 +977,15 @@ end
 
 function standin_recoil(obj, sec)
     return recoil(params(sec))
+end
+
+-- Accuracy and handling (ish_item_stats.scale_100 over utils_ui's prop_accuracry and
+-- prop_handling): for a live gun the card reads the engine's float32 values, which a section
+-- read with utils_item.get_param does not give; so from params, through the card's formulas
+function standin_scale_100(obj, sec, file, func, ...)
+    if func == "prop_accuracry" then return CARD.accuracy(params(sec)) end
+    if func == "prop_handling" then return CARD.handling(params(sec)) end
+    return ish_item_stats.scale_100(obj, sec, file, func, ...)
 end
 
 ---------------------------------------------------------------------------------------------
@@ -2311,13 +2400,28 @@ local function add_upgrade(p, ps)
         if d then p[k] = f32(p[k] + f32(d)) end
     end
     p.artefact_count = p.artefact_count + (ini_sys:r_float_ex(ps, "artefact_count") or 0)
-    p.additional_inventory_weight = p.additional_inventory_weight + (ini_sys:r_float_ex(ps, "additional_inventory_weight") or 0)
+    p.additional_inventory_weight = f32(p.additional_inventory_weight
+        + f32(ini_sys:r_float_ex(ps, "additional_inventory_weight") or 0))
+    if p.inv_weight then
+        p.inv_weight = f32(p.inv_weight + f32(ini_sys:r_float_ex(ps, "inv_weight") or 0))
+    end
 end
 
 -- A suit's or helmet's values as the engine keeps them: its own, plus the upgrades it ships
 -- with (installed_upgrades). `armor` is the bone armor the card shows for bullets: the spine's,
 -- a helmet's head.
 function armor_params(sec)
+    local list = {}
+    for u in each_of(sec, "installed_upgrades") do
+        list[#list + 1] = u
+    end
+    return armor_params_with(sec, list)
+end
+
+-- The same with exactly these upgrades (element sections, in install order) on the item's own
+-- values: a carried suit's, whose upgrades the engine lists, the shipped ones among them.
+-- `inv_weight` is the item's weight, which upgrades add to in float32 too.
+function armor_params_with(sec, elements)
     local p = { sec = sec, bone = is_helmet(sec) and "bip01_head" or "bip01_spine" }
     p.armor = f32(bone_armor(ini_sys:r_string_ex(sec, "bones_koeff_protection"), p.bone))
     for _, k in ipairs(PROTECTIONS) do
@@ -2325,8 +2429,9 @@ function armor_params(sec)
     end
     p.light_burn = p.burn_protection
     p.artefact_count = ini_sys:r_float_ex(sec, "artefact_count") or 0
-    p.additional_inventory_weight = ini_sys:r_float_ex(sec, "additional_inventory_weight") or 0
-    for u in each_of(sec, "installed_upgrades") do
+    p.additional_inventory_weight = f32(ini_sys:r_float_ex(sec, "additional_inventory_weight") or 0)
+    p.inv_weight = f32(ini_sys:r_float_ex(sec, "inv_weight") or 0)
+    for _, u in ipairs(elements) do
         local ps = ini_sys:section_exist(u) and ini_sys:r_string_ex(u, "section")
         if ps and ini_sys:section_exist(ps) then add_upgrade(p, ps) end
     end
@@ -2424,6 +2529,17 @@ end
 -- Outfits Affect Movespeed's get_outfit_speed: the item's line in outfit_speed.ltx [speed], 1
 -- for one it does not list
 local speeds
+-- Carry weight: a live suit's is the engine's float32 with its upgrades in, which a section read
+-- (utils_item.get_outfit_property) misses both of; the card shows it to a tenth, so 5.3 kg reads
+-- 5.4
+function standin_outfit_property(obj, sec, name, def)
+    if name == "additional_inventory_weight" then
+        local v = armor_params(sec).additional_inventory_weight
+        return v ~= 0 and v or def
+    end
+    return utils_item.get_outfit_property(obj, sec, name, def)
+end
+
 function standin_outfit_speed(obj, sec)
     if not speeds then
         speeds = {}
@@ -2470,7 +2586,11 @@ local ARMOR_VALUE = {
     end,
     radiation_protection = function(p, gr) return gr and math.ceil(p.radiation_protection * gr.magnitude) end,
     artefact_count = function(p) return math.ceil(p.artefact_count) end,
-    additional_inventory_weight = function(p) return math.ceil(p.additional_inventory_weight) end,
+    -- carry weight to a tenth of a kilo, as the card rounds it (utils_ui: x10, up, /10)
+    additional_inventory_weight = function(p)
+        local v = p.additional_inventory_weight * 10
+        return (v >= 0 and math.ceil(v) or math.floor(v)) / 10
+    end,
 }
 
 -- the card's row definition for an armor stat
@@ -2478,6 +2598,13 @@ local function armor_row(stat)
     utils_ui.prepare_stats_table()
     local t = utils_ui.stats_table and utils_ui.stats_table.outfit
     return t and t[stat]
+end
+
+-- the card's value of an armor row from a suit's values (armor_params), or nil for a row these
+-- formulas do not cover
+function armor_value(stat, p)
+    local f = ARMOR_VALUE[stat]
+    return f and f(p, armor_row(stat))
 end
 
 -- An upgrade tree's best path for one value: per group, the upgrade whose own change plus the
@@ -2564,6 +2691,7 @@ local function plain(s)
 end
 
 local ARMOR_STANDIN = {
+    get_outfit_property = "standin_outfit_property",
     get_outfit_value = "standin_outfit_value",
     get_outfit_protection = "standin_outfit_protection",
     get_outfit_ap_res = "standin_ap_res",
@@ -2571,6 +2699,7 @@ local ARMOR_STANDIN = {
 }
 
 local STANDIN = {
+    scale_100 = "standin_scale_100",
     get_weapon_bspeed = "standin_bspeed",
     get_weapon_range = "standin_range",
     get_weapon_drag = "standin_drag",

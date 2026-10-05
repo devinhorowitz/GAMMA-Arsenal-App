@@ -555,4 +555,112 @@
 	<string id="st_arsenal_stash_odds_note">
 		<text>The chance one stash there holds it.</text>
 	</string>
+	<string id="st_arsenal_workbench">
+		<text>Workbench</text>
+	</string>
+	<string id="st_arsenal_wb_clear">
+		<text>Clear</text>
+	</string>
+	<string id="st_arsenal_wb_install">
+		<text>Install</text>
+	</string>
+	<string id="st_arsenal_wb_customize">
+		<text>Customize</text>
+	</string>
+	<string id="st_arsenal_wb_carried">
+		<text>Carried</text>
+	</string>
+	<string id="st_arsenal_wb_models">
+		<text>From the catalog</text>
+	</string>
+	<string id="st_arsenal_wb_empty">
+		<text>Nothing you carry takes upgrades. Pick a gun, suit or helmet in the catalog and press Customize to plan one.</text>
+	</string>
+	<string id="st_arsenal_wb_nothing">
+		<text>Click upgrades on the tree to plan them; the card shows what they do.</text>
+	</string>
+	<string id="st_arsenal_wb_planned_n">
+		<text>Upgrades planned: %s.</text>
+	</string>
+	<string id="st_arsenal_wb_later_n">
+		<text>%s of them go in on a second visit: the toolkit installs row by row, and they need an upgrade from a later row first.</text>
+	</string>
+	<string id="st_arsenal_wb_not_carried">
+		<text>Planning only: you don't carry one.</text>
+	</string>
+	<string id="st_arsenal_wb_no_toolkit">
+		<text>Install needs a toolkit (basic, advanced or expert) with you or in a stash nearby.</text>
+	</string>
+	<string id="st_arsenal_wb_install_hint">
+		<text>Install opens your toolkit on it with the plan checked. Upgrade there puts the upgrades in and uses the kits.</text>
+	</string>
+	<string id="st_arsenal_wb_left">
+		<text>Left unchecked last time: %s.</text>
+	</string>
+	<string id="st_arsenal_wb_state_installed">
+		<text>Installed.</text>
+	</string>
+	<string id="st_arsenal_wb_state_planned">
+		<text>Planned. Click to take it out.</text>
+	</string>
+	<string id="st_arsenal_wb_state_open">
+		<text>Click to plan it.</text>
+	</string>
+	<string id="st_arsenal_wb_state_later">
+		<text>Planned, for a second visit: it needs an upgrade from a later row installed first.</text>
+	</string>
+	<string id="st_arsenal_wb_state_partner">
+		<text>Not with %s.</text>
+	</string>
+	<string id="st_arsenal_wb_state_parent">
+		<text>Needs %s first. Click to plan both.</text>
+	</string>
+	<string id="st_arsenal_wb_state_group">
+		<text>Needs an upgrade from another row first. Click to plan it with one.</text>
+	</string>
+	<string id="st_arsenal_wb_or">
+		<text> or </text>
+	</string>
+	<string id="st_arsenal_wb_kit">
+		<text>Kit: %s. You have %s.</text>
+	</string>
+	<string id="st_arsenal_wb_kits">
+		<text>Kits:</text>
+	</string>
+	<string id="st_arsenal_wb_kit_count">
+		<text>%s/%s</text>
+	</string>
+	<string id="st_arsenal_wb_scope">
+		<text>Scope</text>
+	</string>
+	<string id="st_arsenal_wb_silencer">
+		<text>Suppressor</text>
+	</string>
+	<string id="st_arsenal_wb_launcher">
+		<text>Launcher</text>
+	</string>
+	<string id="st_arsenal_wb_att_none">
+		<text>None</text>
+	</string>
+	<string id="st_arsenal_wb_att_how">
+		<text>Attached in the inventory; click to plan another.</text>
+	</string>
+	<string id="st_arsenal_wb_weight">
+		<text>Weight</text>
+	</string>
+	<string id="st_arsenal_wb_sil_own">
+		<text>Suppressed, in play: 3% more velocity, 10% less spread, 18% less recoil kick, 25% more wear, 7% more damage and penetration.</text>
+	</string>
+	<string id="st_arsenal_wb_sil_upgrade">
+		<text>Suppressed, in play: 7% more damage and penetration. On a mount an upgrade adds, the engine's other suppressor effects don't apply.</text>
+	</string>
+	<string id="st_arsenal_wb_full_condition">
+		<text>Values at full condition.</text>
+	</string>
+	<string id="st_arsenal_wb_to">
+		<text>»</text>
+	</string>
+	<string id="st_arsenal_wb_more">
+		<text>+%s</text>
+	</string>
 </string_table>

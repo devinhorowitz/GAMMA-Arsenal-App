@@ -555,4 +555,112 @@
 	<string id="st_arsenal_stash_odds_note">
 		<text>Шанс найти его в одном тайнике там.</text>
 	</string>
+	<string id="st_arsenal_workbench">
+		<text>Верстак</text>
+	</string>
+	<string id="st_arsenal_wb_clear">
+		<text>Сбросить</text>
+	</string>
+	<string id="st_arsenal_wb_install">
+		<text>Установить</text>
+	</string>
+	<string id="st_arsenal_wb_customize">
+		<text>Настроить</text>
+	</string>
+	<string id="st_arsenal_wb_carried">
+		<text>С собой</text>
+	</string>
+	<string id="st_arsenal_wb_models">
+		<text>Из каталога</text>
+	</string>
+	<string id="st_arsenal_wb_empty">
+		<text>Ничего из того, что при вас, не улучшается. Выберите оружие, костюм или шлем в каталоге и нажмите «Настроить».</text>
+	</string>
+	<string id="st_arsenal_wb_nothing">
+		<text>Нажимайте улучшения на дереве, чтобы запланировать их; карточка покажет, что они дают.</text>
+	</string>
+	<string id="st_arsenal_wb_planned_n">
+		<text>Запланировано улучшений: %s.</text>
+	</string>
+	<string id="st_arsenal_wb_later_n">
+		<text>Из них %s ставятся во второй заход: набор ставит улучшения по рядам, а им сначала нужно улучшение из следующего ряда.</text>
+	</string>
+	<string id="st_arsenal_wb_not_carried">
+		<text>Только план: такого у вас нет.</text>
+	</string>
+	<string id="st_arsenal_wb_no_toolkit">
+		<text>Для установки нужен набор инструментов (базовый, продвинутый или экспертный) при себе или в тайнике рядом.</text>
+	</string>
+	<string id="st_arsenal_wb_install_hint">
+		<text>«Установить» откроет ваш набор инструментов с отмеченным планом. Улучшение там ставит их и тратит наборы.</text>
+	</string>
+	<string id="st_arsenal_wb_left">
+		<text>В прошлый раз не отмечены: %s.</text>
+	</string>
+	<string id="st_arsenal_wb_state_installed">
+		<text>Установлено.</text>
+	</string>
+	<string id="st_arsenal_wb_state_planned">
+		<text>Запланировано. Нажмите, чтобы убрать.</text>
+	</string>
+	<string id="st_arsenal_wb_state_open">
+		<text>Нажмите, чтобы запланировать.</text>
+	</string>
+	<string id="st_arsenal_wb_state_later">
+		<text>Запланировано на второй заход: сначала нужно установить улучшение из следующего ряда.</text>
+	</string>
+	<string id="st_arsenal_wb_state_partner">
+		<text>Нельзя вместе с: %s.</text>
+	</string>
+	<string id="st_arsenal_wb_state_parent">
+		<text>Сначала нужно: %s. Нажмите, чтобы запланировать оба.</text>
+	</string>
+	<string id="st_arsenal_wb_state_group">
+		<text>Сначала нужно улучшение из другого ряда. Нажмите, чтобы запланировать их вместе.</text>
+	</string>
+	<string id="st_arsenal_wb_or">
+		<text> или </text>
+	</string>
+	<string id="st_arsenal_wb_kit">
+		<text>Набор: %s. У вас: %s.</text>
+	</string>
+	<string id="st_arsenal_wb_kits">
+		<text>Наборы:</text>
+	</string>
+	<string id="st_arsenal_wb_kit_count">
+		<text>%s/%s</text>
+	</string>
+	<string id="st_arsenal_wb_scope">
+		<text>Прицел</text>
+	</string>
+	<string id="st_arsenal_wb_silencer">
+		<text>Глушитель</text>
+	</string>
+	<string id="st_arsenal_wb_launcher">
+		<text>Гранатомёт</text>
+	</string>
+	<string id="st_arsenal_wb_att_none">
+		<text>Нет</text>
+	</string>
+	<string id="st_arsenal_wb_att_how">
+		<text>Ставится в инвентаре; нажмите, чтобы выбрать другой.</text>
+	</string>
+	<string id="st_arsenal_wb_weight">
+		<text>Вес</text>
+	</string>
+	<string id="st_arsenal_wb_sil_own">
+		<text>С глушителем в бою: скорость пули +3%, разброс -10%, отдача -18%, износ +25%, урон и пробитие +7%.</text>
+	</string>
+	<string id="st_arsenal_wb_sil_upgrade">
+		<text>С глушителем в бою: урон и пробитие +7%. На креплении от улучшения прочие эффекты глушителя не действуют.</text>
+	</string>
+	<string id="st_arsenal_wb_full_condition">
+		<text>Значения при полном состоянии.</text>
+	</string>
+	<string id="st_arsenal_wb_to">
+		<text>»</text>
+	</string>
+	<string id="st_arsenal_wb_more">
+		<text>+%s</text>
+	</string>
 </string_table>

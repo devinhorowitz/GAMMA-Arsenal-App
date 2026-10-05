@@ -5,13 +5,30 @@ what is listed and where, what is skipped, the order, and the stat rows with the
     python test_data.py MUTANT     a broken copy (see MUTANTS); the run must fail
 """
 import io
+import math
 import os
 import re
+import struct
 import sys
 
 import lupa.luajit21 as L
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+
+
+def f32(x):
+    return struct.unpack("<f", struct.pack("<f", x))[0]
+
+
+def acc32(base, deltas):
+    """the card's accuracy for a dispersion and upgrade changes, as the engine keeps them:
+    float32 radians, val * PI / 180 left to right, each change added in float32"""
+    d2r = lambda v: f32(f32(f32(v) * f32(math.pi)) / 180)
+    rad = d2r(base)
+    for d in deltas:
+        rad = f32(rad + d2r(d))
+    deg = (180.0 / math.pi) * rad
+    return math.floor(max(0, (deg - 1.5) / (0 - 1.5)) * 100)
 SRC = io.open(os.path.join(HERE, "..", "gamedata", "scripts", "arsenal_data.script"), encoding="latin-1").read()
 
 # section -> fields; a stand-in for system.ltx after inheritance and DLTX
@@ -150,6 +167,11 @@ SECTIONS = {
     "up_gr_t": dict(elements="up_t1"),
     "up_t1": dict(section="up_sect_t1", property="prop_dispersion"),
     "up_sect_t1": dict(fire_dispersion_base="-1.5"),
+    # values only, for the card's handling as the engine keeps PDM (float32); no kind, so not listed
+    "pdm_probe": dict(PDM_disp_base="0.93", control_inertion_factor="1.5", fire_dispersion_base="0.3", rpm="600",
+                      installed_upgrades="up_probe"),
+    "up_probe": dict(section="up_sect_probe"),
+    "up_sect_probe": dict(PDM_disp_base="-0.07", fire_dispersion_base="-0.035", rpm="20"),
     "wpn_sil": dict(inv_name="st_sil"),
     "wpn_gl": dict(inv_name="st_gl"),
     "ammo_vog": dict(kind="w_ammo", inv_name="st_vog", inv_grid_x="1", grenade_ammo="true", k_hit="0.8",
@@ -189,12 +211,12 @@ SECTIONS = {
     "novice_outfit": dict(**{"class": "EQU_STLK"}, kind="o_light", repair_type="outfit_novice", inv_name="st_jacket",
                           inv_grid_x="1", bones_koeff_protection="prof_jacket", hit_fraction_actor="0.83",
                           burn_protection="0.4", shock_protection="0.1", radiation_protection="0.00275",
-                          telepatic_protection="0", artefact_count="1", additional_inventory_weight="12",
+                          telepatic_protection="0", artefact_count="1", additional_inventory_weight="1.1",
                           inv_weight="5", upgrades="up_gr_j_a, up_gr_j_b"),
     "novice_outfit_b": dict(**{"class": "EQU_STLK"}, kind="o_light", repair_type="outfit_novice", inv_name="st_jacket",
                             inv_grid_x="1", bones_koeff_protection="prof_jacket", hit_fraction_actor="0.83",
                             burn_protection="0.4", shock_protection="0.2", radiation_protection="0.00275",
-                            telepatic_protection="0", artefact_count="1", additional_inventory_weight="12",
+                            telepatic_protection="0", artefact_count="1", additional_inventory_weight="1.1",
                             inv_weight="5"),
     "prof_jacket": dict(bip01_spine="1, 0.0375", bip01_head="1, 0.0"),
     "up_gr_j_a": dict(elements="up_j_a1, up_j_a2"),
@@ -208,8 +230,13 @@ SECTIONS = {
     "up_gr_j_b": dict(elements="up_j_b1"),
     "up_j_b1": dict(section="up_sect_j_b1", property="prop_armor"),
     "up_sect_j_b1": dict(bones_koeff_protection_add="prof_add", burn_protection="0.2", artefact_count="1",
-                         additional_inventory_weight="10"),
+                         additional_inventory_weight="4.2"),
     "prof_add": dict(bip01_spine="1, 0.03"),
+    # values only: a suit's carry weight with an upgrade it ships with (not listed: no kind)
+    "probe_suit": dict(additional_inventory_weight="5.3", installed_upgrades="up_probe_suit"),
+    "probe_suit_plain": dict(additional_inventory_weight="5.3"),
+    "up_probe_suit": dict(section="up_sect_probe_suit"),
+    "up_sect_probe_suit": dict(additional_inventory_weight="2"),
     # a helmet: bullets meet its head armor; it ships an upgrade (radiation, burn) in a group
     # whose other upgrade (more radiation, and opening more still) it can no longer take
     "helm_x": dict(**{"class": "E_HLMET"}, kind="o_helmet", repair_type="helmet_light", inv_name="st_helm",
@@ -636,6 +663,8 @@ utils_ui = { stats_table = { weapon = {
     recoil = { index = 104, magnitude = 1, value_functor = { "momopate_weaponstats", "get_weapon_recoil" } },
 } } }
 function utils_ui.prepare_stats_table() end
+-- GAMMA's scaled rows; the stand-in hands any row but accuracy and handling to it
+ish_item_stats = { scale_100 = function() return "scaled" end }
 -- the outfit card as GAMMA sets it up (ish_item_stats), a few of its rows
 local function row(index, name, functor, magnitude, unit, sign)
     return { index = index, name = name, value_functor = functor, magnitude = magnitude or 1, unit = unit or "st_perc",
@@ -673,13 +702,15 @@ arti_jamming = { get_config = function(k) return k == "jamchance" and JAM or nil
 function grok_actor_damage_balancer.get_outfit_value(obj, sec, name) return 999 end
 function grok_actor_damage_balancer.get_outfit_ap_res(obj) return nil end
 outfit_speed_mcm = { get_outfit_speed = function(obj, sec) return 1 end }
--- utils_item's section paths: radiation and belt slots from the section; the carry weight
--- falls through to get_param
+-- utils_item's section paths: radiation, belt slots and carry weight from the section alone
 function utils_item.get_outfit_protection(obj, sec, name, def)
     return name == "Radiation" and tonumber(S[sec].radiation_protection or 0) or (def or 0)
 end
 function utils_item.get_outfit_belt_size(obj, sec) return tonumber(S[sec].artefact_count or 0) end
-function utils_item.get_outfit_property(obj, sec, name, def) return nil end
+function utils_item.get_outfit_property(obj, sec, name, def)
+    if name == "additional_inventory_weight" then return tonumber(S[sec].additional_inventory_weight or 0) end
+    return def
+end
 -- utils_ui's: the row's function (or the section's value with its shipped upgrades), times the
 -- magnitude, rounded up, with a sign and the unit; nil for zero
 function utils_ui.get_stats_string_value(obj, sec, gr, stat)
@@ -687,7 +718,11 @@ function utils_ui.get_stats_string_value(obj, sec, gr, stat)
     local value = f and _G[f[1]] and _G[f[1]][f[2]] and _G[f[1]][f[2]](obj, sec, unpack(f, 3))
     if not value then value = utils_item.get_param(sec, nil, stat, gr.typ or "float", true) end
     if not value or value == 0 then return nil end
-    local v = math.ceil(value * gr.magnitude)
+    local v = value * gr.magnitude
+    -- carry weight to a tenth: x10, up (down below zero), /10
+    if stat == "additional_inventory_weight" then v = v * 10 end
+    v = v >= 0 and math.ceil(v) or math.floor(v)
+    if stat == "additional_inventory_weight" then v = v / 10 end
     local unit = gr.unit and gr.unit ~= "" and game.translate_string(gr.unit) or ""
     return ((gr.sign and v > 0) and "+" or "") .. v .. " " .. unit, v < 0
 end
@@ -697,6 +732,19 @@ MUTANTS = {
     "hit_power_field": ('    if key == "hit_power" then\n', "    if false then\n"),
     "variants": ("if parent and parent ~= sec then return nil end", "-- variants kept"),
     "armor_f32": ("        p[k] = f32(ini_sys:r_float_ex(sec, k) or 0)", "        p[k] = ini_sys:r_float_ex(sec, k) or 0"),
+    "carry_double_add": ("    p.additional_inventory_weight = f32(p.additional_inventory_weight\n"
+                         "        + f32(ini_sys:r_float_ex(ps, \"additional_inventory_weight\") or 0))",
+                         "    p.additional_inventory_weight = p.additional_inventory_weight\n"
+                         "        + (ini_sys:r_float_ex(ps, \"additional_inventory_weight\") or 0)"),
+    "carry_base_double": ("    p.additional_inventory_weight = f32(ini_sys:r_float_ex(sec, \"additional_inventory_weight\") or 0)",
+                          "    p.additional_inventory_weight = ini_sys:r_float_ex(sec, \"additional_inventory_weight\") or 0"),
+    "carry_whole": ("        local v = p.additional_inventory_weight * 10\n"
+                    "        return (v >= 0 and math.ceil(v) or math.floor(v)) / 10",
+                    "        local v = p.additional_inventory_weight\n"
+                    "        return (v >= 0 and math.ceil(v) or math.floor(v))"),
+    "no_carry_standin": ("    get_outfit_property = \"standin_outfit_property\",\n", ""),
+    "carry_standin_section": ("        local v = armor_params(sec).additional_inventory_weight\n",
+                              "        local v = utils_item.get_outfit_property(obj, sec, name, def)\n"),
     "armor_light_burn": ("        v = p.light_burn", "        v = p.burn_protection"),
     "armor_head": ('p = { sec = sec, bone = is_helmet(sec) and "bip01_head" or "bip01_spine" }',
                    'p = { sec = sec, bone = "bip01_spine" }'),
@@ -781,6 +829,30 @@ MUTANTS = {
     "animation": ('sec:find("^animation_")', "false"),
     "knife_card": ('not IsItem("fake_ammo_wpn", sec)', "true"),
     "shipped": ('local ok, v = pcall(utils_item.get_param, sec, nil, k, "float", true)', "local ok, v = false, nil"),
+    "d2r_folded": ("    return f32(f32(f32(v) * f32(math.pi)) / 180)", "    return f32(f32(v) * f32(math.pi / 180))"),
+    "d2r_double": ("    return f32(f32(f32(v) * f32(math.pi)) / 180)", "    return v * math.pi / 180"),
+    "pdm_double": ("    if d then p.PDM_disp_base = f32(p.PDM_disp_base + f32(d)) end",
+                   "    if d then p.PDM_disp_base = p.PDM_disp_base + d end"),
+    "rad_double": ("    if d then p.rad = f32(p.rad + deg2rad32(d)) end", "    if d then p.rad = p.rad + d * math.pi / 180 end"),
+    "no_shipped_engine": ("    for _, ps in ipairs(shipped(sec)) do\n        add_engine(p, ps)\n    end\n", ""),
+    "change_skips_engine": ("    add_engine(p, ps)\n    local ammo", "    local ammo"),
+    "change_skips_sums": ("            if d then p[k] = p[k] + d end", "            if d then p[k] = d end"),
+    "no_ammo_change": ("    if ammo then p.ammo = ammo end\n", ""),
+    "speed_ignores_new_ammo": ("    ammo = ammo or p.ammo or first_ammo(p.sec)", "    ammo = ammo or first_ammo(p.sec)"),
+    "recoil_no_floor": ("    if #s == 0 or zcd == 0 then return nil end", "    if #s == 0 or zcd <= 0 then return nil end"),
+    "recoil_zero": ("    if #s == 0 or zcd == 0 then return nil end", "    if #s == 0 then return nil end"),
+    "accuracy_capped": ("        return math.floor(above0((p.fire_dispersion_base - 1.5) / (0 - 1.5)) * 100)",
+                        "        return math.min(100, math.floor(above0((p.fire_dispersion_base - 1.5) / (0 - 1.5)) * 100))"),
+    "reliability_capped": ("        return math.ceil((1.0 - p.condition_shot_dec - 0.99) * 10000)",
+                           "        return math.min(100, math.ceil((1.0 - p.condition_shot_dec - 0.99) * 10000))"),
+    "handling_capped": ("        return math.floor((above0((p.PDM_disp_base - 2.1) / (0 - 2.1))\n"
+                        "            + above0((p.control_inertion_factor - 3) / (1 - 3))) / 2 * 100)\n",
+                        "        return math.min(100, math.floor((above0((p.PDM_disp_base - 2.1) / (0 - 2.1))\n"
+                        "            + above0((p.control_inertion_factor - 3) / (1 - 3))) / 2 * 100))\n"),
+    "standin_accuracy_own": ('    if func == "prop_accuracry" then return CARD.accuracy(params(sec)) end\n', ""),
+    "standin_handling_own": ('    if func == "prop_handling" then return CARD.handling(params(sec)) end\n', ""),
+    "no_standin_entry": ('    scale_100 = "standin_scale_100",\n', ""),
+    "max_no_change": ("            add_change(q, ps)\n            local v = f(q)", "            local v = f(q)"),
     "no_effects": ("queue[#queue + 1] = nxt", "-- not followed"),
     "calibre": ("if not calibre(u) then opts[#opts + 1] = u.ps end", "opts[#opts + 1] = u.ps"),
     "installed_group": ("if not g.fixed then", "if true then"),
@@ -948,8 +1020,6 @@ MUTANTS = {
     "risk_weight": ("x = kg(weight(sec) + (ini_sys:r_float_ex(ps, \"inv_weight\") or 0))", "x = kg(weight(sec))"),
     "risk_sign": ("if x and v > 0 then", "if x then"),
     "kit_sort": ("table.sort(g.factions, function(a, b) return FACTION_AT[a] < FACTION_AT[b] end)", "-- unsorted"),
-    "no_cap": ("return math.min(100, math.floor(above0((p.fire_dispersion_base - 1.5) / (0 - 1.5)) * 100))",
-               "return math.floor(above0((p.fire_dispersion_base - 1.5) / (0 - 1.5)) * 100)"),
 }
 
 
@@ -1027,7 +1097,8 @@ def main():
     # fully upgraded: per group the best upgrade or none; groups opened by an upgrade count, a
     # caliber conversion and a group the gun ships an upgrade in do not
     acc, rof = m.max_stat("wpn_ak74", "accuracy"), m.max_stat("wpn_ak74", "fire_rate")
-    check(tuple(acc) == (70, 60), "accuracy fully upgraded, from as it ships: %s" % (tuple(acc),))
+    check(tuple(acc) == (acc32(0.6, [-0.15]), acc32(0.6, [])) == (69, 59),
+          "accuracy fully upgraded, from as it ships, in the engine's float32: %s" % (tuple(acc),))
     check(tuple(rof) == (780, 700), "fire rate fully upgraded, through a group an upgrade opens: %s" % (tuple(rof),))
     check(m.max_stat("wpn_ak74", "damage") is None and m.max_stat("wpn_ak74", "max_range") is None,
           "no maximum for a stat the formulas here do not cover")
@@ -1056,7 +1127,7 @@ def main():
     jc = card("novice_outfit")
     want = {"fire_wound_protection": "+4 %", "apres_modifier": "+18 ", "burn_protection": "+41 %",
             "shock_protection": "+2 %", "radiation_protection": "+3 %", "telepatic_protection": None,
-            "artefact_count": "1 ", "additional_inventory_weight": "+12 kg", "speed_modifier": "111 %"}
+            "artefact_count": "1 ", "additional_inventory_weight": "+1.2 kg", "speed_modifier": "111 %"}
     check(jc == want, "a jacket's card: bullets meet its spine armor, values in float32 as the engine keeps "
           "them (burn 0.4 shows 41), BR class 1 - hit fraction rounded up, its speed line: %s" % jc)
     hc = card("helm_x")
@@ -1076,10 +1147,11 @@ def main():
           ("telepatic_protection", "fire_wound_protection", "burn_protection", "artefact_count",
            "additional_inventory_weight", "apres_modifier", "speed_modifier")}
     check(mx == {"telepatic_protection": (19, 0), "fire_wound_protection": (6, 4), "burn_protection": (41, 41),
-                 "artefact_count": (2, 1), "additional_inventory_weight": (22, 12), "apres_modifier": (),
+                 "artefact_count": (2, 1), "additional_inventory_weight": (5.3, 1.2), "apres_modifier": (),
                  "speed_modifier": ()},
           "a jacket fully upgraded: psi through the upgrade that opens another (19, not 16 for the bigger single "
-          "one or 24 for both), spine armor added by a profile, burn unmoved, a belt slot, carry weight: %s" % mx)
+          "one or 24 for both), spine armor added by a profile, burn unmoved, a belt slot, carry weight in float32 to a "
+          "tenth (1.1 + 4.2 shows 5.3: 5.4 summed as decimals, 6 as whole kilos): %s" % mx)
     # who wears them: a faction's characters of a rank, all its spawn sections together, and those
     # in each model (every visual that drops it, a visual that drops both variants once); a
     # story character as special; a monster's section is no faction
@@ -1491,8 +1563,8 @@ def main():
     check("recoil" not in pm_fams, "no recoil row for a gun without a recoil profile: %s" % pm_fams)
     looks = [(x.name, x.makes) for x in m.attachments("wpn_fort").kits.values()]
     check(looks == [("Fort kit", None)], "a kit that makes the same variant names nothing: %s" % looks)
-    check(tuple(m.max_stat("wpn_toz34", "accuracy")) == (100, 50),
-          "a percentage stops at 100: %s" % (tuple(m.max_stat("wpn_toz34", "accuracy")),))
+    check(tuple(m.max_stat("wpn_toz34", "accuracy")) == (acc32(0.75, [-1.5]), acc32(0.75, [])) == (150, 49),
+          "a percentage goes past 100 as on the card: %s" % (tuple(m.max_stat("wpn_toz34", "accuracy")),))
     check([x.name for x in m.attachments("wpn_toz34").scopes.values()] == ["PU"], "a scope named through scopes_sect")
     check(m.attachments("wpn_rpg7").builtin.scope and not att.builtin.scope and not att.builtin.suppressor,
           "a built-in scope is told apart from an attachable one")
@@ -1513,7 +1585,50 @@ def main():
           "stat rows in the card's order: %s" % [s for s, _ in rows])
     alt = dict(rows)
     check(alt["speed"] == "standin_bspeed" and alt["reliability"] == "standin_reliability"
-          and alt["recoil"] == "standin_recoil" and alt["accuracy"] == "scale_100", "stand-ins only where needed")
+          and alt["recoil"] == "standin_recoil" and alt["accuracy"] == "standin_scale_100"
+          and "fire_rate" in alt and alt["fire_rate"] == "prop_rpm", "stand-ins only where needed: %s" % alt)
+    check(m.standin_scale_100(None, "wpn_ak74", "utils_ui", "prop_accuracry") == acc32(0.6, []) == 59,
+          "accuracy for a section in the engine's float32, not the section's decimals (60)")
+    pdm = f32(f32(0.93) + f32(-0.07))
+    want_h = math.floor((max(0, (pdm - 2.1) / (0 - 2.1)) + max(0, (1.5 - 3) / (1 - 3))) / 2 * 100)
+    got_h = m.standin_scale_100(None, "pdm_probe", "utils_ui", "prop_handling")
+    check(got_h == want_h, "handling with the PDM in float32, a shipped upgrade added: %s, want %s" % (got_h, want_h))
+    got_a = m.standin_scale_100(None, "pdm_probe", "utils_ui", "prop_accuracry")
+    check(got_a == acc32(0.3, [-0.035]), "accuracy with a shipped upgrade's change added in float32: %s, want %s"
+          % (got_a, acc32(0.3, [-0.035])))
+    p = m.params("pdm_probe")
+    check(p.rpm == 620 and abs(p.rad - f32(f32(f32(f32(0.3) * f32(math.pi)) / 180) + f32(f32(f32(-0.035) * f32(math.pi)) / 180))) == 0,
+          "params: the card's sums as decimals, the dispersion in the engine's radians: rpm %s, rad %r" % (p.rpm, p.rad))
+    q = m.params("pdm_probe")
+    m.add_change(q, "up_sect_a2")
+    check(q.ammo == "ammo_9x19" and q.rpm == 620 and q.PDM_disp_base == p.PDM_disp_base
+          and q.rad == f32(p.rad + f32(f32(f32(-0.3) * f32(math.pi)) / 180)),
+          "an added upgrade: its rounds replace the gun's, its dispersion added in float32: %s %r" % (q.ammo, q.rad))
+    m.add_change(q, "up_sect_probe")
+    check(q.rpm == 640 and q.PDM_disp_base == f32(p.PDM_disp_base + f32(-0.07)), "decimal sums and float32 PDM: %s %r"
+          % (q.rpm, q.PDM_disp_base))
+    check(m.standin_scale_100(None, "wpn_ak74", "utils_ui", "prop_other") == "scaled",
+          "another scaled row: GAMMA's own function")
+    cw = m.standin_outfit_property(None, "probe_suit", "additional_inventory_weight")
+    check(cw == f32(f32(5.3) + f32(2)), "carry weight as the engine keeps it, a shipped upgrade in: %r" % cw)
+    check(m.standin_outfit_property(None, "probe_suit", "other", "def") == "def", "other properties: utils_item's own")
+    check(m.standin_outfit_property(None, "probe_suit_plain", "additional_inventory_weight") == f32(5.3),
+          "a suit's own carry weight in float32 too")
+    check(card("novice_outfit_b").get("additional_inventory_weight") == "+1.2 kg",
+          "1.1 kg of carry weight reads 1.2 on the card, as for a live suit: %s"
+          % card("novice_outfit_b").get("additional_inventory_weight"))
+    q = m.params("wpn_ak74")
+    sp0 = m.CARD.speed(q)
+    m.add_change(q, "up_sect_a2")
+    check(sp0 == math.ceil(900 * 1.1 * 0.70) and m.CARD.speed(q) == math.ceil(900 * 1 * 0.70),
+          "after a caliber conversion the speed is the new first round's: %s -> %s" % (sp0, m.CARD.speed(q)))
+    q.zoom_cam_dispersion = -0.1
+    check(m.CARD.recoil(q) == 1, "a zoom dispersion below zero: recoil control at the card's floor, 1: %s" % m.CARD.recoil(q))
+    q.zoom_cam_dispersion = 0
+    check(m.CARD.recoil(q) is None, "none at exactly zero (the card would divide by it)")
+    q.condition_shot_dec, q.PDM_disp_base, q.control_inertion_factor = -0.0005, -1, 1.5
+    check(m.CARD.reliability(q) == 105 and m.CARD.handling(q) == math.floor(((1 + 3.1 / 2.1 - 1) + 0.75) / 2 * 100 + 0),
+          "reliability and handling past 100, as the card shows them: %s %s" % (m.CARD.reliability(q), m.CARD.handling(q)))
     live = dict((r.stat, r.gr.value_functor and r.gr.value_functor[2]) for r in m.stat_rows(True).values())
     check(live["speed"] == "get_weapon_bspeed", "a live weapon keeps the card's own functions")
     check(abs(m.standin_bspeed(None, "wpn_ak74") - 900 * 1.1 * 0.70 / 1000) < 1e-9, "bullet speed as Momopate's")

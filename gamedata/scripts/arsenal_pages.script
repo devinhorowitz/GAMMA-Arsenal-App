@@ -1,0 +1,76 @@
+--[[
+    Arsenal's two pages, each in a PDA section of its own as the PDA's tabs are: the catalog
+    (eptArsenal, ui_arsenal) and Workbench (eptWorkbench, ui_arsenal_workbench), and the switch
+    between them, the plates at the top left of both.
+
+    Mod App Creator knows the catalog's section only, its tile's. Workbench's is claimed here by
+    wrapping pda.set_active_subdialog as MAC wraps it (Seasons of the Zone's two pages do the
+    same); every other section passes down untouched, and either wrap order works. A page that
+    fails to build is logged and comes back empty, so the PDA stays up.
+--]]
+
+PAGES = {
+    catalog = { tab = "eptArsenal" },
+    workbench = { tab = "eptWorkbench" },
+}
+
+local function say(msg)
+    printf("[arsenal] %s", tostring(msg))
+end
+
+-- Go to a page: in the PDA by its section; in the flat window (the MCM key) by swapping the
+-- windows. `sec` and `id` pick Workbench's item (a model from the catalog by its section).
+function open(page, sec, id)
+    if page == "workbench" and (sec or id) then
+        ui_arsenal_workbench.show_next(sec, id)
+    end
+    local flat_cat = ui_arsenal.flat_window()
+    local flat_wb = ui_arsenal_workbench.flat_window()
+    if flat_cat or flat_wb then
+        if flat_cat then flat_cat:Close() end
+        if flat_wb then flat_wb:Close() end
+        if page == "workbench" then
+            ui_arsenal_workbench.open_flat()
+        else
+            ui_arsenal.open_flat()
+        end
+        return
+    end
+    local ok, err = pcall(function()
+        ActorMenu.get_pda_menu():SetActiveSubdialog(PAGES[page].tab)
+    end)
+    if not ok then say("could not open " .. tostring(page) .. ": " .. tostring(err)) end
+end
+
+-- Workbench's section to its page; forwards every argument, not just the section, so a
+-- signature upstream grows is not cut short
+local wrapped = false
+local function route()
+    if wrapped or not (pda and pda.set_active_subdialog) then return end
+    local orig = pda.set_active_subdialog
+    pda.set_active_subdialog = function(section, ...)
+        if section == PAGES.workbench.tab then
+            local ok, ui = pcall(ui_arsenal_workbench.get_ui)
+            if ok then return ui end
+            say("the Workbench page failed to build: " .. tostring(ui))
+            return nil
+        end
+        return orig(section, ...)
+    end
+    wrapped = true
+end
+
+-- Customize, on the catalog's gun, suit and helmet pages: Workbench on that model
+local function customize(sec)
+    open("workbench", sec)
+end
+
+function on_game_start()
+    -- on_game_load, the moment MAC installs its own wrapper
+    RegisterScriptCallback("on_game_load", route)
+    ui_arsenal.add_action("workbench", {
+        label = "st_arsenal_wb_customize",
+        show = arsenal_workbench.plannable,
+        run = customize,
+    })
+end

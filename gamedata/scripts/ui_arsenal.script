@@ -27,9 +27,9 @@ local PART_TEXT_DY = 6  -- a part's name beside its icon panel, one line centere
 local CAMO_PAD = 3      -- a camo's swatch inside its panel
 -- a new row's glow: its alpha swings between these over the period (ms)
 local GLOW_MIN, GLOW_MAX, GLOW_PERIOD = 40, 110, 2000
--- other apps' buttons on a model's page (add_action), in the bar over the lists, right to left
--- from the first, left of "Found only"
-local MAX_ACTIONS, ACTION_STEP = 3, 126
+-- the button for the model shown (add_action: Workbench's Customize, or another app's), in the
+-- bar over the lists left of Back; the first that applies
+local MAX_ACTIONS = 1
 local actions = {}      -- { { id, label, show, run }, ... }, in the order added
 
 ---------------------------------------------------------------------------------------------
@@ -74,6 +74,13 @@ function ArsenalPDA:__init(flat) super()
         xml:InitTextWnd("flat_caption", self)
     end
 
+    -- the switch between the catalog (this page, pressed) and Workbench
+    self.page_catalog = xml:Init3tButton("page_catalog", self)
+    theme.set_active(self.page_catalog, true)
+    self.page_workbench = xml:Init3tButton("page_workbench", self)
+    self:Register(self.page_workbench, "page_workbench")
+    self:AddCallback("page_workbench", ui_events.BUTTON_CLICKED, self.OnWorkbench, self)
+
     self.found_count = xml:InitTextWnd("found_count", self)
     xml:InitTextWnd("found_only_lbl", self)
     self.found_only = xml:InitCheck("found_only", self)
@@ -99,12 +106,10 @@ function ArsenalPDA:__init(flat) super()
     xml:InitStatic("rule_wpn", self)
     self.detail = xml:InitScrollView("detail", self)
 
-    -- other apps' buttons for the model shown (add_action), hidden until one applies
+    -- the button for the model shown (add_action), hidden until one applies
     self.action_btns = {}
     for i = 1, MAX_ACTIONS do
         local b = xml:Init3tButton("action_btn", self)
-        local p = b:GetWndPos()
-        b:SetWndPos(vector2():set(p.x - (i - 1) * ACTION_STEP, p.y))
         b:Show(false)
         self:Register(b, "action_" .. i)
         self:AddCallback("action_" .. i, ui_events.BUTTON_CLICKED, function() self:OnAction(i) end, self)
@@ -231,6 +236,10 @@ function ArsenalPDA:Close()
     if self:IsShown() then
         self:HideDialog()
     end
+end
+
+function ArsenalPDA:OnWorkbench()
+    arsenal_pages.open("workbench")
 end
 
 -- flat: Escape or the MCM key closes the window; the PDA handles its own keys
@@ -1397,6 +1406,11 @@ function remove_action(id)
     for i = #actions, 1, -1 do
         if actions[i].id == id then table.remove(actions, i) end
     end
+end
+
+-- the flat window, if open
+function flat_window()
+    return FLAT and FLAT:IsShown() and FLAT or nil
 end
 
 -- the page in a window of its own (arsenal_mcm's key), when the player is up and about;

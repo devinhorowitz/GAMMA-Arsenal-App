@@ -156,7 +156,11 @@ utils_ui = {
     end,
 }
 arsenal_theme = { argb = function(role, a) return a and (role .. "@" .. a) or role end,
-                  markup = function(role) return "<" .. role .. ">" end }
+                  markup = function(role) return "<" .. role .. ">" end,
+                  set_active = function(btn, on) btn.active = on end }
+-- the switch to Workbench (arsenal_pages)
+opened_pages = {}
+arsenal_pages = { open = function(page, sec) opened_pages[#opened_pages + 1] = { page = page, sec = sec } end }
 logged = {}
 function printf(fmt, ...) logged[#logged + 1] = string.format(fmt, ...) end
 
@@ -415,6 +419,8 @@ arsenal_collection = {
 """
 
 MUTANTS = {
+    "switch_not_pressed": ("    theme.set_active(self.page_catalog, true)\n", ""),
+    "switch_dead": ('    arsenal_pages.open("workbench")', "    -- nothing"),
     "toggle_ignored": ("    by_faction = self.by_faction_check:GetCheck() == true\n", ""),
     "toggle_no_memory": ("    self.cat = last_key[by_faction]\n", ""),
     "toggle_no_save": ("    last_key[by_faction] = self.cat\n", ""),
@@ -536,7 +542,6 @@ MUTANTS = {
     "action_unguarded": ("    local ok, err = pcall(a.run, self.action_sec)", "    local ok, err = true, a.run(self.action_sec)"),
     "action_stale": ("    self.detail:Clear()\n    self:UpdateActions(nil)\n", "    self.detail:Clear()\n"),
     "action_twice": ("    remove_action(id)\n    actions[#actions + 1]", "    actions[#actions + 1]"),
-    "action_stacked": ("        b:SetWndPos(vector2():set(p.x - (i - 1) * ACTION_STEP, p.y))\n", ""),
     "no_factions": ('        add(FACTION .. f, game.translate_string("st_faction_" .. f), models_of(FACTION .. f))\n', ""),
     "faction_by_name": ("        if a.cat ~= b.cat then return (order[a.cat] or 99) < (order[b.cat] or 99) end\n", ""),
     "faction_unsorted": ("    table.sort(out, function(a, b)\n        if a.cat ~= b.cat", "    local _ = (function(a, b)\n        if a.cat ~= b.cat"),
@@ -1100,9 +1105,16 @@ arsenal_intel = {
     lua.execute("arsenal_intel = nil")
     ui = m.get_ui()
 
-    # other apps' buttons (ui_arsenal.add_action): none added, none shown; one shows where it
-    # applies and runs on the section shown; it hides on other pages and with nothing shown
-    btns = lambda: [ui.action_btns[i] for i in (1, 2, 3)]
+    # the switch to Workbench: this page pressed, the other half opens Workbench
+    check(ui.page_catalog.active is True, "the switch shows the catalog pressed")
+    ui.cb.page_workbench()
+    check(len(g.opened_pages) == 1 and g.opened_pages[1].page == "workbench", "the switch opens Workbench")
+
+    # the model's button (ui_arsenal.add_action: Workbench's Customize, or another app's): none
+    # added, none shown; one shows where it applies and runs on the section shown; it hides on
+    # other pages and with nothing shown; one slot, the first that applies
+    btns = lambda: [ui.action_btns[1]]
+    check(ui.action_btns[2] is None, "one slot for the model's button: %s" % ui.action_btns[2])
     check(all(b.shown is False for b in btns()), "no app added a button: none shows")
     lua.execute("RAN = nil")
     m.add_action("workbench", lua.eval('{ label = "st_wb", run = function(sec) RAN = sec end, '
@@ -1113,7 +1125,7 @@ arsenal_intel = {
     ui.wpn_list.sel = 1
     ui.cb.wpn_list()
     b = btns()
-    check(ui.sec == "wpn_fort" and b[0].shown is True and b[0].text == "st_wb" and b[1].shown is False,
+    check(ui.sec == "wpn_fort" and b[0].shown is True and b[0].text == "st_wb",
           "added: its button shows on the page, labelled: %s %s" % (b[0].shown, b[0].text))
     click = ui.cb.action_1 if ui.cb else None
     if click is not None:
@@ -1132,12 +1144,15 @@ arsenal_intel = {
     m.add_action("other", lua.eval('{ run = function(sec) error("boom") end }'))
     ui = m.get_ui()
     b = btns()
-    check(b[0].shown and b[0].text == "st_wb2" and b[1].shown and b[1].text == "other" and b[2].shown is False
-          and b[1].x == b[0].x - 126,
-          "added again, replaced; a second app's to its left: %s" % [(x.shown, x.text, x.x) for x in b])
+    check(b[0].shown and b[0].text == "st_wb2",
+          "added again, replaced; the first that applies takes the slot: %s" % [(x.shown, x.text) for x in b])
+    m.remove_action("workbench")
+    ui = m.get_ui()
+    b = btns()
+    check(b[0].shown and b[0].text == "other", "with the first gone, the next takes the slot: %s" % b[0].text)
     g.logged = lua.table_from([])
     try:
-        ui.cb.action_2()
+        ui.cb.action_1()
         ok = True
     except L.LuaError:
         ok = False

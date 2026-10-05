@@ -15,23 +15,26 @@
 		<text font="letterica16" align="l" r="170" g="170" b="170">st_arsenal_title</text>
 	</flat_caption>
 
-	<!-- header row -->
-	<found_count x="28" y="110" width="420" height="20">
+	<!-- header row, the same on both pages: the switch between the catalog and Workbench (the
+	     page shown pressed), the page's line, its button, Back -->
+	<page_catalog x="28" y="107" width="92" height="26" stretch="1" check_mode="0">
+		<texture>ui_button_ordinary</texture>
+		<text font="letterica16" align="c" vert_align="c">st_arsenal_title</text>
+	</page_catalog>
+	<page_workbench x="122" y="107" width="92" height="26" stretch="1" check_mode="0">
+		<texture>ui_button_ordinary</texture>
+		<text font="letterica16" align="c" vert_align="c">st_arsenal_workbench</text>
+	</page_workbench>
+	<found_count x="224" y="110" width="318" height="20">
 		<text font="letterica16" r="200" g="200" b="200" align="l" vert_align="c"/>
 	</found_count>
-	<found_only_lbl x="476" y="110" width="150" height="20">
-		<text font="letterica16" r="200" g="200" b="200" align="r" vert_align="c">st_arsenal_found_only</text>
-	</found_only_lbl>
-	<found_only x="630" y="105" width="30" height="30" stretch="1">
-		<texture>ui_inGame2_checkbox</texture>
-	</found_only>
 	<btn_back x="672" y="107" width="120" height="26" stretch="1" check_mode="0">
 		<texture>ui_button_ordinary</texture>
 		<text font="letterica16" align="c" vert_align="c">st_arsenal_back</text>
 	</btn_back>
-	<!-- another app's button for the model shown (ui_arsenal.add_action, e.g. Workbench's
-	     "Customize"): the first here, more to its left; hidden while none applies -->
-	<action_btn x="414" y="107" width="120" height="26" stretch="1" check_mode="0">
+	<!-- the button for the model shown: Workbench's Customize, or another app's
+	     (ui_arsenal.add_action); hidden while none applies -->
+	<action_btn x="546" y="107" width="120" height="26" stretch="1" check_mode="0">
 		<texture>ui_button_ordinary</texture>
 		<text font="letterica16" align="c" vert_align="c"/>
 	</action_btn>
@@ -53,7 +56,14 @@
 	<rule_cat x="164" y="146" width="1" height="560" stretch="1">
 		<texture>arsenal_rule</texture>
 	</rule_cat>
-	<wpn_list x="170" y="146" width="250" height="560" item_height="22" can_select="1" always_show_scroll="0">
+	<!-- over the model list, like "By faction" over the left one -->
+	<found_only_lbl x="174" y="146" width="96" height="20">
+		<text font="letterica16" r="200" g="200" b="200" align="l" vert_align="c">st_arsenal_found_only</text>
+	</found_only_lbl>
+	<found_only x="272" y="141" width="30" height="30" stretch="1">
+		<texture>ui_inGame2_checkbox</texture>
+	</found_only>
+	<wpn_list x="170" y="174" width="250" height="532" item_height="22" can_select="1" always_show_scroll="0">
 		<font font="letterica16" r="200" g="200" b="200"/>
 	</wpn_list>
 	<rule_wpn x="424" y="146" width="1" height="560" stretch="1">
@@ -165,4 +175,111 @@
 	<mac_badge_text x="0" y="0" width="20" height="20">
 		<text font="letterica16" r="255" g="255" b="255" align="c" vert_align="c"/>
 	</mac_badge_text>
+
+	<!-- ============ Workbench, the second page (ui_arsenal_workbench) ============
+	     The header as the catalog's: the switch, the item's name where the catalog has its
+	     count, Clear, Install, Back. Left: the items, then the card and the attachments.
+	     Right: GAMMA's upgrade tree in its toolkit's panel and cells, the kits, the details. -->
+	<wb_title x="224" y="110" width="316" height="20">
+		<text font="letterica18" r="238" g="196" b="112" align="l" vert_align="c"/>
+	</wb_title>
+	<wb_install x="546" y="107" width="120" height="26" stretch="1" check_mode="0">
+		<texture>ui_button_ordinary</texture>
+		<text font="letterica16" align="c" vert_align="c">st_arsenal_wb_install</text>
+	</wb_install>
+
+	<wb_list x="28" y="146" width="240" height="176" item_height="22" can_select="1" always_show_scroll="0">
+		<font font="letterica16" r="200" g="200" b="200"/>
+	</wb_list>
+	<wb_row_name x="4" y="0" width="200" height="22">
+		<text font="letterica16" r="200" g="200" b="200" align="l" vert_align="c"/>
+	</wb_row_name>
+	<wb_row_count x="0" y="0" width="226" height="22">
+		<text font="letterica16" r="238" g="196" b="112" align="r" vert_align="c"/>
+	</wb_row_count>
+	<wb_rule_list x="28" y="326" width="240" height="1" stretch="1">
+		<texture>arsenal_rule</texture>
+	</wb_rule_list>
+	<!-- the card, built for each item: a row is the card's icon, its name, and "now >> planned" -->
+	<wb_card x="28" y="332" width="244" height="228" always_show_scroll="0" stretch="1"/>
+	<wb_card_box x="0" y="0" width="240" height="228" stretch="1"/>
+	<wb_card_icon x="0" y="0" width="16" height="16" stretch="1"/>
+	<wb_card_name x="20" y="0" width="106" height="20">
+		<text font="letterica16" r="200" g="200" b="200" align="l" vert_align="c"/>
+	</wb_card_name>
+	<!-- the value now, the arrow and the planned value, each its own text (one wrapped text with
+	     color codes loses its second line); a value the plan leaves alone shows in the last -->
+	<wb_card_now x="126" y="0" width="52" height="20">
+		<text font="letterica16" r="200" g="200" b="200" align="r" vert_align="c"/>
+	</wb_card_now>
+	<wb_card_to x="178" y="0" width="12" height="20">
+		<text font="letterica16" r="140" g="140" b="140" align="c" vert_align="c"/>
+	</wb_card_to>
+	<wb_card_plan x="190" y="0" width="50" height="20">
+		<text font="letterica16" r="200" g="200" b="200" align="r" vert_align="c"/>
+	</wb_card_plan>
+	<wb_line x="0" y="0" width="240" height="18">
+		<text font="letterica16" r="140" g="140" b="140" align="l" vert_align="t" complex_mode="1"/>
+	</wb_line>
+	<!-- a gun's attachments: three rows of a name over a button that steps through what fits,
+	     the script places them 46 apart; a suit's card takes their room -->
+	<wb_att_lbl x="28" y="566" width="240" height="18">
+		<text font="letterica16" r="140" g="140" b="140" align="l" vert_align="c"/>
+	</wb_att_lbl>
+	<wb_att_btn x="28" y="584" width="240" height="26" stretch="1" check_mode="0">
+		<texture>ui_button_ordinary</texture>
+		<text font="letterica16" align="c" vert_align="c"/>
+	</wb_att_btn>
+
+	<!-- the tree, in the toolkit's panel (ui_workshop_16.xml: its Upgrade tab's numbers) -->
+	<wb_tree_bg x="276" y="146" width="516" height="380" stretch="1">
+		<texture>ui_inGame2_workshop_upgrade_menu</texture>
+	</wb_tree_bg>
+	<wb_tree x="284" y="150" width="504" height="372" right_ident="0" left_ident="0" top_indent="0" bottom_indent="0"
+		vert_interval="0" always_show_scroll="0"/>
+	<wb_form x="0" y="0" width="454" height="120" stretch="1"/>
+	<wb_form_idx x="0" y="0" width="31" height="120">
+		<text font="letterica18" r="200" g="200" b="200" align="c" vert_align="c"/>
+	</wb_form_idx>
+	<!-- a cell, placed by the script: the kit's frame, icon and count, the upgrade's picture, its
+	     state (green installed, yellow planned, red a second visit, dark shut), the button -->
+	<wb_kit_frame x="0" y="0" width="56" height="44" stretch="1">
+		<texture>ui_inGame2_workshop_item_window_clean_s</texture>
+	</wb_kit_frame>
+	<wb_kit_icon x="0" y="0" width="46" height="36" stretch="1"/>
+	<wb_kit_num x="0" y="0" width="16" height="16">
+		<text font="letterica16" r="150" g="150" b="150" align="r" vert_align="c"/>
+	</wb_kit_num>
+	<wb_pic x="0" y="0" width="72" height="44" stretch="1"/>
+	<wb_mark x="0" y="0" width="72" height="44" stretch="1"/>
+	<wb_cell x="0" y="0" width="72" height="44" stretch="1" check_mode="0"/>
+
+	<!-- the kits the plan takes: a frame each (the script places them 52 apart), the kit's icon,
+	     "needed/held"; then Clear -->
+	<wb_kits_lbl x="280" y="532" width="60" height="44">
+		<text font="letterica16" r="200" g="200" b="200" align="l" vert_align="c"/>
+	</wb_kits_lbl>
+	<wb_kits_frame x="342" y="530" width="48" height="48" stretch="1">
+		<texture>ui_inGame2_workshop_item_window_clean_s</texture>
+	</wb_kits_frame>
+	<wb_kits_icon x="0" y="0" width="44" height="30" stretch="1"/>
+	<wb_kits_num x="342" y="560" width="48" height="18">
+		<text font="letterica16" r="200" g="200" b="200" align="c" vert_align="c"/>
+	</wb_kits_num>
+	<wb_clear x="672" y="541" width="120" height="26" stretch="1" check_mode="0">
+		<texture>ui_button_ordinary</texture>
+		<text font="letterica16" align="c" vert_align="c">st_arsenal_wb_clear</text>
+	</wb_clear>
+	<wb_rule_info x="276" y="584" width="516" height="1" stretch="1">
+		<texture>arsenal_rule</texture>
+	</wb_rule_info>
+	<!-- the details: the upgrade or attachment under the cursor, else the plan -->
+	<wb_info x="280" y="590" width="512" height="116" always_show_scroll="0" stretch="1"/>
+	<wb_info_box x="0" y="0" width="496" height="116" stretch="1"/>
+	<wb_info_name x="0" y="0" width="496" height="20">
+		<text font="letterica18" r="238" g="196" b="112" align="l" vert_align="t" complex_mode="1"/>
+	</wb_info_name>
+	<wb_info_line x="0" y="0" width="496" height="18">
+		<text font="letterica16" r="200" g="200" b="200" align="l" vert_align="t" complex_mode="1"/>
+	</wb_info_line>
 </w>
