@@ -681,4 +681,16 @@
 	<string id="st_arsenal_wb_more">
 		<text>+%s</text>
 	</string>
+	<string id="ui_mcm_arsenal_news">
+		<text>Сообщения КПК</text>
+	</string>
+	<string id="ui_mcm_arsenal_news_desc">
+		<text>Сообщения Арсенала на КПК, когда вы находите что-то для его каталога или узнаёте о чём-то. Если выключить, Арсенал молчит. Флажок «Тишина» внизу страниц Арсенала — этот же параметр.</text>
+	</string>
+	<string id="st_arsenal_silence">
+		<text>Тишина</text>
+	</string>
+	<string id="st_arsenal_credit">
+		<text>Арсенал v%s — %s</text>
+	</string>
 </string_table>

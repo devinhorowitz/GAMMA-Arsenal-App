@@ -11,6 +11,7 @@ and closed on the key, so nothing showed; a test that only calls the callback pa
 """
 import io
 import os
+import re
 import sys
 
 import lupa.luajit21 as L
@@ -22,7 +23,13 @@ STUBS = r"""
 callbacks = {}
 function RegisterScriptCallback(name, fn) callbacks[name] = fn end
 options = {}
-ui_mcm = { get = function(path) return options[path] end }
+ui_mcm = { get = function(path) return options[path] end,
+           set = function(path, v) options[path] = v end }
+-- the PDA: what reached it, and the log
+news = {}
+logged = {}
+db = { actor = { give_game_news = function(self, title, text, icon) news[#news + 1] = { title, text, icon } end } }
+function printf(fmt, ...) logged[#logged + 1] = string.format(fmt, ...) end
 opened = 0
 shown = nil
 closed = 0
@@ -55,7 +62,7 @@ function engine_press(key)
 end
 PDA_WORKS = true
 arsenal_pages = { pda_works = function() return PDA_WORKS end }
-game = { translate_string = function(k) return "T:" .. k end }
+game = { translate_string = function(k) return k == "st_arsenal_credit" and "Arsenal v%s by %s" or ("T:" .. k) end }
 msgs = {}
 actor_menu = { set_msg = function(typ, msg, tm) msgs[#msgs + 1] = { typ, msg, tm } end }
 """
@@ -79,7 +86,15 @@ MUTANTS = {
     "reopens": ("    if ui_arsenal.flat_window() or ui_arsenal_workbench.flat_window() then return end\n", ""),
     "workbench_ignored": ("if ui_arsenal.flat_window() or ui_arsenal_workbench.flat_window() then",
                           "if ui_arsenal.flat_window() then"),
-
+    "news_def": ('{ id = "news", type = "check", val = 1, def = true }', '{ id = "news", type = "check", val = 1 }'),
+    "news_off_unset": ("    return not (ok and v == false)", "    return ok and v == true"),
+    "news_dropped": ('            { id = "news", type = "check", val = 1, def = true },\n', ""),
+    "set_inverted": ('ui_mcm.set("arsenal/news", on and true or false)', 'ui_mcm.set("arsenal/news", not on)'),
+    "tell_ignores": ("    if not news() then\n", "    if false then\n"),
+    "tell_unlogged": ('        printf("[arsenal] PDA (silenced): %s", tostring(text))\n', ""),
+    "credit_no_version": ("game.translate_string(\"st_arsenal_credit\"), VERSION, AUTHOR)",
+                          "game.translate_string(\"st_arsenal_credit\"), \"\", AUTHOR)"),
+    "version_behind": ('VERSION = "1.2.1"', 'VERSION = "1.2.0"'),
 }
 
 
@@ -125,6 +140,39 @@ def main():
     mcm, g.ui_mcm = g.ui_mcm, None
     check(m.jailbreak() is False, "off without MCM")
     g.ui_mcm = mcm
+
+    # PDA notifications: on until silenced, here or by the Silence box on the pages (set_news);
+    # every message goes through tell, which drops it while they are off and logs that it did
+    news = [o for o in opts.gr.values() if o.id == "news"]
+    check(len(news) == 1 and news[0].type == "check" and news[0]["def"] is True,
+          "PDA notifications are a check box, on by default (true, not nil)")
+    check(m.news() is True, "on while the option is unset")
+    m.tell("New in Arsenal: PM")
+    sent = [list(x.values()) for x in g.news.values()]
+    check(sent == [["T:st_arsenal_title", "New in Arsenal: PM", "ui_inGame2_Predmet_poluchen"]],
+          "a message goes to the PDA under Arsenal's name: %s" % sent)
+    m.set_news(False)
+    check(g.options["arsenal/news"] is False and m.news() is False,
+          "Silence writes the option off: %s" % g.options["arsenal/news"])
+    m.tell("New in Arsenal: AK-74")
+    logged = list(g.logged.values())
+    check(len(g.news) == 1 and logged == ["[arsenal] PDA (silenced): New in Arsenal: AK-74"],
+          "silenced, nothing reaches the PDA, and the log says what was dropped: %d %s" % (len(g.news), logged))
+    m.set_news(True)
+    check(g.options["arsenal/news"] is True and m.news() is True, "and on again")
+    mcm, g.ui_mcm = g.ui_mcm, None
+    check(m.news() is True, "on without MCM")
+    g.ui_mcm = mcm
+    # the credit line: this release, by its author
+    build = io.open(os.path.join(HERE, "build.py"), encoding="utf-8").read()
+    want = re.search(r'(?m)^VERSION = "([^"]+)"', build).group(1)
+    check(m.VERSION == want and m.AUTHOR == "Windwalker" and m.credit() == "Arsenal v%s by Windwalker" % want,
+          "the pages name this release, %s (build.py's), by Windwalker: %s" % (want, m.credit()))
+    # and nothing else talks to the PDA itself
+    scripts = os.path.join(HERE, "..", "gamedata", "scripts")
+    direct = [f for f in sorted(os.listdir(scripts)) if f != "arsenal_mcm.script"
+              and "give_game_news" in io.open(os.path.join(scripts, f), encoding="latin-1").read()]
+    check(not direct, "every PDA message goes through arsenal_mcm.tell: %s" % (direct or "yes"))
 
     m.on_game_start()
     press = g.callbacks.on_key_press

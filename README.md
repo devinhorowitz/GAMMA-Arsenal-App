@@ -111,6 +111,13 @@ out of what turns up in your game, and a filter shows only those.
 Items you only see do not count as found, unless you turn on **MCM > Arsenal > Count guns you
 see**.
 
+## PDA messages
+
+Arsenal tells your PDA when you find or learn of something for its catalog. **Silence**, at the
+foot of both pages, turns those messages off and on again; it is **MCM > Arsenal > PDA
+notifications**, seen on the page. The foot also names the version you run and its author, so a
+screenshot of Arsenal shows which one it is.
+
 ## What never turns up
 
 Arsenal leaves out what your game never gives you: guns no fighter, stash, trader, story

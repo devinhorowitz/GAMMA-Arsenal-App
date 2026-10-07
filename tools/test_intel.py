@@ -124,7 +124,9 @@ function arsenal_data.special(sec) return sec == "wpn_special" end
 FOUND = {}
 arsenal_collection = { entry_found = function(e) return FOUND[e.sec] end }
 JAIL = false
-arsenal_mcm = { jailbreak = function() return JAIL end }
+-- tell is Arsenal's one way to the PDA (arsenal_mcm), on here; test_mcm.py silences it
+arsenal_mcm = { jailbreak = function() return JAIL end,
+    tell = function(text) db.actor:give_game_news("Arsenal", text) end }
 
 -- a person or a box: what he carries, his faction and rank
 function person(id, comm, rank, items, extra)

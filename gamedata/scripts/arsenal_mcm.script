@@ -6,8 +6,14 @@
     drawn straight to the screen, as sharp as the inventory. The key is unbound (-1) until the
     player picks one; the PDA tile works either way. With Fatal Error, the key opens Arsenal only
     while its PDA works (arsenal_pages.pda_works). Seen guns and the jailbreak are off until the
-    player turns them on.
+    player turns them on. PDA notifications are on until the player silences them, here or with
+    the Silence box at the foot of Arsenal's pages, which writes the same option.
 --]]
+
+-- The release and its author, on the line at the foot of both pages, so a screenshot says which
+-- Arsenal it shows. build.py refuses to build while VERSION is not its own.
+VERSION = "1.2.1"
+AUTHOR = "Windwalker"
 
 function on_mcm_load()
     return {
@@ -19,6 +25,7 @@ function on_mcm_load()
             { id = "flat_key", type = "key_bind", val = 2, def = -1 },
             { id = "count_seen", type = "check", val = 1, def = false },
             { id = "jailbreak", type = "check", val = 1, def = false },
+            { id = "news", type = "check", val = 1, def = true },
             { id = "about", type = "desc", text = "ui_mcm_arsenal_about" },
         },
     }
@@ -42,6 +49,37 @@ end
 function jailbreak()
     local ok, v = pcall(function() return ui_mcm and ui_mcm.get("arsenal/jailbreak") end)
     return (ok and v == true) or false
+end
+
+-- whether Arsenal's PDA messages are on: true unless the player silenced them
+function news()
+    local ok, v = pcall(function() return ui_mcm and ui_mcm.get("arsenal/news") end)
+    return not (ok and v == false)
+end
+
+-- the Silence box writes the option rather than keeping a copy, so it and MCM are one setting
+function set_news(on)
+    local ok, err = pcall(function() ui_mcm.set("arsenal/news", on and true or false) end)
+    if not ok then printf("[arsenal] could not set PDA notifications: %s", tostring(err)) end
+end
+
+-- Every PDA message Arsenal sends goes through here, under Arsenal's name and the PDA's
+-- "received" icon. Silenced, it is dropped rather than held for later; the log still has it.
+-- Returns whether it was sent.
+function tell(text)
+    if not news() then
+        printf("[arsenal] PDA (silenced): %s", tostring(text))
+        return false
+    end
+    if not db.actor then return false end
+    db.actor:give_game_news(game.translate_string("st_arsenal_title"), text,
+        "ui_inGame2_Predmet_poluchen", 0, 5000, 0)
+    return true
+end
+
+-- the line at the foot of both pages: the app's name, VERSION and AUTHOR (st_arsenal_credit)
+function credit()
+    return string.format(game.translate_string("st_arsenal_credit"), VERSION, AUTHOR)
 end
 
 -- the key opens Arsenal flat, when the PDA would show it (arsenal_pages.pda_works: Fatal Error's

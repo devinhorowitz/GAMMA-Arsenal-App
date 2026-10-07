@@ -123,7 +123,12 @@ function CUIScriptWnd.OnKeyboard(self, dik, action) return false end
 DIK_keys = { DIK_ESCAPE = 1, DIK_F7 = 65, DIK_A = 30 }
 db = { actor = { alive = function() return actor_alive end } }
 actor_alive = true
-arsenal_mcm = { flat_key = function() return DIK_keys.DIK_F7 end }
+-- MCM's "PDA notifications", on until a case turns it off; the credit line as arsenal_mcm makes it
+NEWS_ON = true
+arsenal_mcm = { flat_key = function() return DIK_keys.DIK_F7 end,
+    credit = function() return "Arsenal v1.2.1 by Windwalker" end,
+    news = function() return NEWS_ON end,
+    set_news = function(on) NEWS_ON = on end }
 
 function vector2() return { set = function(self, x, y) self.x, self.y = x, y; return self end } end
 function Frect() return { set = function(self, a, b, c, d) self.r = { a, b, c, d }; return self end } end
@@ -422,6 +427,9 @@ arsenal_collection = {
 """
 
 MUTANTS = {
+    "silence_unpainted": ("function ArsenalPDA:Reset()\n    self:PaintFooter()\n", "function ArsenalPDA:Reset()\n"),
+    "silence_inverted": ("arsenal_mcm.set_news(not self.silence:GetCheck())", "arsenal_mcm.set_news(self.silence:GetCheck())"),
+    "no_credit": ("    self.credit:SetText(arsenal_mcm.credit())\n", ""),
     "switch_not_pressed": ("    theme.set_active(self.page_catalog, true)\n", ""),
     "switch_dead": ('    arsenal_pages.open("workbench")', "    -- nothing"),
     "toggle_ignored": ("    by_faction = self.by_faction_check:GetCheck() == true\n", ""),
@@ -1207,6 +1215,35 @@ arsenal_intel = {
         g.pda_section = None
         flat.cb.btn_back()
         check(not flat.IsShown(flat) and g.pda_section is None, "Back closes it, leaving the PDA alone")
+
+    # the footer: Silence is MCM's "PDA notifications" seen here too, ticked while the messages
+    # are off, written on a click and read afresh at every open; under the lists, the credit line
+    sil = ui.silence
+    check(sil is not None and sil.checked is False and ui.credit.text == "Arsenal v1.2.1 by Windwalker",
+          "the footer: Silence unticked while the messages are on, and the credit line: %s, %s"
+          % (sil and sil.checked, ui.credit and ui.credit.text))
+    if sil is not None:
+        sil.checked = True               # the engine ticks the box, then calls back
+        ui.cb.silence()
+        check(g.NEWS_ON is False, "ticking Silence turns the messages off: %s" % g.NEWS_ON)
+        sil.checked = False
+        ui.cb.silence()
+        check(g.NEWS_ON is True, "unticking it turns them on: %s" % g.NEWS_ON)
+        g.NEWS_ON = False                # silenced in MCM: the next open shows it
+        m.get_ui()
+        check(sil.checked is True, "silenced in MCM, the box is ticked at the next open: %s" % sil.checked)
+        g.NEWS_ON = True
+        m.get_ui()
+        check(sil.checked is False, "and unticked once they are on again: %s" % sil.checked)
+    # nothing on the page reaches into the footer, which keeps the content box's last rows
+    body = ["by_faction_lbl", "by_faction", "cat_list", "rule_cat", "found_only_lbl", "found_only", "wpn_list",
+            "rule_wpn", "detail"]
+    foot = ["silence_lbl", "silence", "credit"]
+    rule = sz["rule_foot"][1]
+    low = [(k, sz[k][1] + sz[k][3]) for k in body if sz[k][1] + sz[k][3] > rule - 2]
+    out = [k for k in foot if sz[k][1] < rule or sz[k][1] + sz[k][3] > 709]
+    check(not low and not out, "the page stops above the footer's rule at %d, the footer under it and inside the "
+          "content box: %s %s" % (rule, low, out))
     print("\n%d failed" % len(fails))
     return 1 if fails else 0
 

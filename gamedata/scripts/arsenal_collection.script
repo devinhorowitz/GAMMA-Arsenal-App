@@ -39,8 +39,7 @@ local function notify(list)
     if #list > 3 then
         text = string.format(game.translate_string("st_arsenal_and_more"), text, tostring(#list - 3))
     end
-    db.actor:give_game_news(game.translate_string("st_arsenal_title"),
-        string.format(game.translate_string("st_arsenal_new_entry"), text), "ui_inGame2_Predmet_poluchen", 0, 5000, 0)
+    arsenal_mcm.tell(string.format(game.translate_string("st_arsenal_new_entry"), text))
 end
 
 -- count a section as found; returns its variant when that is new

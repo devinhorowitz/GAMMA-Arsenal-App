@@ -63,6 +63,8 @@ function W:Enable(b) self.enabled = b end
 function W:IsEnabled() return self.enabled ~= false end
 function W:TextControl() return self end
 function W:SetAutoDelete(b) self.autodelete = b end
+function W:GetCheck() return self.checked == true end
+function W:SetCheck(v) self.checked = v == true end
 function W:IsCursorOverWindow() return HOVER == self end
 function W:AddExistingItem(item) self.items = self.items or {}; table.insert(self.items, item) end
 function W:RemoveAll() self.items = {}; self.sel = nil end
@@ -114,7 +116,12 @@ function CUIScriptWnd:HideDialog() self.dialog_shown = false end
 function CUIScriptWnd:IsShown() return self.dialog_shown == true end
 function CUIScriptWnd.OnKeyboard(self, dik, action) return false end
 DIK_keys = { DIK_ESCAPE = 1, DIK_F7 = 65, DIK_A = 30 }
-arsenal_mcm = { flat_key = function() return DIK_keys.DIK_F7 end }
+-- MCM's "PDA notifications", on until a case turns it off; the credit line as arsenal_mcm makes it
+NEWS_ON = true
+arsenal_mcm = { flat_key = function() return DIK_keys.DIK_F7 end,
+    credit = function() return "Arsenal v1.2.1 by Windwalker" end,
+    news = function() return NEWS_ON end,
+    set_news = function(on) NEWS_ON = on end }
 function vector2() return { set = function(self, x, y) self.x, self.y = x, y; return self end } end
 function Frect() return { set = function(self, a, b, c, d) self.r = { a, b, c, d }; return self end } end
 function GetARGB(a, r, g, b) return string.format("%d,%d,%d,%d", a, r, g, b) end
@@ -138,6 +145,11 @@ end
 """
 
 MUTANTS = {
+    "wb_silence_unpainted": ("function WorkbenchPDA:Reset(want)\n    self:PaintFooter()\n", "function WorkbenchPDA:Reset(want)\n"),
+    "wb_silence_inverted": ("arsenal_mcm.set_news(not self.silence:GetCheck())", "arsenal_mcm.set_news(self.silence:GetCheck())"),
+    "wb_no_credit": ("    self.credit:SetText(arsenal_mcm.credit())\n", ""),
+    "wb_suit_card_into_footer": ("local CARD_H, CARD_H_ARMOR = 200, 346", "local CARD_H, CARD_H_ARMOR = 200, 374"),
+    "wb_gun_card_into_rows": ("local CARD_H, CARD_H_ARMOR = 200, 346", "local CARD_H, CARD_H_ARMOR = 228, 346"),
     "no_headings": ('        if i == 1 and e.id then\n            self.list:AddExistingItem(WorkbenchRow(xml, nil, T("st_arsenal_wb_carried"), "dim"))\n        end\n', ""),
     "heading_selects": ("    if not item.key then\n        -- a heading: back to the item shown\n        self:FillList()\n        return\n    end\n", ""),
     "no_count": ('        local row = WorkbenchRow(xml, e.key, e.name, "body", n > 0 and ("+" .. n) or nil)',
@@ -288,6 +300,42 @@ def sizes():
     return {el.tag: [float(el.get(k, 0)) for k in ("x", "y", "width", "height")] for el in root}
 
 
+def footer(g, ui, page_, src, check):
+    """Silence and the credit line, as on the catalog; and nothing on the page reaches into the
+    footer: the card (a gun's, over its attachment rows, and a suit's, which takes their room),
+    the three rows the script places ATT_STEP apart, the tree, the kits and the details."""
+    sil = page_.silence
+    check(sil is not None and sil.checked is False and page_.credit.text == "Arsenal v1.2.1 by Windwalker",
+          "the footer: Silence unticked while the messages are on, and the credit line: %s, %s"
+          % (sil and sil.checked, page_.credit and page_.credit.text))
+    if sil is not None:
+        sil.checked = True               # the engine ticks the box, then calls back
+        page_.cb.silence()
+        check(g.NEWS_ON is False, "ticking Silence turns the messages off: %s" % g.NEWS_ON)
+        sil.checked = False
+        page_.cb.silence()
+        check(g.NEWS_ON is True, "unticking it turns them on: %s" % g.NEWS_ON)
+        g.NEWS_ON = False                # silenced in MCM: the next open shows it
+        box = ui.get_ui().silence
+        check(box.checked is True, "silenced in MCM, the box is ticked at the next open: %s" % box.checked)
+        g.NEWS_ON = True
+        box = ui.get_ui().silence
+        check(box.checked is False, "and unticked once they are on again: %s" % box.checked)
+    sz = sizes()
+    rule = sz["rule_foot"][1]
+    card_h, armor_h = (int(v) for v in re.search(r"local CARD_H, CARD_H_ARMOR = (\d+), (\d+)", src).groups())
+    step = int(re.search(r"local ATT_STEP = (\d+)", src).group(1))
+    bottom = {k: sz[k][1] + sz[k][3] for k in ("wb_list", "wb_tree_bg", "wb_tree", "wb_kits_lbl", "wb_kits_frame",
+                                               "wb_kits_num", "wb_clear", "wb_info")}
+    bottom["a suit's card"] = sz["wb_card"][1] + armor_h
+    bottom["the last attachment row"] = sz["wb_att_btn"][1] + 2 * step + sz["wb_att_btn"][3]
+    low = sorted((k, v) for k, v in bottom.items() if v > rule - 2)
+    gun = sz["wb_card"][1] + card_h
+    check(not low and gun <= sz["wb_att_lbl"][1] - 4,
+          "the page stops above the footer's rule at %d, a gun's card (to %d) above its attachments (from %d): %s"
+          % (rule, gun, sz["wb_att_lbl"][1], low))
+
+
 def main():
     page, pages, modxml = PAGE, PAGES, MODXML
     mutant = sys.argv[1] if len(sys.argv) > 1 else None
@@ -352,6 +400,11 @@ WORLD = { [7] = "wpn_test", [3] = "suit_x" }
         print("\n1 failed")
         return 1
     check(page_ is not None, "the page builds, every element in the layout")
+    # the footer first: the steps below swap get_ui for the router's stand-in
+    try:
+        footer(g, ui, page_, page, check)
+    except L.LuaError as e:
+        check(False, "the footer runs: %s" % str(e).splitlines()[0])
     try:
         steps(lua, g, ui, data, page_, pages, modxml, load, check)
     except L.LuaError as e:

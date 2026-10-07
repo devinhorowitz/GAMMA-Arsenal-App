@@ -11,6 +11,7 @@ and writes its meta.ini.
     build.py --check    check only
 """
 import os
+import re
 import shutil
 import struct
 import subprocess
@@ -78,6 +79,14 @@ def check():
                 if err:
                     bad.append("%s: %s" % (p, err))
     print("xml parse: %d, scripts compile: %d" % (n_xml, n_lua))
+    # the version the pages show at their foot (arsenal_mcm's VERSION) has to be this build's: a
+    # screenshot names the release by it
+    m = re.search(r'(?m)^VERSION = "([^"]+)"',
+                  open(os.path.join(GD, "scripts", "arsenal_mcm.script"), encoding="utf-8").read())
+    shown = m.group(1) if m else None
+    if shown != VERSION:
+        bad.append("arsenal_mcm.script's VERSION is %s, this build's is %s" % (shown, VERSION))
+    print("version: %s, on the pages %s" % (VERSION, shown))
     for t in ("test_data.py", "test_collection.py", "test_ui.py", "test_mcm.py", "test_intel.py", "test_mac.py",
               "test_workbench.py", "test_workbench_ui.py"):
         r = subprocess.run([sys.executable, os.path.join(HERE, t)], capture_output=True, text=True)

@@ -50,10 +50,10 @@
 	<by_faction x="130" y="141" width="30" height="30" stretch="1">
 		<texture>ui_inGame2_checkbox</texture>
 	</by_faction>
-	<cat_list x="28" y="174" width="132" height="532" item_height="22" can_select="1" always_show_scroll="0">
+	<cat_list x="28" y="174" width="132" height="504" item_height="22" can_select="1" always_show_scroll="0">
 		<font font="letterica16" r="200" g="200" b="200"/>
 	</cat_list>
-	<rule_cat x="164" y="146" width="1" height="560" stretch="1">
+	<rule_cat x="164" y="146" width="1" height="532" stretch="1">
 		<texture>arsenal_rule</texture>
 	</rule_cat>
 	<!-- over the model list, like "By faction" over the left one -->
@@ -63,13 +63,13 @@
 	<found_only x="272" y="141" width="30" height="30" stretch="1">
 		<texture>ui_inGame2_checkbox</texture>
 	</found_only>
-	<wpn_list x="170" y="174" width="250" height="532" item_height="22" can_select="1" always_show_scroll="0">
+	<wpn_list x="170" y="174" width="250" height="504" item_height="22" can_select="1" always_show_scroll="0">
 		<font font="letterica16" r="200" g="200" b="200"/>
 	</wpn_list>
-	<rule_wpn x="424" y="146" width="1" height="560" stretch="1">
+	<rule_wpn x="424" y="146" width="1" height="532" stretch="1">
 		<texture>arsenal_rule</texture>
 	</rule_wpn>
-	<detail x="432" y="146" width="360" height="560" always_show_scroll="0" stretch="1"/>
+	<detail x="432" y="146" width="360" height="532" always_show_scroll="0" stretch="1"/>
 
 	<!-- the entry, built per weapon inside the detail scroll view; 344 wide leaves room for its bar -->
 	<entry x="0" y="0" width="344" height="560" stretch="1"/>
@@ -201,8 +201,8 @@
 		<texture>arsenal_rule</texture>
 	</wb_rule_list>
 	<!-- the card, built for each item: a row is the card's icon, its name, and "now >> planned" -->
-	<wb_card x="28" y="332" width="244" height="228" always_show_scroll="0" stretch="1"/>
-	<wb_card_box x="0" y="0" width="240" height="228" stretch="1"/>
+	<wb_card x="28" y="332" width="244" height="200" always_show_scroll="0" stretch="1"/>
+	<wb_card_box x="0" y="0" width="240" height="200" stretch="1"/>
 	<wb_card_icon x="0" y="0" width="16" height="16" stretch="1"/>
 	<wb_card_name x="20" y="0" width="106" height="20">
 		<text font="letterica16" r="200" g="200" b="200" align="l" vert_align="c"/>
@@ -222,11 +222,12 @@
 		<text font="letterica16" r="140" g="140" b="140" align="l" vert_align="t" complex_mode="1"/>
 	</wb_line>
 	<!-- a gun's attachments: three rows of a name over a button that steps through what fits,
-	     the script places them 46 apart; a suit's card takes their room -->
-	<wb_att_lbl x="28" y="566" width="240" height="18">
+	     the script places them 46 apart, the last ending at 674 over the footer; a suit's card
+	     takes their room -->
+	<wb_att_lbl x="28" y="538" width="240" height="18">
 		<text font="letterica16" r="140" g="140" b="140" align="l" vert_align="c"/>
 	</wb_att_lbl>
-	<wb_att_btn x="28" y="584" width="240" height="26" stretch="1" check_mode="0">
+	<wb_att_btn x="28" y="556" width="240" height="26" stretch="1" check_mode="0">
 		<texture>ui_button_ordinary</texture>
 		<text font="letterica16" align="c" vert_align="c"/>
 	</wb_att_btn>
@@ -274,12 +275,29 @@
 		<texture>arsenal_rule</texture>
 	</wb_rule_info>
 	<!-- the details: the upgrade or attachment under the cursor, else the plan -->
-	<wb_info x="280" y="590" width="512" height="116" always_show_scroll="0" stretch="1"/>
-	<wb_info_box x="0" y="0" width="496" height="116" stretch="1"/>
+	<wb_info x="280" y="590" width="512" height="88" always_show_scroll="0" stretch="1"/>
+	<wb_info_box x="0" y="0" width="496" height="88" stretch="1"/>
 	<wb_info_name x="0" y="0" width="496" height="20">
 		<text font="letterica18" r="238" g="196" b="112" align="l" vert_align="t" complex_mode="1"/>
 	</wb_info_name>
 	<wb_info_line x="0" y="0" width="496" height="18">
 		<text font="letterica16" r="200" g="200" b="200" align="l" vert_align="t" complex_mode="1"/>
 	</wb_info_line>
+
+	<!-- ============ the footer, the same on both pages ============
+	     Under a rule like the header's: Silence, which is MCM's "PDA notifications" seen here too,
+	     ticked while Arsenal's messages are off; and the line naming the app, its version and its
+	     author, so a screenshot says which Arsenal it shows. Everything above stops at 678. -->
+	<rule_foot x="28" y="681" width="764" height="1" stretch="1">
+		<texture>arsenal_rule</texture>
+	</rule_foot>
+	<silence_lbl x="32" y="686" width="60" height="20">
+		<text font="letterica16" r="200" g="200" b="200" align="l" vert_align="c">st_arsenal_silence</text>
+	</silence_lbl>
+	<silence x="94" y="683" width="26" height="26" stretch="1">
+		<texture>ui_inGame2_checkbox</texture>
+	</silence>
+	<credit x="432" y="686" width="356" height="20">
+		<text font="letterica16" r="140" g="140" b="140" align="r" vert_align="c"/>
+	</credit>
 </w>

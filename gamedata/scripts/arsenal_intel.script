@@ -128,8 +128,7 @@ local function flush()
         if #names > 3 then
             text = string.format(game.translate_string("st_arsenal_and_more"), text, tostring(#names - 3))
         end
-        db.actor:give_game_news(game.translate_string("st_arsenal_title"),
-            string.format(game.translate_string("st_arsenal_learned"), key, text), "ui_inGame2_Predmet_poluchen", 0, 5000, 0)
+        arsenal_mcm.tell(string.format(game.translate_string("st_arsenal_learned"), key, text))
     end
     return true
 end

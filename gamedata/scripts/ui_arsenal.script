@@ -106,6 +106,16 @@ function ArsenalPDA:__init(flat) super()
     xml:InitStatic("rule_wpn", self)
     self.detail = xml:InitScrollView("detail", self)
 
+    -- the footer, the same on both pages: Silence, and the line naming the app, its version and
+    -- its author, so a screenshot says which Arsenal it shows
+    xml:InitStatic("rule_foot", self)
+    xml:InitTextWnd("silence_lbl", self)
+    self.silence = xml:InitCheck("silence", self)
+    self:Register(self.silence, "silence")
+    self:AddCallback("silence", ui_events.BUTTON_CLICKED, self.OnSilence, self)
+    self.credit = xml:InitTextWnd("credit", self)
+    self.credit:SetText(arsenal_mcm.credit())
+
     -- the button for the model shown (add_action), hidden until one applies
     self.action_btns = {}
     for i = 1, MAX_ACTIONS do
@@ -181,9 +191,20 @@ end
 
 -- every time the page is opened: what is found and known may have changed
 function ArsenalPDA:Reset()
+    self:PaintFooter()
     self:SetCounts()
     self:FillCategories()
     self:FillWeapons()
+end
+
+-- Silence is MCM's "PDA notifications" seen here too, ticked while Arsenal's messages are off. It
+-- writes the option, and every open reads it afresh, so a change made in MCM shows at the next.
+function ArsenalPDA:OnSilence()
+    arsenal_mcm.set_news(not self.silence:GetCheck())
+end
+
+function ArsenalPDA:PaintFooter()
+    self.silence:SetCheck(not arsenal_mcm.news())
 end
 
 -- the line over the lists. Counts go over what turns up in this game only; what is new

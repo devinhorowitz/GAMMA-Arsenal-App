@@ -23,7 +23,8 @@ local SLOT_Y = { 26, 76, 26, 76, 26, 76 }
 local SOLO_DY = 25
 local KIT_STEP, MAX_KITS = 52, 6
 local ATT_STEP = 46             -- attachment rows apart
-local CARD_H, CARD_H_ARMOR = 228, 374
+-- a gun's card stops where its attachment rows start (wb_att_lbl); a suit's runs to the footer
+local CARD_H, CARD_H_ARMOR = 200, 346
 local ATT = { "scope", "silencer", "launcher" }
 local MARKS = {
     installed = "ui_inGame2_workshop_upgr_green",
@@ -194,8 +195,28 @@ function WorkbenchPDA:__init(flat) super()
     xml:InitStatic("wb_rule_info", self)
     self.info = xml:InitScrollView("wb_info", self)
 
+    -- the footer, the same on both pages: Silence, and the line naming the app, its version and
+    -- its author, so a screenshot says which Arsenal it shows
+    xml:InitStatic("rule_foot", self)
+    xml:InitTextWnd("silence_lbl", self)
+    self.silence = xml:InitCheck("silence", self)
+    self:Register(self.silence, "silence")
+    self:AddCallback("silence", ui_events.BUTTON_CLICKED, self.OnSilence, self)
+    self.credit = xml:InitTextWnd("credit", self)
+    self.credit:SetText(arsenal_mcm.credit())
+
     self.entries, self.cur = {}, nil
     self.hover = nil
+end
+
+-- Silence is MCM's "PDA notifications" seen here too, ticked while Arsenal's messages are off. It
+-- writes the option, and every open reads it afresh, so a change made in MCM shows at the next.
+function WorkbenchPDA:OnSilence()
+    arsenal_mcm.set_news(not self.silence:GetCheck())
+end
+
+function WorkbenchPDA:PaintFooter()
+    self.silence:SetCheck(not arsenal_mcm.news())
 end
 
 function WorkbenchPDA:__finalize()
@@ -214,6 +235,7 @@ end
 -- picks the item to show: a carried one by id, else one of that section, else the model;
 -- without it the item shown last, else the first.
 function WorkbenchPDA:Reset(want)
+    self:PaintFooter()
     local carried = arsenal_workbench.carried()
     local ids, secs = {}, {}
     self.entries = {}

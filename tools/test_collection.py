@@ -56,7 +56,9 @@ function take(sec) callbacks.actor_on_item_take(item(sec)) end
 -- the option to count guns seen, and the inventory window: its mode and partner, as ui_inventory
 -- keeps them; a box holds a Fort-17, an SKS and ammo; a trader five guns and a PM
 seen_on = false
-arsenal_mcm = { count_seen = function() return seen_on end }
+-- tell is Arsenal's one way to the PDA (arsenal_mcm), on here; test_mcm.py silences it
+arsenal_mcm = { count_seen = function() return seen_on end,
+    tell = function(text) db.actor:give_game_news("Arsenal", text) end }
 -- what the player knows (arsenal_intel): told of every find
 told = {}
 arsenal_intel = { found = function(sec, live) told[#told + 1] = sec .. (live and " in play" or "") end }
