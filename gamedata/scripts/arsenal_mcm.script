@@ -45,16 +45,22 @@ function jailbreak()
 end
 
 -- the key opens Arsenal flat, when the PDA would show it (arsenal_pages.pda_works: Fatal Error's
--- PDA out of use); else a line on the HUD says why not
+-- PDA out of use); else a line on the HUD says why not. The window opens on the next update, not
+-- during the press: the engine hands a key to scripts before the UI (Level_input.cpp), so a
+-- window opened here gets this same press, and the key closes it. While a page is open flat the
+-- press is that page's to close it (OnKeyboard), so this leaves it alone.
 local function on_key_press(key)
     local k = flat_key()
-    if k and key == k then
-        if arsenal_pages.pda_works() then
-            ui_arsenal.open_flat()
-        else
-            actor_menu.set_msg(1, game.translate_string("st_arsenal_pda_down"), 3)
-        end
+    if not (k and key == k) then return end
+    if ui_arsenal.flat_window() or ui_arsenal_workbench.flat_window() then return end
+    if not arsenal_pages.pda_works() then
+        actor_menu.set_msg(1, game.translate_string("st_arsenal_pda_down"), 3)
+        return
     end
+    CreateTimeEvent("arsenal_mcm", "open_flat", 0, function()
+        ui_arsenal.open_flat()
+        return true
+    end)
 end
 
 function on_game_start()

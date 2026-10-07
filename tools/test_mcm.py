@@ -2,7 +2,9 @@
 its MCM option has a real default (unbound, -1; a nil default once crashed another mod's
 startup), an unbound key or a missing MCM reads as no key, and only the bound key opens the
 flat window, while the PDA works (arsenal_pages.pda_works: Fatal Error's PDA); else the HUD says
-why not.
+why not. Each press goes through the engine's order (engine_press): the scripts' callback, then
+the window on top, then the next update. A window opened during the press got that same press
+and closed on the key, so nothing showed; a test that only calls the callback passes on that.
 
     python test_mcm.py            the real script
     python test_mcm.py MUTANT     a broken copy (see MUTANTS); the run must fail
@@ -22,7 +24,35 @@ function RegisterScriptCallback(name, fn) callbacks[name] = fn end
 options = {}
 ui_mcm = { get = function(path) return options[path] end }
 opened = 0
-ui_arsenal = { open_flat = function() opened = opened + 1 end }
+shown = nil
+closed = 0
+ui_arsenal = {
+    open_flat = function() opened = opened + 1; shown = "catalog" end,
+    flat_window = function() if shown == "catalog" then return {} end end,
+}
+ui_arsenal_workbench = { flat_window = function() if shown == "workbench" then return {} end end }
+timers = {}
+-- as _g.script: an event already queued under the same ids is kept, not replaced
+function CreateTimeEvent(ev_id, act_id, delay, fn, ...)
+    local id = ev_id .. "/" .. act_id
+    if not timers[id] then timers[id] = { fn = fn, args = { ... } } end
+end
+function tick()
+    for id, t in pairs(timers) do
+        if t.fn(unpack(t.args)) then timers[id] = nil end
+    end
+end
+-- one key press in the engine's order (Level_input.cpp): the scripts' callback, then the window
+-- on top, if a page is open flat (its OnKeyboard closes it on Escape or the key: ui_arsenal,
+-- ui_arsenal_workbench), then the next update, which runs the time events
+function engine_press(key)
+    if callbacks.on_key_press then callbacks.on_key_press(key) end
+    if shown and (key == 1 or key == options["arsenal/flat_key"]) then
+        shown = nil
+        closed = closed + 1
+    end
+    tick()
+end
 PDA_WORKS = true
 arsenal_pages = { pda_works = function() return PDA_WORKS end }
 game = { translate_string = function(k) return "T:" .. k end }
@@ -35,13 +65,21 @@ MUTANTS = {
                 '{ id = "flat_key", type = "key_bind", val = 2, def = nil }'),
     "unbound": ("return (k and k >= 0) and k or nil", "return k"),
     "no_callback": ('RegisterScriptCallback("on_key_press", on_key_press)', "-- not registered"),
-    "any_key": ("if k and key == k then", "if k then"),
+    "any_key": ("if not (k and key == k) then return end", "if not k then return end"),
     "seen_def": ('{ id = "count_seen", type = "check", val = 1, def = false }', '{ id = "count_seen", type = "check", val = 1 }'),
     "seen_any": ("return ok and v == true", "return ok"),
     "jail_def": ('{ id = "jailbreak", type = "check", val = 1, def = false }', '{ id = "jailbreak", type = "check", val = 1 }'),
     "jail_any": ("return (ok and v == true) or false", "return ok"),
-    "pda_ignored": ("if arsenal_pages.pda_works() then", "if true then"),
-    "pda_silent": ('            actor_menu.set_msg(1, game.translate_string("st_arsenal_pda_down"), 3)\n', ""),
+    "pda_ignored": ("if not arsenal_pages.pda_works() then", "if false then"),
+    "pda_silent": ('        actor_menu.set_msg(1, game.translate_string("st_arsenal_pda_down"), 3)\n', ""),
+    "during_press": ('    CreateTimeEvent("arsenal_mcm", "open_flat", 0, function()\n'
+                     "        ui_arsenal.open_flat()\n"
+                     "        return true\n"
+                     "    end)\n", "    ui_arsenal.open_flat()\n"),
+    "reopens": ("    if ui_arsenal.flat_window() or ui_arsenal_workbench.flat_window() then return end\n", ""),
+    "workbench_ignored": ("if ui_arsenal.flat_window() or ui_arsenal_workbench.flat_window() then",
+                          "if ui_arsenal.flat_window() then"),
+
 }
 
 
@@ -87,30 +125,41 @@ def main():
     mcm, g.ui_mcm = g.ui_mcm, None
     check(m.jailbreak() is False, "off without MCM")
     g.ui_mcm = mcm
+
     m.on_game_start()
     press = g.callbacks.on_key_press
     check(press is not None, "the key press callback is registered")
     g.options["arsenal/flat_key"] = -1
     check(m.flat_key() is None, "an unbound key reads as no key")
-    if press is not None:
-        press(30)
+    g.engine_press(30)
     check(g.opened == 0, "with no key bound, no key opens the window")
     g.options["arsenal/flat_key"] = 65
     check(m.flat_key() == 65, "a bound key: %s" % m.flat_key())
-    if press is not None:
-        press(30)
-        press(65)
-    check(g.opened == 1, "only the bound key opens the window: %d" % g.opened)
+    g.engine_press(30)
+    check(g.opened == 0, "another key opens nothing: %d" % g.opened)
+    g.engine_press(65)
+    check(g.opened == 1 and g.shown == "catalog",
+          "the key opens the window, still open once the press is through: %d %s" % (g.opened, g.shown))
+    g.engine_press(65)
+    check(g.shown is None and g.closed == 1 and g.opened == 1,
+          "the key again closes it, and nothing reopens it: %s %d %d" % (g.shown, g.closed, g.opened))
+    g.engine_press(65)
+    check(g.opened == 2 and g.shown == "catalog", "and the key opens it once more: %d %s" % (g.opened, g.shown))
+    g.engine_press(1)
+    check(g.shown is None and g.opened == 2, "Escape closes it: %s %d" % (g.shown, g.opened))
+    g.shown = "workbench"
+    g.engine_press(65)
+    check(g.shown is None and g.opened == 2,
+          "with Workbench open flat, the key closes it and opens nothing: %s %d" % (g.shown, g.opened))
     g.PDA_WORKS = False
-    if press is not None:
-        press(65)
+    g.engine_press(65)
     msgs = [list(x.values()) for x in g.msgs.values()]
-    check(g.opened == 1 and msgs == [[1, "T:st_arsenal_pda_down", 3]],
+    check(g.opened == 2 and g.shown is None and msgs == [[1, "T:st_arsenal_pda_down", 3]],
           "with the PDA out of use, the key opens nothing and the HUD says why: %d %s" % (g.opened, msgs))
     g.PDA_WORKS = True
-    if press is not None:
-        press(65)
-    check(g.opened == 2 and len(g.msgs) == 1, "and opens it again once the PDA works: %d" % g.opened)
+    g.engine_press(65)
+    check(g.opened == 3 and g.shown == "catalog" and len(g.msgs) == 1,
+          "and opens it again once the PDA works: %d" % g.opened)
     g.ui_mcm = None
     check(m.flat_key() is None, "without MCM, no key")
     print("\n%d failed" % len(fails))
