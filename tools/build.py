@@ -3,7 +3,7 @@
 Writes the generated files (the 1 px rule texture, the Russian string table), then checks:
 every XML parses (string tables as windows-1251), every script compiles under LuaJIT, and the
 tests pass (test_data, test_collection, test_ui, test_mcm, test_intel, test_mac, test_workbench,
-test_workbench_ui). Only then mirrors gamedata/ into
+test_workbench_ui, test_compare). Only then mirrors gamedata/ into
 D:\\GAMMA\\mods\\Arsenal\\gamedata (files that are no longer in the source are removed there)
 and writes its meta.ini.
 
@@ -88,7 +88,7 @@ def check():
         bad.append("arsenal_mcm.script's VERSION is %s, this build's is %s" % (shown, VERSION))
     print("version: %s, on the pages %s" % (VERSION, shown))
     for t in ("test_data.py", "test_collection.py", "test_ui.py", "test_mcm.py", "test_intel.py", "test_mac.py",
-              "test_workbench.py", "test_workbench_ui.py"):
+              "test_workbench.py", "test_workbench_ui.py", "test_compare.py"):
         r = subprocess.run([sys.executable, os.path.join(HERE, t)], capture_output=True, text=True)
         last = r.stdout.strip().splitlines()[-1] if r.stdout.strip() else r.stderr.strip()[-200:]
         print("%-20s %s" % (t, last))

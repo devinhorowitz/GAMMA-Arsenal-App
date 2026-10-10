@@ -1,0 +1,356 @@
+--[[
+    Compare, Arsenal's third page (its data is arsenal_compare): two guns, two suits or two
+    helmets side by side. On top, each model's icon and name, with Change, which sends the next
+    model the catalog's Compare button puts in to that side (pressed while it waits; a second
+    click takes it back). Under them the rows, mirrored around their names: each side's value as
+    the stat card shows it next to the name, fully upgraded on the outside, the better of the
+    two in green, the better upgraded one too.
+
+    The panels' widgets are made once and only filled; the rows are built anew into a box that
+    goes into their scroll view once complete (a scroll view measures its content when a window
+    is added, never when one is resized).
+--]]
+
+local theme = arsenal_theme
+local SINGLETON, FLAT
+local PDA_X, PDA_Y = 112, 34    -- where the PDA puts its pages (ui_arsenal.script)
+local SIDES = { "left", "right" }
+local SIDE_X = { left = 28, right = 418 }   -- the panels' x: 374 wide, 16 apart
+local ICON_PAD = 8
+local ROW_H = 20
+local BAND_ALPHA = 36           -- every other row's band
+
+local function T(id, ...)
+    local s = game.translate_string(id)
+    if select("#", ...) > 0 then return string.format(s, ...) end
+    return s
+end
+
+-- an inventory icon on a static made once: fitted into a box at most at its own size, centered
+local function fit_icon(st, x, y, w, h, sec)
+    local tex, a = arsenal_data.icon(sec)
+    if not (tex and a and a.w > 0 and a.h > 0) then
+        st:Show(false)
+        return
+    end
+    local wide = utils_xml.is_widescreen() and 0.8 or 1
+    local k = math.min(w / (a.w * wide), h / a.h, 1)
+    local iw, ih = a.w * wide * k, a.h * k
+    st:InitTexture(tex)
+    st:SetTextureRect(Frect():set(a.x1, a.y1, a.x1 + a.w, a.y1 + a.h))
+    st:SetStretchTexture(true)
+    st:SetWndSize(vector2():set(iw, ih))
+    st:SetWndPos(vector2():set(x + (w - iw) / 2, y + (h - ih) / 2))
+    st:SetTextureColor(GetARGB(255, 255, 255, 255))
+    st:Show(true)
+end
+
+---------------------------------------------------------------------------------------------
+-- the page
+---------------------------------------------------------------------------------------------
+class "ComparePDA" (CUIScriptWnd)
+
+function ComparePDA:__init(flat) super()
+    self.flat = flat == true
+    local x, y = self.flat and PDA_X or 0, self.flat and PDA_Y or 0
+    self:SetWndRect(Frect():set(x, y, x + 1024, y + 768))
+    local xml = CScriptXmlInit()
+    xml:ParseFile("ui_arsenal.xml")
+    self.xml = xml
+
+    if self.flat then
+        xml:InitStatic("flat_bezel", self)
+        xml:InitTextWnd("flat_caption", self)
+    end
+
+    -- the header: the switch (this page pressed), what is compared, Swap, Clear, Back
+    self.page_catalog = xml:Init3tButton("page_catalog", self)
+    self:Register(self.page_catalog, "page_catalog")
+    self:AddCallback("page_catalog", ui_events.BUTTON_CLICKED, self.OnCatalog, self)
+    self.page_workbench = xml:Init3tButton("page_workbench", self)
+    self:Register(self.page_workbench, "page_workbench")
+    self:AddCallback("page_workbench", ui_events.BUTTON_CLICKED, self.OnWorkbench, self)
+    self.page_compare = xml:Init3tButton("page_compare", self)
+    theme.set_active(self.page_compare, true)
+    self.title = xml:InitTextWnd("cmp_title", self)
+    self.btn_swap = xml:Init3tButton("cmp_swap", self)
+    self:Register(self.btn_swap, "cmp_swap")
+    self:AddCallback("cmp_swap", ui_events.BUTTON_CLICKED, self.OnSwap, self)
+    self.btn_clear = xml:Init3tButton("cmp_clear", self)
+    self:Register(self.btn_clear, "cmp_clear")
+    self:AddCallback("cmp_clear", ui_events.BUTTON_CLICKED, self.OnClear, self)
+    self.btn_back = xml:Init3tButton("btn_back", self)
+    self:Register(self.btn_back, "btn_back")
+    self:AddCallback("btn_back", ui_events.BUTTON_CLICKED, self.OnBack, self)
+    xml:InitStatic("rule_top", self)
+
+    -- the panels, the left one's widgets at x 28, the right one's at 418
+    self.panels = {}
+    for _, side in ipairs(SIDES) do
+        local p = { side = side }
+        p.bg = xml:InitStatic("cmp_icon_bg", self)
+        p.icon = xml:InitStatic("cmp_icon", self)
+        p.empty = xml:InitTextWnd("cmp_empty", self)
+        p.name = xml:InitTextWnd("cmp_name", self)
+        p.change = xml:Init3tButton("cmp_change", self)
+        for _, w in ipairs({ p.bg, p.empty, p.name, p.change }) do
+            local pos = w:GetWndPos()
+            w:SetWndPos(vector2():set(pos.x + SIDE_X[side], pos.y))
+        end
+        self:Register(p.change, "cmp_change_" .. side)
+        self:AddCallback("cmp_change_" .. side, ui_events.BUTTON_CLICKED, function() self:OnChange(side) end, self)
+        self.panels[side] = p
+    end
+    xml:InitStatic("cmp_rule", self)
+
+    -- the columns' headings: upgraded on the outside, the card's value inside
+    self.head = xml:InitStatic("cmp_head", self)
+    for _, c in ipairs({ { "cmp_max_l", "st_arsenal_cmp_upgraded" }, { "cmp_val_l", "st_arsenal_cmp_stock" },
+        { "cmp_val_r", "st_arsenal_cmp_stock" }, { "cmp_max_r", "st_arsenal_cmp_upgraded" } }) do
+        local h = xml:InitTextWnd(c[1], self.head)
+        h:SetText(T(c[2]))
+        h:SetTextColor(theme.argb("dim"))
+    end
+    self.rows_view = xml:InitScrollView("cmp_rows", self)
+
+    -- the footer, the same on every page: Silence, the jailbreak lamp, and the line naming the
+    -- app, its version and its author, so a screenshot says which Arsenal it shows and how
+    xml:InitStatic("rule_foot", self)
+    xml:InitTextWnd("silence_lbl", self)
+    self.silence = xml:InitCheck("silence", self)
+    self:Register(self.silence, "silence")
+    self:AddCallback("silence", ui_events.BUTTON_CLICKED, self.OnSilence, self)
+    self.jailbreak = xml:InitStatic("jailbreak", self)
+    self.jailbreak_lbl = xml:InitTextWnd("jailbreak_lbl", self)
+    self.credit = xml:InitTextWnd("credit", self)
+    self.credit:SetText(arsenal_mcm.credit())
+end
+
+function ComparePDA:__finalize()
+    if self.flat then
+        FLAT = nil
+    else
+        SINGLETON = nil
+    end
+end
+
+-- Silence is MCM's "PDA notifications" seen here too, ticked while Arsenal's messages are off. It
+-- writes the option, and every open reads it afresh, so a change made in MCM shows at the next.
+function ComparePDA:OnSilence()
+    arsenal_mcm.set_news(not self.silence:GetCheck())
+end
+
+-- The jailbreak lamp is lit, in the warning color, while MCM's jailbreak lists everything, and
+-- gone while it is off; every open reads the option afresh.
+function ComparePDA:PaintFooter()
+    self.silence:SetCheck(not arsenal_mcm.news())
+    local jb = arsenal_mcm.jailbreak() == true
+    self.jailbreak:Show(jb)
+    self.jailbreak_lbl:Show(jb)
+    if jb then
+        self.jailbreak:SetTextureColor(theme.argb("warn"))
+        self.jailbreak_lbl:SetTextColor(theme.argb("warn"))
+    end
+end
+
+-- every time the page opens: what can be compared may have changed (the jailbreak)
+function ComparePDA:Reset()
+    self:PaintFooter()
+    arsenal_compare.validate()
+    self:Fill()
+end
+
+function ComparePDA:Fill()
+    local l, r = arsenal_compare.sides()
+    local kind = l and arsenal_compare.kind_of(l)
+    self.title:SetText(kind and T("st_arsenal_cmp_title_" .. kind) or "")
+    self:FillPanel(self.panels.left, l, "st_arsenal_cmp_none")
+    self:FillPanel(self.panels.right, r, kind and ("st_arsenal_cmp_pick_" .. kind))
+    self.btn_swap:Enable(l ~= nil and r ~= nil)
+    self.btn_clear:Enable(l ~= nil)
+    self:FillRows(l, r)
+end
+
+-- a panel: the model's icon, its name and Change; empty, what to do (`hint`, a string id: the
+-- left one's while nothing is compared, the right one's while the left waits)
+function ComparePDA:FillPanel(p, sec, hint)
+    p.name:Show(sec ~= nil)
+    p.change:Show(sec ~= nil)
+    p.empty:Show(sec == nil)
+    if not sec then
+        p.icon:Show(false)
+        p.empty:SetText(hint and T(hint) or "")
+        return
+    end
+    p.name:SetText(arsenal_compare.name(sec))
+    theme.set_active(p.change, arsenal_compare.wanted() == p.side)
+    local pos = p.bg:GetWndPos()
+    fit_icon(p.icon, pos.x + ICON_PAD, pos.y + ICON_PAD, p.bg:GetWidth() - 2 * ICON_PAD,
+        p.bg:GetHeight() - 2 * ICON_PAD, sec)
+end
+
+-- a side's value: green where it is the better, "-" where it has none (blank with no model on
+-- that side)
+local function cell(c, s, here, best, has, role)
+    if s then
+        c:SetText(s)
+        c:SetTextColor(theme.argb(best == here and "good" or role))
+    elseif has then
+        c:SetText("-")
+        c:SetTextColor(theme.argb("dim"))
+    else
+        c:SetText("")
+    end
+end
+
+-- The rows: the name in the middle, each side's value next to it and its upgraded value on the
+-- outside; a row of text across both columns of a side, as tall as its longer side
+function ComparePDA:FillRows(l, r)
+    self.rows_view:Clear()
+    self.head:Show(l ~= nil)
+    if not l then return end
+    local ok, rows = pcall(arsenal_compare.rows, l, r)
+    if not ok then
+        printf("[arsenal] Compare's rows for %s and %s: %s", tostring(l), tostring(r), tostring(rows))
+        return
+    end
+    local xml = self.xml
+    local box = xml:InitStatic("cmp_box", nil)
+    local y = 0
+    for i, row in ipairs(rows) do
+        local band = i % 2 == 0 and xml:InitStatic("cmp_band", box) or nil
+        local h = ROW_H
+        local name = xml:InitTextWnd("cmp_label", box)
+        name:SetText(row.label)
+        if row.wide then
+            local a = xml:InitTextWnd("cmp_text_l", box)
+            local b = xml:InitTextWnd("cmp_text_r", box)
+            cell(a, row.l and row.l.text, "l", nil, true, "body")
+            cell(b, row.r and row.r.text, "r", nil, r ~= nil, "body")
+            for _, t in ipairs({ a, b }) do
+                t:AdjustHeightToText()
+                h = math.max(h, t:GetHeight() + 2)
+            end
+            for _, t in ipairs({ name, a, b }) do
+                local p = t:GetWndPos()
+                t:SetWndPos(vector2():set(p.x, y + p.y))
+            end
+        else
+            local cols = {
+                { "cmp_max_l", row.l and row.l.max_text, "l", row.max_better, true, "dim" },
+                { "cmp_val_l", row.l and row.l.text, "l", row.better, true, "body" },
+                { "cmp_val_r", row.r and row.r.text, "r", row.better, r ~= nil, "body" },
+                { "cmp_max_r", row.r and row.r.max_text, "r", row.max_better, r ~= nil, "dim" },
+            }
+            name:SetWndPos(vector2():set(name:GetWndPos().x, y))
+            for _, c in ipairs(cols) do
+                local t = xml:InitTextWnd(c[1], box)
+                t:SetWndPos(vector2():set(t:GetWndPos().x, y))
+                -- an upgraded value is left blank where it is not known, not dashed
+                if c[1] == "cmp_max_l" or c[1] == "cmp_max_r" then
+                    cell(t, c[2], c[3], c[4], false, c[6])
+                else
+                    cell(t, c[2], c[3], c[4], c[5], c[6])
+                end
+            end
+        end
+        if band then
+            band:SetWndPos(vector2():set(0, y))
+            band:SetWndSize(vector2():set(band:GetWidth(), h))
+            band:SetTextureColor(theme.argb("bright", BAND_ALPHA))
+        end
+        y = y + h
+    end
+    box:SetWndSize(vector2():set(box:GetWidth(), y))
+    self.rows_view:AddWindow(box, true)
+end
+
+---------------------------------------------------------------------------------------------
+-- the buttons
+---------------------------------------------------------------------------------------------
+
+-- Change: the next model the catalog's Compare puts in goes to this side, so to the catalog; a
+-- second click, with this side waiting, takes it back
+function ComparePDA:OnChange(side)
+    if arsenal_compare.wanted() == side then
+        arsenal_compare.pick(nil)
+        self:Fill()
+        return
+    end
+    arsenal_compare.pick(side)
+    arsenal_pages.open("catalog")
+end
+
+function ComparePDA:OnSwap()
+    arsenal_compare.swap()
+    self:Fill()
+end
+
+function ComparePDA:OnClear()
+    arsenal_compare.clear()
+    self:Fill()
+end
+
+function ComparePDA:OnCatalog()
+    arsenal_pages.open("catalog")
+end
+
+function ComparePDA:OnWorkbench()
+    arsenal_pages.open("workbench")
+end
+
+function ComparePDA:OnBack()
+    if self.flat then
+        self:Close()
+        return
+    end
+    local pda = ActorMenu.get_pda_menu()
+    if pda then
+        pda:SetActiveSubdialog("eptLauncher")
+    end
+end
+
+function ComparePDA:Close()
+    if self:IsShown() then
+        self:HideDialog()
+    end
+end
+
+-- flat: Escape or the MCM key closes the window; the PDA handles its own keys
+function ComparePDA:OnKeyboard(dik, action)
+    local res = CUIScriptWnd.OnKeyboard(self, dik, action)
+    if self.flat and not res and action == ui_events.WINDOW_KEY_PRESSED then
+        if dik == DIK_keys.DIK_ESCAPE or dik == arsenal_mcm.flat_key() then
+            self:Close()
+            return true
+        end
+    end
+    return res
+end
+
+---------------------------------------------------------------------------------------------
+-- the way in
+---------------------------------------------------------------------------------------------
+
+-- the page, for the PDA's section (arsenal_pages)
+function get_ui()
+    SINGLETON = SINGLETON or ComparePDA()
+    SINGLETON:Reset()
+    return SINGLETON
+end
+
+-- the page in a window of its own, when the player is up and about; returns the window
+function open_flat()
+    if not (db.actor and db.actor:alive()) then return nil end
+    FLAT = FLAT or ComparePDA(true)
+    if not FLAT:IsShown() then
+        FLAT:Reset()
+        FLAT:ShowDialog(true)
+    end
+    return FLAT
+end
+
+-- the flat window, if open
+function flat_window()
+    return FLAT and FLAT:IsShown() and FLAT or nil
+end

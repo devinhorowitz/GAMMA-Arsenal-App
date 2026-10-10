@@ -123,6 +123,9 @@ function WorkbenchPDA:__init(flat) super()
     self:AddCallback("page_catalog", ui_events.BUTTON_CLICKED, self.OnCatalog, self)
     self.page_workbench = xml:Init3tButton("page_workbench", self)
     theme.set_active(self.page_workbench, true)
+    self.page_compare = xml:Init3tButton("page_compare", self)
+    self:Register(self.page_compare, "page_compare")
+    self:AddCallback("page_compare", ui_events.BUTTON_CLICKED, self.OnComparePage, self)
     self.title = xml:InitTextWnd("wb_title", self)
     self.btn_clear = xml:Init3tButton("wb_clear", self)
     self:Register(self.btn_clear, "wb_clear")
@@ -195,7 +198,7 @@ function WorkbenchPDA:__init(flat) super()
     xml:InitStatic("wb_rule_info", self)
     self.info = xml:InitScrollView("wb_info", self)
 
-    -- the footer, the same on both pages: Silence, the jailbreak lamp, and the line naming the
+    -- the footer, the same on every page: Silence, the jailbreak lamp, and the line naming the
     -- app, its version and its author, so a screenshot says which Arsenal it shows and how
     xml:InitStatic("rule_foot", self)
     xml:InitTextWnd("silence_lbl", self)
@@ -805,6 +808,10 @@ end
 
 function WorkbenchPDA:OnCatalog()
     arsenal_pages.open("catalog")
+end
+
+function WorkbenchPDA:OnComparePage()
+    arsenal_pages.open("compare")
 end
 
 function WorkbenchPDA:OnBack()

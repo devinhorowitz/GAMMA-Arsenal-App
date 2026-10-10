@@ -4,7 +4,9 @@
     the PDA's Guide: categories, the models of one, and the selected model's entry.
 
     The entry is built anew for each gun and added to its scroll view only once complete: a
-    scroll view measures its content when a window is added, never when one is resized.
+    scroll view measures its content when a window is added, never when one is resized. Over
+    it, Compare puts the model shown into Compare's page (arsenal_compare), and a line says what
+    a click does.
 
     The same page also opens flat, on a key set in MCM (arsenal_mcm): a window of its own in
     the 2D PDA's frame, drawn straight to the screen. With the 3D PDA on, the PDA's pages are
@@ -74,12 +76,15 @@ function ArsenalPDA:__init(flat) super()
         xml:InitTextWnd("flat_caption", self)
     end
 
-    -- the switch between the catalog (this page, pressed) and Workbench
+    -- the switch between the catalog (this page, pressed), Workbench and Compare
     self.page_catalog = xml:Init3tButton("page_catalog", self)
     theme.set_active(self.page_catalog, true)
     self.page_workbench = xml:Init3tButton("page_workbench", self)
     self:Register(self.page_workbench, "page_workbench")
     self:AddCallback("page_workbench", ui_events.BUTTON_CLICKED, self.OnWorkbench, self)
+    self.page_compare = xml:Init3tButton("page_compare", self)
+    self:Register(self.page_compare, "page_compare")
+    self:AddCallback("page_compare", ui_events.BUTTON_CLICKED, self.OnComparePage, self)
 
     self.found_count = xml:InitTextWnd("found_count", self)
     xml:InitTextWnd("found_only_lbl", self)
@@ -104,9 +109,15 @@ function ArsenalPDA:__init(flat) super()
     self:AddCallback("wpn_list", ui_events.LIST_ITEM_SELECT, self.OnWeapon, self)
     self:AddCallback("wpn_list", ui_events.LIST_ITEM_CLICKED, self.OnWeaponClicked, self)
     xml:InitStatic("rule_wpn", self)
+    -- over the entry: Compare and its line, hidden until a model that compares is shown
+    self.cmp_add = xml:Init3tButton("cmp_add", self)
+    self.cmp_add:Show(false)
+    self:Register(self.cmp_add, "cmp_add")
+    self:AddCallback("cmp_add", ui_events.BUTTON_CLICKED, self.OnCompare, self)
+    self.cmp_status = xml:InitTextWnd("cmp_status", self)
     self.detail = xml:InitScrollView("detail", self)
 
-    -- the footer, the same on both pages: Silence, the jailbreak lamp, and the line naming the
+    -- the footer, the same on every page: Silence, the jailbreak lamp, and the line naming the
     -- app, its version and its author, so a screenshot says which Arsenal it shows and how
     xml:InitStatic("rule_foot", self)
     xml:InitTextWnd("silence_lbl", self)
@@ -272,6 +283,10 @@ end
 
 function ArsenalPDA:OnWorkbench()
     arsenal_pages.open("workbench")
+end
+
+function ArsenalPDA:OnComparePage()
+    arsenal_pages.open("compare")
 end
 
 -- flat: Escape or the MCM key closes the window; the PDA handles its own keys
@@ -663,6 +678,32 @@ function ArsenalPDA:UpdateActions(sec)
     end
 end
 
+-- Compare, for the section shown: shown for a gun, suit or helmet whose stats the player knows,
+-- with a line saying what a click does with it (arsenal_compare.line)
+function ArsenalPDA:UpdateCompare(sec)
+    self.cmp_sec = sec
+    local can = sec ~= nil and safe(arsenal_compare.comparable, sec) == true
+    self.cmp_add:Show(can)
+    self.cmp_status:SetText(can and (safe(arsenal_compare.line, sec) or "") or "")
+end
+
+-- a click: the model goes into the comparison; the first waits on the left for another, and
+-- with a second, or one that was in already, Compare's page opens
+function ArsenalPDA:OnCompare()
+    local sec = self.cmp_sec
+    if not sec then return end
+    local ok, what = pcall(arsenal_compare.add, sec)
+    if not ok then
+        printf("[arsenal] Compare failed on %s: %s", tostring(sec), tostring(what))
+        return
+    end
+    if what == "left" then
+        self:UpdateCompare(sec)
+    elseif what then
+        arsenal_pages.open("compare")
+    end
+end
+
 function ArsenalPDA:OnAction(i)
     local a = self.action_list and self.action_list[i]
     if not a then return end
@@ -676,6 +717,7 @@ function ArsenalPDA:ShowEntry(sec)
     self.sec = sec
     self.detail:Clear()
     self:UpdateActions(nil)
+    self:UpdateCompare(nil)
     if not sec then return end
     local xml = self.xml
     local e = arsenal_data.get(sec)
@@ -694,6 +736,7 @@ function ArsenalPDA:ShowEntry(sec)
         end
     end
     self:UpdateActions(shown.sec)
+    self:UpdateCompare(shown.sec)
     local entry = xml:InitStatic("entry", nil)
 
     -- the icon on a lighter panel, like the inventory's grid, at most at its own size: the

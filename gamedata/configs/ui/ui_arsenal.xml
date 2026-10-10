@@ -15,17 +15,21 @@
 		<text font="letterica16" align="l" r="170" g="170" b="170">st_arsenal_title</text>
 	</flat_caption>
 
-	<!-- header row, the same on both pages: the switch between the catalog and Workbench (the
-	     page shown pressed), the page's line, its button, Back -->
-	<page_catalog x="28" y="107" width="92" height="26" stretch="1" check_mode="0">
+	<!-- header row, the same on every page: the switch between the catalog, Workbench and
+	     Compare (the page shown pressed), the page's line, its buttons, Back -->
+	<page_catalog x="28" y="107" width="84" height="26" stretch="1" check_mode="0">
 		<texture>ui_button_ordinary</texture>
 		<text font="letterica16" align="c" vert_align="c">st_arsenal_title</text>
 	</page_catalog>
-	<page_workbench x="122" y="107" width="92" height="26" stretch="1" check_mode="0">
+	<page_workbench x="114" y="107" width="84" height="26" stretch="1" check_mode="0">
 		<texture>ui_button_ordinary</texture>
 		<text font="letterica16" align="c" vert_align="c">st_arsenal_workbench</text>
 	</page_workbench>
-	<found_count x="224" y="110" width="318" height="20">
+	<page_compare x="200" y="107" width="84" height="26" stretch="1" check_mode="0">
+		<texture>ui_button_ordinary</texture>
+		<text font="letterica16" align="c" vert_align="c">st_arsenal_compare</text>
+	</page_compare>
+	<found_count x="292" y="110" width="248" height="20">
 		<text font="letterica16" r="200" g="200" b="200" align="l" vert_align="c"/>
 	</found_count>
 	<btn_back x="672" y="107" width="120" height="26" stretch="1" check_mode="0">
@@ -69,7 +73,16 @@
 	<rule_wpn x="424" y="146" width="1" height="532" stretch="1">
 		<texture>arsenal_rule</texture>
 	</rule_wpn>
-	<detail x="432" y="146" width="360" height="532" always_show_scroll="0" stretch="1"/>
+	<!-- over the entry, like the toggles over the lists: Compare (arsenal_compare), and what a
+	     click on it does with the model shown; both hidden for what has no stat card -->
+	<cmp_add x="432" y="143" width="120" height="26" stretch="1" check_mode="0">
+		<texture>ui_button_ordinary</texture>
+		<text font="letterica16" align="c" vert_align="c">st_arsenal_cmp_add</text>
+	</cmp_add>
+	<cmp_status x="558" y="146" width="234" height="20">
+		<text font="letterica16" r="140" g="140" b="140" align="l" vert_align="c"/>
+	</cmp_status>
+	<detail x="432" y="174" width="360" height="504" always_show_scroll="0" stretch="1"/>
 
 	<!-- the entry, built per weapon inside the detail scroll view; 344 wide leaves room for its bar -->
 	<entry x="0" y="0" width="344" height="560" stretch="1"/>
@@ -180,7 +193,7 @@
 	     The header as the catalog's: the switch, the item's name where the catalog has its
 	     count, Clear, Install, Back. Left: the items, then the card and the attachments.
 	     Right: GAMMA's upgrade tree in its toolkit's panel and cells, the kits, the details. -->
-	<wb_title x="224" y="110" width="316" height="20">
+	<wb_title x="292" y="110" width="248" height="20">
 		<text font="letterica18" r="238" g="196" b="112" align="l" vert_align="c"/>
 	</wb_title>
 	<wb_install x="546" y="107" width="120" height="26" stretch="1" check_mode="0">
@@ -284,7 +297,75 @@
 		<text font="letterica16" r="200" g="200" b="200" align="l" vert_align="t" complex_mode="1"/>
 	</wb_info_line>
 
-	<!-- ============ the footer, the same on both pages ============
+	<!-- ============ Compare, the third page (ui_arsenal_compare) ============
+	     The header as the others': the switch, what is compared where the catalog has its count,
+	     Swap, Clear, Back. Two panels side by side, 374 wide and 16 apart (the script places
+	     each at its side's x, 28 or 418): the model's icon on a lighter panel, its name and
+	     Change, or what to do while the side is empty. Under a rule, the rows, mirrored around
+	     the middle: each side's value as the card shows it next to the row's name, fully
+	     upgraded on the outside; the columns' headings over them. -->
+	<cmp_title x="292" y="110" width="248" height="20">
+		<text font="letterica18" r="238" g="196" b="112" align="l" vert_align="c"/>
+	</cmp_title>
+	<cmp_swap x="546" y="107" width="58" height="26" stretch="1" check_mode="0">
+		<texture>ui_button_ordinary</texture>
+		<text font="letterica16" align="c" vert_align="c">st_arsenal_cmp_swap</text>
+	</cmp_swap>
+	<cmp_clear x="608" y="107" width="58" height="26" stretch="1" check_mode="0">
+		<texture>ui_button_ordinary</texture>
+		<text font="letterica16" align="c" vert_align="c">st_arsenal_cmp_clear</text>
+	</cmp_clear>
+	<cmp_icon_bg x="0" y="146" width="374" height="92" stretch="1">
+		<texture r="160" g="160" b="160">arsenal_rule</texture>
+	</cmp_icon_bg>
+	<cmp_icon x="0" y="0" width="10" height="10" stretch="1"/>
+	<cmp_name x="0" y="244" width="282" height="36">
+		<text font="letterica18" r="238" g="196" b="112" align="l" vert_align="c" complex_mode="1"/>
+	</cmp_name>
+	<cmp_change x="290" y="249" width="84" height="26" stretch="1" check_mode="0">
+		<texture>ui_button_ordinary</texture>
+		<text font="letterica16" align="c" vert_align="c">st_arsenal_cmp_change</text>
+	</cmp_change>
+	<cmp_empty x="16" y="160" width="342" height="64">
+		<text font="letterica16" r="140" g="140" b="140" align="c" vert_align="c" complex_mode="1"/>
+	</cmp_empty>
+	<cmp_rule x="28" y="286" width="764" height="1" stretch="1">
+		<texture>arsenal_rule</texture>
+	</cmp_rule>
+	<!-- the headings, and the rows in their scroll view; a row's cells are placed in a box as wide
+	     as the view, the middle of the name column under the gap between the panels (410); the
+	     upgraded column on the right ends 16 short of the box, where the view's bar would go -->
+	<cmp_head x="28" y="290" width="764" height="20"/>
+	<cmp_rows x="28" y="312" width="764" height="366" always_show_scroll="0" stretch="1"/>
+	<cmp_box x="0" y="0" width="764" height="20" stretch="1"/>
+	<!-- every other row a faint band behind it, tinted by the script -->
+	<cmp_band x="0" y="0" width="764" height="20" stretch="1">
+		<texture>arsenal_rule</texture>
+	</cmp_band>
+	<cmp_max_l x="16" y="0" width="130" height="20">
+		<text font="letterica16" r="140" g="140" b="140" align="r" vert_align="c"/>
+	</cmp_max_l>
+	<cmp_val_l x="154" y="0" width="130" height="20">
+		<text font="letterica16" r="200" g="200" b="200" align="r" vert_align="c"/>
+	</cmp_val_l>
+	<cmp_label x="292" y="0" width="180" height="20">
+		<text font="letterica16" r="200" g="200" b="200" align="c" vert_align="c"/>
+	</cmp_label>
+	<cmp_val_r x="480" y="0" width="130" height="20">
+		<text font="letterica16" r="200" g="200" b="200" align="l" vert_align="c"/>
+	</cmp_val_r>
+	<cmp_max_r x="618" y="0" width="130" height="20">
+		<text font="letterica16" r="140" g="140" b="140" align="l" vert_align="c"/>
+	</cmp_max_r>
+	<!-- a row of text (a gun's rounds): each side over both its columns, wrapping -->
+	<cmp_text_l x="16" y="1" width="268" height="18">
+		<text font="letterica16" r="200" g="200" b="200" align="r" vert_align="t" complex_mode="1"/>
+	</cmp_text_l>
+	<cmp_text_r x="480" y="1" width="268" height="18">
+		<text font="letterica16" r="200" g="200" b="200" align="l" vert_align="t" complex_mode="1"/>
+	</cmp_text_r>
+
+	<!-- ============ the footer, the same on every page ============
 	     Under a rule like the header's: Silence, which is MCM's "PDA notifications" seen here too,
 	     ticked while Arsenal's messages are off; the jailbreak lamp, lit while MCM's jailbreak
 	     lists everything and gone while it is off; and the line naming the app, its version and

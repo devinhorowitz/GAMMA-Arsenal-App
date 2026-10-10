@@ -696,4 +696,85 @@
 	<string id="st_arsenal_credit">
 		<text>Арсенал v%s — %s</text>
 	</string>
+	<string id="st_arsenal_compare">
+		<text>Сравнение</text>
+	</string>
+	<string id="st_arsenal_cmp_add">
+		<text>Сравнить</text>
+	</string>
+	<string id="st_arsenal_cmp_in">
+		<text>Уже в сравнении</text>
+	</string>
+	<string id="st_arsenal_cmp_next_gun">
+		<text>Теперь выберите другое оружие</text>
+	</string>
+	<string id="st_arsenal_cmp_next_suit">
+		<text>Теперь выберите другой костюм</text>
+	</string>
+	<string id="st_arsenal_cmp_next_helmet">
+		<text>Теперь выберите другой шлем</text>
+	</string>
+	<string id="st_arsenal_cmp_with">
+		<text>против: %s</text>
+	</string>
+	<string id="st_arsenal_cmp_replaces">
+		<text>вместо: %s</text>
+	</string>
+	<string id="st_arsenal_cmp_restart">
+		<text>Начнёт новое сравнение</text>
+	</string>
+	<string id="st_arsenal_cmp_title_gun">
+		<text>Сравнение оружия</text>
+	</string>
+	<string id="st_arsenal_cmp_title_suit">
+		<text>Сравнение костюмов</text>
+	</string>
+	<string id="st_arsenal_cmp_title_helmet">
+		<text>Сравнение шлемов</text>
+	</string>
+	<string id="st_arsenal_cmp_swap">
+		<text>Поменять</text>
+	</string>
+	<string id="st_arsenal_cmp_clear">
+		<text>Сбросить</text>
+	</string>
+	<string id="st_arsenal_cmp_change">
+		<text>Сменить</text>
+	</string>
+	<string id="st_arsenal_cmp_none">
+		<text>Сравнивать пока нечего. Откройте в каталоге оружие, костюм или шлем и нажмите «Сравнить», затем ещё одно того же рода.</text>
+	</string>
+	<string id="st_arsenal_cmp_pick_gun">
+		<text>Теперь другое оружие: откройте его в каталоге и нажмите «Сравнить».</text>
+	</string>
+	<string id="st_arsenal_cmp_pick_suit">
+		<text>Теперь другой костюм: откройте его в каталоге и нажмите «Сравнить».</text>
+	</string>
+	<string id="st_arsenal_cmp_pick_helmet">
+		<text>Теперь другой шлем: откройте его в каталоге и нажмите «Сравнить».</text>
+	</string>
+	<string id="st_arsenal_cmp_stock">
+		<text>Базовое</text>
+	</string>
+	<string id="st_arsenal_cmp_upgraded">
+		<text>С улучшениями</text>
+	</string>
+	<string id="st_arsenal_cmp_hit_power">
+		<text>Мощность выстрела</text>
+	</string>
+	<string id="st_arsenal_cmp_jam">
+		<text>Вероятность клина</text>
+	</string>
+	<string id="st_arsenal_cmp_jam_worn">
+		<text>%s, с износом %s</text>
+	</string>
+	<string id="st_arsenal_cmp_rounds">
+		<text>Патроны</text>
+	</string>
+	<string id="st_arsenal_cmp_stops">
+		<text>Держит патронов</text>
+	</string>
+	<string id="st_arsenal_cmp_stops_of">
+		<text>%s из %s</text>
+	</string>
 </string_table>

@@ -1,14 +1,14 @@
 --[[
-    DXML: invisible PDA tab buttons for Arsenal's two sections (the catalog and Workbench), and
-    Arsenal's talks.
+    DXML: invisible PDA tab buttons for Arsenal's three sections (the catalog, Workbench and
+    Compare), and Arsenal's talks.
 
     The PDA shows its tab bar, clock and caption only for a section that has a button
     (CUIPdaWnd::SetActiveCaption), and switches only to a section that has one, so without them
-    the bar would vanish while Arsenal is open and Workbench could not open. Parked off screen,
-    zero wide, like MAC's own. They go into every PDA layout with a tab bar and a caption, the
-    two the PDA window reads: pda.xml and pda_16.xml, and the layouts Fatal Error swaps in per
-    PDA model (SetPdaXml: pda_zero, pda_one, pda_two and their _16), not MAC's launcher page or
-    other pda_ files.
+    the bar would vanish while Arsenal is open and Workbench and Compare could not open. Parked
+    off screen, zero wide, like MAC's own. They go into every PDA layout with a tab bar and a
+    caption, the two the PDA window reads: pda.xml and pda_16.xml, and the layouts Fatal Error
+    swaps in per PDA model (SetPdaXml: pda_zero, pda_one, pda_two and their _16), not MAC's
+    launcher page or other pda_ files.
 
     The talks (arsenal_intel): asking anyone about gear they have seen, and asking a technician
     or trader about special guns. Their dialogs go into gameplay\dialogs.xml, and every
@@ -61,7 +61,8 @@ local DIALOGS = [[
 local GUNSMITHS = { "dm_tech_repair", "dm_init_trader" }
 
 -- the pages' sections (arsenal_pages) and the titles the PDA shows for them
-local PAGES = { eptArsenal = "st_arsenal_title", eptWorkbench = "st_arsenal_workbench" }
+local PAGES = { eptArsenal = "st_arsenal_title", eptWorkbench = "st_arsenal_workbench",
+    eptArsenalCompare = "st_arsenal_compare" }
 
 function on_xml_read()
     RegisterScriptCallback("on_xml_read", function(name, xml)

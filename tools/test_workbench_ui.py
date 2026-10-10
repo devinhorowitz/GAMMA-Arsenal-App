@@ -5,7 +5,8 @@ element the page asks for is in ui_arsenal.xml; the items carried and the models
 their headings; the tree in the toolkit's places, each cell marked by its state, the kit it takes
 with how many the player holds; a click plans or unplans and the card, the kits and the list
 follow; the details under the cursor; attachments; Clear; Install only where it can go; the
-switch, Back, the flat window; and the router.
+switch (Compare's tab too), Back, the flat window; and the router, which claims Workbench's and
+Compare's sections.
 
     python test_workbench_ui.py            the real scripts
     python test_workbench_ui.py MUTANT     a broken copy (see MUTANTS); the run must fail
@@ -197,12 +198,17 @@ MUTANTS = {
     "back_dead": ('        pda:SetActiveSubdialog("eptLauncher")', "        -- nowhere"),
     "pending_kept": ("    local want = pending\n    pending = nil\n    SINGLETON:Reset(want)", "    local want = pending\n    SINGLETON:Reset(want)"),
     # arsenal_pages
-    "router_all": ("        if section == PAGES.workbench.tab then", "        if true then"),
-    "router_unsafe": ("            local ok, ui = pcall(ui_arsenal_workbench.get_ui)", "            local ok, ui = true, ui_arsenal_workbench.get_ui()"),
+    "router_all": ("        if page then\n            local ok, ui", "        if true then\n            local ok, ui"),
+    "router_unsafe": ("            local ok, ui = pcall(function() return script_of(page).get_ui() end)",
+                      "            local ok, ui = true, script_of(page).get_ui()"),
+    "router_no_compare": ('(section == PAGES.compare.tab and "compare")', "false"),
     "router_no_varargs": ("        return orig(section, ...)", "        return orig(section)"),
     "router_twice": ("    if wrapped or not (pda and pda.set_active_subdialog) then return end", "    if not (pda and pda.set_active_subdialog) then return end"),
     "open_no_item": ("        ui_arsenal_workbench.show_next(sec, id)", "        -- forgotten"),
-    "open_flat_ignored": ("    if flat_cat or flat_wb then", "    if false then"),
+    "open_flat_ignored": ("    if any then\n        script_of(page).open_flat()", "    if false then\n        script_of(page).open_flat()"),
+    "open_flat_compare": ('    if page == "compare" then return ui_arsenal_compare end\n', ""),
+    "wb_compare_dead": ('function WorkbenchPDA:OnComparePage()\n    arsenal_pages.open("compare")',
+                        "function WorkbenchPDA:OnComparePage()\n    -- nothing"),
     "no_customize": ("    ui_arsenal.add_action(\"workbench\", {", "    local _ = ({"),
     # arsenal_pages: Fatal Error's PDA
     "fe_absent": ("    if not fe then return true end", "    if not fe then return false end"),
@@ -231,7 +237,8 @@ MUTANTS = {
     "dxml_dialogs_twice": ('if #xml:query("dialog[id=arsenal_rumor]") == 0 then', "if true then"),
 }
 
-PAGES_MUTANTS = {"router_all", "router_unsafe", "router_no_varargs", "router_twice", "open_no_item", "open_flat_ignored", "no_customize",
+PAGES_MUTANTS = {"router_all", "router_unsafe", "router_no_compare", "router_no_varargs", "router_twice", "open_no_item",
+                 "open_flat_ignored", "open_flat_compare", "no_customize",
                  "fe_absent", "fe_npc_pda", "fe_charge", "fe_charge_any", "fe_locked", "fe_bios", "fe_bsod", "fe_guard",
                  "fe_storm", "fe_sarcophagus", "fe_jam", "fe_jam_free", "fe_fail_closed", "fe_warn_every"}
 MODXML_MUTANTS = {"dxml_old_names", "dxml_any_file", "dxml_no_caption", "dxml_dup", "dxml_dialogs_twice"}
@@ -403,6 +410,10 @@ function ui_arsenal.flat_window() return ui_arsenal.flat end
 function ui_arsenal.open_flat() ui_arsenal.opened_flat = (ui_arsenal.opened_flat or 0) + 1 end
 OPENED_PAGES = {}
 PDA.SetActiveSubdialog = function(self, tab) OPENED_PAGES[#OPENED_PAGES + 1] = tab end
+ui_arsenal_compare = { flat = nil }
+function ui_arsenal_compare.get_ui() return "compare page" end
+function ui_arsenal_compare.flat_window() return ui_arsenal_compare.flat end
+function ui_arsenal_compare.open_flat() ui_arsenal_compare.opened_flat = (ui_arsenal_compare.opened_flat or 0) + 1 end
 """)
     lua.execute("""
 GUN = item("wpn_test", 7, { "up_firsta_t", "up_secona_t" })
@@ -615,6 +626,8 @@ def steps(lua, g, ui, data, page_, pages, modxml, load, check):
     lua.execute("arsenal_pages = { open = function(p) LAST_OPEN = p end }")
     page_.cb.page_catalog()
     check(g.LAST_OPEN == "catalog", "the switch opens the catalog")
+    page_.cb.page_compare()
+    check(g.LAST_OPEN == "compare", "and Compare")
     page_.cb.btn_back()
     check(g.OPENED_PAGES[len(g.OPENED_PAGES)] == "eptLauncher", "Back goes to the launcher")
     callbacks = page_.ncb
@@ -641,13 +654,17 @@ pda = { set_active_subdialog = function(section, a, b) ORIG_CALLS[#ORIG_CALLS + 
     check(lua.eval("function(a, b) return a == b end")(first, g.pda.set_active_subdialog), "wrapped once")
     r = g.pda.set_active_subdialog("eptWorkbench")
     check(r is not None and r.list is not None and r.forms is not None, "the router: Workbench's section is its page")
+    r = g.pda.set_active_subdialog("eptArsenalCompare")
+    check(r == "compare page", "and Compare's section is its page: %s" % (r,))
     r = g.pda.set_active_subdialog("eptTasks", 1, 2)
     calls = [list(c.values()) for c in g.ORIG_CALLS.values()]
     check(r == "other page" and calls == [["eptTasks", 1, 2]], "any other section passes down whole, once: %s" % calls)
-    lua.execute("ui_arsenal_workbench.get_ui = function() error('boom') end")
+    lua.execute("ui_arsenal_workbench.get_ui = function() error('boom') end; "
+                "ui_arsenal_compare.get_ui = function() error('boom') end")
     n = len(g.logs)
     r = g.pda.set_active_subdialog("eptWorkbench")
-    check(r is None and len(g.logs) == n + 1, "a page that fails: nothing, logged")
+    r2 = g.pda.set_active_subdialog("eptArsenalCompare")
+    check(r is None and r2 is None and len(g.logs) == n + 2, "a page that fails: nothing, logged")
     lua.execute("PDA.shown = true; OPENED_PAGES = {}")
     lua.execute("ui_arsenal_workbench.get_ui = function() return 'page' end")
     act.run("wpn_own")
@@ -659,6 +676,15 @@ pda = { set_active_subdialog = function(section, a, b) ORIG_CALLS[#ORIG_CALLS + 
                 "ui_arsenal_workbench.open_flat = function() FLAT_WB = FLAT_WB + 1 end")
     pg.open("workbench", "wpn_own")
     check(g.CLOSED is True and g.FLAT_WB == 1, "in the flat window: the catalog's closes, Workbench's opens")
+    lua.execute("CLOSED = nil; ui_arsenal.flat = nil; ui_arsenal.opened_flat = 0; "
+                "ui_arsenal_compare.flat = { Close = function() CMP_CLOSED = true end }")
+    pg.open("catalog")
+    check(g.CMP_CLOSED is True and g.ui_arsenal.opened_flat == 1, "Compare's window closes for the catalog's")
+    lua.execute("ui_arsenal_compare.flat = nil; ui_arsenal.flat = { Close = function() CLOSED = true end }")
+    pg.open("compare")
+    check(g.CLOSED is True and g.ui_arsenal_compare.opened_flat == 1 and g.ui_arsenal.opened_flat == 1,
+          "and the catalog's for Compare's")
+    lua.execute("ui_arsenal.flat = nil")
 
     # Fatal Error: the flat window opens only when the PDA would show the page
     check(pg.pda_works() is True, "without Fatal Error, the PDA is no condition")
@@ -710,17 +736,18 @@ pda = { set_active_subdialog = function(section, a, b) ORIG_CALLS[#ORIG_CALLS + 
         x = g.make_xml(tab, caption, lua.table_from(list(have)))
         read(name, x)
         return sorted(x.inserted.values())
-    both = ["eptArsenal", "eptWorkbench"]
+    both = ["eptArsenal", "eptArsenalCompare", "eptWorkbench"]
     layouts = ["ui\\pda.xml", "ui\\pda_16.xml", "ui/pda_16.xml", "ui\\pda_zero.xml", "ui\\pda_zero_16.xml",
                "ui\\pda_one_16.xml", "ui\\pda_two_16.xml"]
     missed = [n for n in layouts if inserted(n) != both]
-    check(not missed, "both buttons in the PDA's layouts and Fatal Error's per-model ones: %s" % missed)
+    check(not missed, "the three buttons in the PDA's layouts and Fatal Error's per-model ones: %s" % missed)
     others = [("ui\\pda_apps_16.xml", False, False), ("ui\\pda_bios_16.xml", False, False),
               ("ui\\pda_glitched.xml", False, False), ("ui\\pda_widget.xml", True, False),
               ("ui\\inventory_new.xml", True, True), ("ui\\pda_16.xml.bak", True, True)]
     wrong = [(n, inserted(n, t, c)) for n, t, c in others if inserted(n, t, c)]
     check(not wrong, "none where there is no tab bar and caption, or in another file: %s" % wrong)
-    check(inserted("ui\\pda_16.xml", have=("eptArsenal",)) == ["eptWorkbench"], "a button already there, not twice")
+    check(inserted("ui\\pda_16.xml", have=("eptArsenal",)) == ["eptArsenalCompare", "eptWorkbench"],
+          "a button already there, not twice")
     x = g.make_xml(False, False)
     read("gameplay\\dialogs.xml", x)
     read("gameplay\\dialogs.xml", x)

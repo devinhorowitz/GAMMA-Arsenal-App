@@ -4,7 +4,8 @@
 
 **Every gun, round, suit and helmet in your GAMMA game, in the PDA: its stats, where to find
 it, what fits it, and which ones you have found. You learn of them as you play. Its
-Workbench page plans upgrades on GAMMA's own upgrade trees and hands them to your toolkit.**
+Workbench page plans upgrades on GAMMA's own upgrade trees and hands them to your toolkit, and
+its Compare page sets two guns, suits or helmets side by side.**
 
 ![Arsenal's page for the 9A-91: the stat card with each stat fully upgraded, hit power and jams, where to find it, and its ammo](media/arsenal_screenshot.png)
 
@@ -38,7 +39,7 @@ until you click them, like unread mail, and so does anything you find for the fi
 Arsenal's tile in MAC's launcher shows how many are waiting.
 
 **MCM > Arsenal > Jailbreak** opens everything, like a finished encyclopedia. While it is on, a
-lit padlock in the footer of both pages says so, screenshots included.
+lit padlock in the footer of every page says so, screenshots included.
 
 ## What a page shows
 
@@ -77,7 +78,7 @@ In English and Russian.
 
 ## Workbench
 
-Arsenal's second page; the switch at the top left of both pages moves between them, and
+Arsenal's second page; the switch at the top left of every page moves between the pages, and
 **Customize** on a gun, suit or helmet opens Workbench on it.
 
 ![Workbench planning an MP5A3: the card now and planned, GAMMA's upgrade tree, the kits](media/workbench_screenshot.png)
@@ -102,6 +103,23 @@ Arsenal's second page; the switch at the top left of both pages moves between th
 Items you carry are listed with their plans; models customized from the catalog stay listed
 for planning. Plans are kept in your save.
 
+## Compare
+
+Arsenal's third page sets two guns, two suits or two helmets side by side. **Compare**, over a
+gun's, suit's or helmet's page in the catalog, puts it in: the first waits on the left, and the
+second opens the page. After that, a new one replaces the right, or the side whose **Change**
+you pressed. A model of another kind starts a new comparison.
+
+- **The stat card for both,** mirrored around each row's name: each value as the inventory
+  card shows it and, on the outside, fully upgraded where Arsenal can work it out. The better
+  value is green, and so is the better upgraded one.
+- **What the card leaves out:** a gun's hit power, jam chance, fire modes, weight and rounds; a
+  suit's or helmet's count of the game's rounds it stops, and its weight. Lower is better for
+  jams and weight.
+- **Swap** trades the sides; **Clear** empties the page.
+
+Only models whose stats you have studied can be compared, unless the jailbreak is on.
+
 ## Collecting
 
 An item counts as found the first time it enters your inventory: picked up, looted, bought,
@@ -115,7 +133,7 @@ see**.
 ## PDA messages
 
 Arsenal tells your PDA when you find or learn of something for its catalog. **Silence**, at the
-foot of both pages, turns those messages off and on again; it is **MCM > Arsenal > PDA
+foot of every page, turns those messages off and on again; it is **MCM > Arsenal > PDA
 notifications**, seen on the page. The foot also names the version you run and its author, so a
 screenshot of Arsenal shows which one it is.
 
@@ -143,7 +161,7 @@ It works in a new game or an existing one.
 
 ## Works with
 
-- **Fatal Error:** Arsenal and Workbench keep the PDA's tab bar on every PDA model, and the key
+- **Fatal Error:** Arsenal's pages keep the PDA's tab bar on every PDA model, and the key
   below opens Arsenal only while the PDA works.
 - **ArtiGrok Ballistics** and **Leekos Munition Merge:** the anomalous rounds are listed, with
   their effects.
@@ -153,7 +171,7 @@ It works in a new game or an existing one.
 With the 3D PDA on, the game draws PDA pages onto the screen of the PDA in your hands, which
 softens small text and icons. **MCM > Arsenal > Open Arsenal on its own** takes a key that
 opens Arsenal straight on the screen, as sharp as the inventory; the switch takes it to
-Workbench there too.
+Workbench and Compare there too.
 
 ## Credits
 

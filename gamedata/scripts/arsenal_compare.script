@@ -1,0 +1,288 @@
+--[[
+    Compare, Arsenal's third page (its page is ui_arsenal_compare): two guns, two suits or two
+    helmets side by side. The catalog's Compare button puts the model it shows in, the first on
+    the left, the second on the right; one after that takes the right's place, or the place of
+    the side the page's Change picked. A model of another kind starts a new comparison. The
+    model goes in as the catalog shows it: its first found variant, else its first.
+
+    The rows are the inventory's stat card for both, the catalog's stand-in rows, each value
+    fully upgraded beside it where Arsenal's formulas give the card's own value (max_stat, as the
+    catalog's max); then what the card leaves out: a gun's hit power, jam chance, fire modes,
+    weight and rounds, a suit's or helmet's rounds stopped and weight. On each row the better
+    value is marked where both have one: higher, but lower for jams, weight and a card row the
+    card shows the other way round (sign_inverse), as on Workbench's card.
+
+    What is compared lasts while the game runs; a load starts the Lua state, and it, afresh.
+--]]
+
+local left, right   -- the sections compared
+local want          -- the side the next model takes ("left" or "right"), from Change
+
+local function T(id)
+    return game.translate_string(id)
+end
+
+local function safe(fn, ...)
+    local ok, r = pcall(fn, ...)
+    return ok and r or nil
+end
+
+-- a string without the inline color codes the card puts in, trimmed, without a closing colon
+local function plain(s)
+    return (tostring(s or ""):gsub("%%c%[[^%]]*%]", ""):match("^%s*(.-)[%s:]*$"))
+end
+
+---------------------------------------------------------------------------------------------
+-- what can be compared
+---------------------------------------------------------------------------------------------
+
+-- "gun", "suit" or "helmet": a model compares with another of its kind; nil for what has no
+-- stat card (a knife, a round)
+function kind_of(sec)
+    local e = sec and arsenal_data.get(sec)
+    if not e or e.cat == "melee" or e.cat == "ammo" then return nil end
+    if e.cat == "helmets" then return "helmet" end
+    if arsenal_data.ARMOR[e.cat] then return "suit" end
+    return arsenal_data.has_stat_card(sec) and "gun" or nil
+end
+
+-- whether a section can go in: a gun, suit or helmet whose stats the player knows
+-- (arsenal_intel: studied; with the jailbreak, or without the module, every one)
+function comparable(sec)
+    if not kind_of(sec) then return false end
+    local e = arsenal_data.get(sec)
+    return not arsenal_intel or arsenal_intel.studied(e) == true
+end
+
+-- a section's name: its variant's, which names what tells it from the model's others
+function name(sec)
+    local v = sec and arsenal_data.variant_of(sec)
+    local e = sec and arsenal_data.get(sec)
+    return (v and v.name) or (e and e.name) or tostring(sec)
+end
+
+---------------------------------------------------------------------------------------------
+-- the comparison
+---------------------------------------------------------------------------------------------
+
+function sides()
+    return left, right
+end
+
+function wanted()
+    return want
+end
+
+-- What the catalog's button does with a section: "in" (compared already), "left" (it starts a
+-- comparison, replacing one of another kind if there is one), "right" (it joins the left), or
+-- "replace" (it takes a side's place). Returns that, the section it joins or replaces, and the
+-- side; nil for a section that cannot go in.
+function plan(sec)
+    if not comparable(sec) then return nil end
+    if sec == left or sec == right then return "in" end
+    if not left or kind_of(left) ~= kind_of(sec) then return "left", left, "left" end
+    if want == "left" then return "replace", left, "left" end
+    if not right then return "right", left, "right" end
+    return "replace", right, "right"
+end
+
+-- put a section in, as plan says; returns what it did
+function add(sec)
+    local what, _, side = plan(sec)
+    if what == "left" then
+        left, right, want = sec, nil, nil
+    elseif what == "right" or what == "replace" then
+        if side == "left" then left = sec else right = sec end
+        want = nil
+    end
+    return what
+end
+
+-- Change: the next model goes to this side (nil: as usual)
+function pick(side)
+    want = (side == "left" or side == "right") and side or nil
+end
+
+function swap()
+    if left and right then
+        left, right = right, left
+    end
+    want = nil
+end
+
+function clear()
+    left, right, want = nil, nil, nil
+end
+
+-- drop what can no longer be compared (its stats unknown again once the jailbreak is off, or
+-- gone from the game); a lone right moves left
+function validate()
+    if left and not comparable(left) then left = nil end
+    if right and not (comparable(right) and (not left or kind_of(right) == kind_of(left))) then right = nil end
+    if not left and right then
+        left, right = right, nil
+    end
+    if not left then want = nil end
+end
+
+-- a name short enough for the catalog's line: without a closing "(...)", cut at `n` characters
+local function short(s, n)
+    s = s:gsub("%s*%b()%s*$", "")
+    if #s > n then s = s:sub(1, n - 3):gsub("%s+$", "") .. "..." end
+    return s
+end
+
+local LINE_NAME = 28
+
+-- The catalog's line beside its Compare button for a section, "" for none: what a click does
+-- with it, or that it is in already (and while it waits alone, that another is next)
+function line(sec)
+    local what, other = plan(sec)
+    if what == "in" then
+        if not right then return T("st_arsenal_cmp_next_" .. kind_of(sec)) end
+        return T("st_arsenal_cmp_in")
+    elseif what == "left" then
+        return other and T("st_arsenal_cmp_restart") or ""
+    elseif what == "right" then
+        return string.format(T("st_arsenal_cmp_with"), short(name(other), LINE_NAME))
+    elseif what == "replace" then
+        return string.format(T("st_arsenal_cmp_replaces"), short(name(other), LINE_NAME))
+    end
+    return ""
+end
+
+---------------------------------------------------------------------------------------------
+-- the rows
+---------------------------------------------------------------------------------------------
+
+-- the gun card's rows whose fully upgraded value arsenal_data knows (its CARD formulas); every
+-- suit and helmet row it covers (armor_max)
+local MAXED = { accuracy = true, handling = true, fire_rate = true, ammo_mag_size = true,
+    speed = true, reliability = true, recoil = true }
+
+local function number_in(s)
+    return s and tonumber(s:match("[-+]?%d+%.?%d*"))
+end
+
+-- a value as the card writes it: its sign where the row shows one, its unit
+local function value_text(gr, v)
+    local unit = (gr.unit and gr.unit ~= "") and T(gr.unit) or ""
+    local s = tostring(v)
+    if gr.sign and v > 0 then s = "+" .. s end
+    return unit ~= "" and (s .. " " .. unit) or s
+end
+
+-- One side of a card row: the card's text and its number, and fully upgraded where the formula
+-- gives the card's own number. nil where the card shows no row (a value of 0, or none).
+local function card_side(sec, row, maxed)
+    local ok, s = pcall(utils_ui.get_stats_string_value, nil, sec, row.gr, row.stat, true)
+    if not (ok and type(s) == "string") then return nil end
+    local out = { text = plain(s) }
+    out.num = number_in(out.text)
+    if maxed and out.num and not row.gr.track then
+        local okm, m, b = pcall(arsenal_data.max_stat, sec, row.stat)
+        if okm and m and b and b == out.num then
+            out.max = m
+            out.max_text = value_text(row.gr, m)
+        end
+    end
+    return out
+end
+
+-- the better side, "l" or "r"; nil on a tie or when a side has no number
+local function better(a, b, lower)
+    if a == nil or b == nil or a == b then return nil end
+    if lower then return (a < b) and "l" or "r" end
+    return (a > b) and "l" or "r"
+end
+
+-- a share as a percentage, as the catalog writes it: one decimal below 10%, "<0.1%" for a sliver
+local function percent(x)
+    local p = (x or 0) * 100
+    if p == 0 then return "0%" end
+    if p < 0.1 then return "<0.1%" end
+    return (p < 10 and string.format("%.1f", p) or tostring(math.floor(p + 0.5))) .. "%"
+end
+
+-- what the card leaves out, a side each: { text, num }
+local FACTS = {
+    hit_power = function(sec)
+        local hp = arsenal_data.hit_power(sec)
+        if hp and hp > 0 then return { text = string.format("%.3g", hp), num = hp } end
+    end,
+    -- the chance at full condition, and once the parts wear when Weapon Parts Overhaul tells;
+    -- compared by the worn one
+    jam = function(sec)
+        local j = arsenal_data.jam_chance(sec)
+        if not j then return nil end
+        local base = j.base or 0
+        if j.worn then
+            return { text = string.format(T("st_arsenal_cmp_jam_worn"), percent(base), percent(base + j.worn)),
+                     num = base + j.worn }
+        end
+        return { text = percent(base), num = base }
+    end,
+    fire_modes = function(sec)
+        return { text = arsenal_data.fire_modes(sec) }
+    end,
+    weight = function(sec)
+        local w = arsenal_data.kg(arsenal_data.weight(sec))
+        return { text = tostring(w) .. " " .. T("st_kg"), num = w }
+    end,
+    rounds = function(sec)
+        local names = arsenal_data.ammo_names(sec)
+        if names and #names > 0 then return { text = table.concat(names, ", ") } end
+    end,
+    stops = function(sec)
+        local p = arsenal_data.penetration(sec)
+        if p and p.of > 0 then
+            return { text = string.format(T("st_arsenal_cmp_stops_of"), tostring(p.stops), tostring(p.of)), num = p.stops }
+        end
+    end,
+}
+
+-- a gun's facts, then a suit's or helmet's: { fact, label, lower is better, a wide row of text }
+local GUN_FACTS = {
+    { "hit_power", "st_arsenal_cmp_hit_power" },
+    { "jam", "st_arsenal_cmp_jam", true },
+    { "fire_modes", "st_arsenal_fire_modes" },
+    { "weight", "st_arsenal_wb_weight", true },
+    { "rounds", "st_arsenal_cmp_rounds", false, true },
+}
+local ARMOR_FACTS = {
+    { "stops", "st_arsenal_cmp_stops" },
+    { "weight", "st_arsenal_wb_weight", true },
+}
+
+-- The rows for a section, and another of its kind or nil: the card's rows in its order, then
+-- the facts. A row: { label, stat, l, r, better, max_better, wide }, `l` and `r` a side's
+-- { text, num, max, max_text }, nil where it has no value; a row neither has is left out.
+-- `better` and `max_better` ("l", "r" or nil) mark the better value as it is and upgraded.
+function rows(l, r)
+    local out = {}
+    local kind = kind_of(l)
+    if not kind then return out end
+    local armor = kind ~= "gun"
+    if arsenal_data.has_stat_card(l) then
+        for _, row in ipairs(arsenal_data.stat_rows(false, l)) do
+            local maxed = armor or MAXED[row.stat] == true
+            local a = card_side(l, row, maxed)
+            local b = r and card_side(r, row, maxed) or nil
+            if a or b then
+                local lower = row.gr.sign_inverse == true
+                out[#out + 1] = { label = plain(T(row.gr.name)), stat = row.stat, l = a, r = b,
+                    better = better(a and a.num, b and b.num, lower),
+                    max_better = better(a and a.max, b and b.max, lower) }
+            end
+        end
+    end
+    for _, f in ipairs(armor and ARMOR_FACTS or GUN_FACTS) do
+        local a = safe(FACTS[f[1]], l)
+        local b = r and safe(FACTS[f[1]], r) or nil
+        if a or b then
+            out[#out + 1] = { label = T(f[2]), stat = f[1], l = a, r = b, wide = f[4] == true,
+                better = better(a and a.num, b and b.num, f[3] == true) }
+        end
+    end
+    return out
+end

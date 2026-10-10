@@ -5,8 +5,9 @@ fills: the count line, categories with found/total, one row per gun model, dim w
 its variants is found, the "found only" filter, switching categories, an entry built and
 handed to its scroll view once complete, a long name that wraps without covering the line
 below it, a model's page (stat rows that list each variant's value where they differ, the
-variants with when and where each was found, the found variant's icon), and a knife's page
-without a stat card.
+variants with when and where each was found, the found variant's icon), a knife's page
+without a stat card, and Compare over the entry (the real arsenal_compare.script) for what has
+one.
 
     python test_ui.py            the real script
     python test_ui.py MUTANT     a broken copy (see MUTANTS); the run must fail
@@ -262,6 +263,11 @@ arsenal_data = {
     -- the other Fort-17 also chambers 9x18
     ammo_names = function(sec) return sec == "wpn_fort" and { "5.45 FMJ", "9x18 FMJ" } or { "5.45 FMJ" } end,
     description = function() return "A gun." end,
+    variant_of = function(sec)
+        for _, l in pairs(guns) do for _, e in ipairs(l) do
+            for _, v in ipairs(e.variants) do if v.sec == sec then return v end end
+        end end
+    end,
 }
 -- where to find them: the Fort-17s are carried, stashed, traded with Nimble, made of another gun
 -- and in new-game kits; the PM is in stashes no level list names; the knife turns up nowhere
@@ -560,6 +566,17 @@ MUTANTS = {
     "action_model_key": ("    local ok, err = pcall(a.run, self.action_sec)", "    local ok, err = pcall(a.run, self.sec)"),
     "action_unguarded": ("    local ok, err = pcall(a.run, self.action_sec)", "    local ok, err = true, a.run(self.action_sec)"),
     "action_stale": ("    self.detail:Clear()\n    self:UpdateActions(nil)\n", "    self.detail:Clear()\n"),
+    "cmp_hidden": ("    self.cmp_add:Show(can)", "    self.cmp_add:Show(false)"),
+    "cmp_everywhere": ("    local can = sec ~= nil and safe(arsenal_compare.comparable, sec) == true", "    local can = sec ~= nil"),
+    "cmp_stale": ("    self:UpdateActions(nil)\n    self:UpdateCompare(nil)\n", "    self:UpdateActions(nil)\n"),
+    "cmp_variant": ("    self:UpdateCompare(shown.sec)\n", "    self:UpdateCompare(sec)\n"),
+    "cmp_no_open": ('    elseif what then\n        arsenal_pages.open("compare")', "    elseif what then\n        -- stays"),
+    "cmp_open_first": ('    if what == "left" then\n        self:UpdateCompare(sec)', "    if false then\n        self:UpdateCompare(sec)"),
+    "cmp_line_stale": ('    if what == "left" then\n        self:UpdateCompare(sec)\n', '    if what == "left" then\n'),
+    "cmp_tab_dead": ('function ArsenalPDA:OnComparePage()\n    arsenal_pages.open("compare")',
+                     "function ArsenalPDA:OnComparePage()\n    -- nothing"),
+    "cmp_no_line": ('    self.cmp_status:SetText(can and (safe(arsenal_compare.line, sec) or "") or "")',
+                    '    self.cmp_status:SetText("")'),
     "action_twice": ("    remove_action(id)\n    actions[#actions + 1]", "    actions[#actions + 1]"),
     "no_factions": ('        add(FACTION .. f, game.translate_string("st_faction_" .. f), models_of(FACTION .. f))\n', ""),
     "faction_by_name": ("        if a.cat ~= b.cat then return (order[a.cat] or 99) < (order[b.cat] or 99) end\n", ""),
@@ -647,6 +664,9 @@ def main():
 
     lua = L.LuaRuntime(unpack_returned_tuples=True)
     lua.execute(STUBS, lua.table_from({k: lua.table_from(v) for k, v in sz.items()}), lua.table_from(STRINGS))
+    cmp_src = io.open(os.path.join(GD, "scripts", "arsenal_compare.script"), encoding="latin-1").read()
+    lua.eval("function(src) local env = setmetatable({}, {__index = _G}); local f = assert(loadstring(src)); "
+             "setfenv(f, env); f(); arsenal_compare = env end")(cmp_src)
     m = lua.eval("function(src) local env = setmetatable({}, {__index = _G}); local f = assert(loadstring(src)); "
                  "setfenv(f, env); f(); return env end")(src)
     g = lua.globals()
@@ -1053,6 +1073,7 @@ arsenal_intel = {
     check("Learned 03.06.2012 from a Duty PDA" in texts and not stats and not any(t.startswith("Weight") for t in texts)
           and any(t.startswith("Not studied yet") for t in texts),
           "a known model not yet studied: how it was learned, no stats: %s %s" % (stats, texts[:5]))
+    check(ui.cmp_add.shown is False and ui.cmp_status.text == "", "and no Compare: its stats are unknown")
     check(texts[i + 1:i + 3] == ["Seen in stashes at Garbage", "Seen for sale at Sidorovich"],
           "where to find it: only where it was seen: %s" % texts[i:i + 3])
     # a click on it, though it is shown already: read, like an opened letter
@@ -1188,6 +1209,63 @@ arsenal_intel = {
     ui.cb.btn_back()
     check(g.pda_section == "eptLauncher", "Back returns to the launcher")
 
+    # Compare (arsenal_compare): over the entry, for what has a card, with a line saying what a
+    # click does; the first waits on the left, a second (the variant the page shows) opens
+    # Compare's page; the switch opens it too
+    def show(sec):
+        keys = [r.key for r in ui.cat_list["items"].values()]
+        for ci in range(len(keys)):
+            ui.cat_list.sel = ci
+            ui.cb.cat_list()
+            models = [r.key for r in ui.wpn_list["items"].values()]
+            if sec in models:
+                ui.wpn_list.sel = models.index(sec)
+                ui.cb.wpn_list()
+                return ui.sec
+        return None
+
+    cmp = g.arsenal_compare
+    cmp.clear()
+    ui.found_only.checked = False
+    ui = m.get_ui()
+    n_open = len(g.opened_pages)
+    knife = (show("wpn_knife"), ui.cmp_add.shown, ui.cmp_status.text)
+    ammo = (show("ammo_545"), ui.cmp_add.shown)
+    check(knife == ("wpn_knife", False, "") and ammo == ("ammo_545", False),
+          "no Compare for a knife or a round: %s %s" % (knife, ammo))
+    show("wpn_pm")
+    check(ui.cmp_add.shown is True and ui.cmp_status.text == "",
+          "a gun: Compare, and no line while nothing is compared: %r" % ui.cmp_status.text)
+    ui.cb.cmp_add()
+    check(tuple(cmp.sides()) == ("wpn_pm", None) and len(g.opened_pages) == n_open
+          and ui.cmp_status.text == "Now pick another gun",
+          "the first waits on the left, the page stays, its line asks for another: %s %r"
+          % (tuple(cmp.sides()), ui.cmp_status.text))
+    show("wpn_fort")
+    check(ui.cmp_status.text == "vs. PM", "another gun's line names what it joins: %r" % ui.cmp_status.text)
+    ui.cb.cmp_add()
+    check(tuple(cmp.sides()) == ("wpn_pm", "wpn_fort17") and len(g.opened_pages) == n_open + 1
+          and g.opened_pages[n_open + 1].page == "compare",
+          "the second, the variant the page shows, and Compare's page opens: %s" % (tuple(cmp.sides()),))
+    show("wpn_pm")
+    check(ui.cmp_status.text == "In the comparison", "one in already says so: %r" % ui.cmp_status.text)
+    ui.cb.cmp_add()
+    check(len(g.opened_pages) == n_open + 2 and g.opened_pages[n_open + 2].page == "compare",
+          "and a click on it opens the page")
+    show("sci_suit")
+    check(ui.cmp_add.shown is True and ui.cmp_status.text == "Starts a new comparison", "a suit: %r" % ui.cmp_status.text)
+    show("wpn_ak74")
+    check(ui.cmp_status.text == "Replaces Fort-17", "a third gun replaces the right: %r" % ui.cmp_status.text)
+    ui.found_only.checked = True
+    ui.cb.found_only()
+    check(ui.sec is None and ui.cmp_add.shown is False and ui.cmp_status.text == "", "nothing shown: no Compare")
+    ui.found_only.checked = False
+    ui.cb.found_only()
+    n_open = len(g.opened_pages)
+    ui.cb.page_compare()
+    check(len(g.opened_pages) == n_open + 1 and g.opened_pages[n_open + 1].page == "compare", "the switch opens Compare")
+    cmp.clear()
+
     # the flat window: the 2D PDA's frame behind the page, where the PDA puts its pages
     paths = lambda w: [c.path for c in w.children.values()]
     check("flat_bezel" not in paths(ui), "the PDA page has no frame of its own")
@@ -1267,6 +1345,12 @@ arsenal_intel = {
     out = [k for k in foot if sz[k][1] < rule or sz[k][1] + sz[k][3] > 709]
     check(not low and not out, "the page stops above the footer's rule at %d, the footer under it and inside the "
           "content box: %s %s" % (rule, low, out))
+    # Compare's row over the entry, level with the toggles over the lists; the entry level with the lists
+    a, st, d, lst = sz["cmp_add"], sz["cmp_status"], sz["detail"], sz["wpn_list"]
+    check(d[1] == lst[1] and d[1] + d[3] == lst[1] + lst[3] and a[1] + a[3] <= d[1] and st[1] + st[3] <= d[1]
+          and a[1] + a[3] / 2 == sz["found_only_lbl"][1] + sz["found_only_lbl"][3] / 2
+          and a[0] >= sz["rule_wpn"][0] + 4 and a[0] + a[2] <= st[0] and st[0] + st[2] <= 792,
+          "Compare and its line over the entry, level with the toggles; the entry level with the lists")
     # left to right, nothing in the footer over the next: Silence, the lamp and its label, the credit
     row = [sz[k] for k in foot]
     over = [(foot[i], foot[i + 1]) for i in range(len(row) - 1) if row[i][0] + row[i][2] > row[i + 1][0]]

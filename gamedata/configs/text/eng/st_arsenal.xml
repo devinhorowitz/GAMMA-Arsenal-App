@@ -696,4 +696,85 @@
 	<string id="st_arsenal_credit">
 		<text>Arsenal v%s by %s</text>
 	</string>
+	<string id="st_arsenal_compare">
+		<text>Compare</text>
+	</string>
+	<string id="st_arsenal_cmp_add">
+		<text>Compare</text>
+	</string>
+	<string id="st_arsenal_cmp_in">
+		<text>In the comparison</text>
+	</string>
+	<string id="st_arsenal_cmp_next_gun">
+		<text>Now pick another gun</text>
+	</string>
+	<string id="st_arsenal_cmp_next_suit">
+		<text>Now pick another suit</text>
+	</string>
+	<string id="st_arsenal_cmp_next_helmet">
+		<text>Now pick another helmet</text>
+	</string>
+	<string id="st_arsenal_cmp_with">
+		<text>vs. %s</text>
+	</string>
+	<string id="st_arsenal_cmp_replaces">
+		<text>Replaces %s</text>
+	</string>
+	<string id="st_arsenal_cmp_restart">
+		<text>Starts a new comparison</text>
+	</string>
+	<string id="st_arsenal_cmp_title_gun">
+		<text>Comparing guns</text>
+	</string>
+	<string id="st_arsenal_cmp_title_suit">
+		<text>Comparing suits</text>
+	</string>
+	<string id="st_arsenal_cmp_title_helmet">
+		<text>Comparing helmets</text>
+	</string>
+	<string id="st_arsenal_cmp_swap">
+		<text>Swap</text>
+	</string>
+	<string id="st_arsenal_cmp_clear">
+		<text>Clear</text>
+	</string>
+	<string id="st_arsenal_cmp_change">
+		<text>Change</text>
+	</string>
+	<string id="st_arsenal_cmp_none">
+		<text>Nothing to compare yet. Open a gun, suit or helmet in the catalog and press Compare, then another of its kind.</text>
+	</string>
+	<string id="st_arsenal_cmp_pick_gun">
+		<text>Now another gun: open it in the catalog and press Compare.</text>
+	</string>
+	<string id="st_arsenal_cmp_pick_suit">
+		<text>Now another suit: open it in the catalog and press Compare.</text>
+	</string>
+	<string id="st_arsenal_cmp_pick_helmet">
+		<text>Now another helmet: open it in the catalog and press Compare.</text>
+	</string>
+	<string id="st_arsenal_cmp_stock">
+		<text>Stock</text>
+	</string>
+	<string id="st_arsenal_cmp_upgraded">
+		<text>Upgraded</text>
+	</string>
+	<string id="st_arsenal_cmp_hit_power">
+		<text>Hit power</text>
+	</string>
+	<string id="st_arsenal_cmp_jam">
+		<text>Jam chance</text>
+	</string>
+	<string id="st_arsenal_cmp_jam_worn">
+		<text>%s, worn %s</text>
+	</string>
+	<string id="st_arsenal_cmp_rounds">
+		<text>Rounds</text>
+	</string>
+	<string id="st_arsenal_cmp_stops">
+		<text>Rounds stopped</text>
+	</string>
+	<string id="st_arsenal_cmp_stops_of">
+		<text>%s of %s</text>
+	</string>
 </string_table>

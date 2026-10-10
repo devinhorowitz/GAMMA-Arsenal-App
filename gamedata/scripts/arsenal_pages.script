@@ -1,10 +1,11 @@
 --[[
-    Arsenal's two pages, each in a PDA section of its own as the PDA's tabs are: the catalog
-    (eptArsenal, ui_arsenal) and Workbench (eptWorkbench, ui_arsenal_workbench), and the switch
-    between them, the plates at the top left of both.
+    Arsenal's three pages, each in a PDA section of its own as the PDA's tabs are: the catalog
+    (eptArsenal, ui_arsenal), Workbench (eptWorkbench, ui_arsenal_workbench) and Compare
+    (eptArsenalCompare, ui_arsenal_compare), and the switch between them, the plates at the top
+    left of each.
 
-    Mod App Creator knows the catalog's section only, its tile's. Workbench's is claimed here by
-    wrapping pda.set_active_subdialog as MAC wraps it (Seasons of the Zone's two pages do the
+    Mod App Creator knows the catalog's section only, its tile's. The other two are claimed here
+    by wrapping pda.set_active_subdialog as MAC wraps it (Seasons of the Zone's two pages do the
     same); every other section passes down untouched, and either wrap order works. A page that
     fails to build is logged and comes back empty, so the PDA stays up.
 --]]
@@ -12,10 +13,18 @@
 PAGES = {
     catalog = { tab = "eptArsenal" },
     workbench = { tab = "eptWorkbench" },
+    compare = { tab = "eptArsenalCompare" },
 }
 
 local function say(msg)
     printf("[arsenal] %s", tostring(msg))
+end
+
+-- the script of each page
+local function script_of(page)
+    if page == "workbench" then return ui_arsenal_workbench end
+    if page == "compare" then return ui_arsenal_compare end
+    return ui_arsenal
 end
 
 -- Go to a page: in the PDA by its section; in the flat window (the MCM key) by swapping the
@@ -24,16 +33,16 @@ function open(page, sec, id)
     if page == "workbench" and (sec or id) then
         ui_arsenal_workbench.show_next(sec, id)
     end
-    local flat_cat = ui_arsenal.flat_window()
-    local flat_wb = ui_arsenal_workbench.flat_window()
-    if flat_cat or flat_wb then
-        if flat_cat then flat_cat:Close() end
-        if flat_wb then flat_wb:Close() end
-        if page == "workbench" then
-            ui_arsenal_workbench.open_flat()
-        else
-            ui_arsenal.open_flat()
+    local any = false
+    for _, p in ipairs({ "catalog", "workbench", "compare" }) do
+        local w = script_of(p).flat_window()
+        if w then
+            w:Close()
+            any = true
         end
+    end
+    if any then
+        script_of(page).open_flat()
         return
     end
     local ok, err = pcall(function()
@@ -42,17 +51,18 @@ function open(page, sec, id)
     if not ok then say("could not open " .. tostring(page) .. ": " .. tostring(err)) end
 end
 
--- Workbench's section to its page; forwards every argument, not just the section, so a
--- signature upstream grows is not cut short
+-- Workbench's and Compare's sections to their pages; forwards every argument, not just the
+-- section, so a signature upstream grows is not cut short
 local wrapped = false
 local function route()
     if wrapped or not (pda and pda.set_active_subdialog) then return end
     local orig = pda.set_active_subdialog
     pda.set_active_subdialog = function(section, ...)
-        if section == PAGES.workbench.tab then
-            local ok, ui = pcall(ui_arsenal_workbench.get_ui)
+        local page = (section == PAGES.workbench.tab and "workbench") or (section == PAGES.compare.tab and "compare")
+        if page then
+            local ok, ui = pcall(function() return script_of(page).get_ui() end)
             if ok then return ui end
-            say("the Workbench page failed to build: " .. tostring(ui))
+            say("the " .. page .. " page failed to build: " .. tostring(ui))
             return nil
         end
         return orig(section, ...)
