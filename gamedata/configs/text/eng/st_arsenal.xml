@@ -690,6 +690,9 @@
 	<string id="st_arsenal_silence">
 		<text>Silence</text>
 	</string>
+	<string id="st_arsenal_jailbroken">
+		<text>Jailbroken</text>
+	</string>
 	<string id="st_arsenal_credit">
 		<text>Arsenal v%s by %s</text>
 	</string>

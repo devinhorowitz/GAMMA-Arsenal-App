@@ -37,7 +37,8 @@ its specs from someone who knows. A round is known once you know a gun that fire
 until you click them, like unread mail, and so does anything you find for the first time.
 Arsenal's tile in MAC's launcher shows how many are waiting.
 
-**MCM > Arsenal > Jailbreak** opens everything, like a finished encyclopedia.
+**MCM > Arsenal > Jailbreak** opens everything, like a finished encyclopedia. While it is on, a
+lit padlock in the footer of both pages says so, screenshots included.
 
 ## What a page shows
 

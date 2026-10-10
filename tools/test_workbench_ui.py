@@ -118,10 +118,13 @@ function CUIScriptWnd.OnKeyboard(self, dik, action) return false end
 DIK_keys = { DIK_ESCAPE = 1, DIK_F7 = 65, DIK_A = 30 }
 -- MCM's "PDA notifications", on until a case turns it off; the credit line as arsenal_mcm makes it
 NEWS_ON = true
+-- MCM's jailbreak, off until a case turns it on
+JAILBREAK = false
 arsenal_mcm = { flat_key = function() return DIK_keys.DIK_F7 end,
     credit = function() return "Arsenal v1.2.1 by Windwalker" end,
     news = function() return NEWS_ON end,
-    set_news = function(on) NEWS_ON = on end }
+    set_news = function(on) NEWS_ON = on end,
+    jailbreak = function() return JAILBREAK end }
 function vector2() return { set = function(self, x, y) self.x, self.y = x, y; return self end } end
 function Frect() return { set = function(self, a, b, c, d) self.r = { a, b, c, d }; return self end } end
 function GetARGB(a, r, g, b) return string.format("%d,%d,%d,%d", a, r, g, b) end
@@ -148,6 +151,9 @@ MUTANTS = {
     "wb_silence_unpainted": ("function WorkbenchPDA:Reset(want)\n    self:PaintFooter()\n", "function WorkbenchPDA:Reset(want)\n"),
     "wb_silence_inverted": ("arsenal_mcm.set_news(not self.silence:GetCheck())", "arsenal_mcm.set_news(self.silence:GetCheck())"),
     "wb_no_credit": ("    self.credit:SetText(arsenal_mcm.credit())\n", ""),
+    "wb_jailbreak_unlit": ("    self.jailbreak:Show(jb)\n", "    self.jailbreak:Show(false)\n"),
+    "wb_jailbreak_always": ("local jb = arsenal_mcm.jailbreak() == true", "local jb = true"),
+    "wb_jailbreak_uncolored": ('        self.jailbreak:SetTextureColor(theme.argb("warn"))\n', ""),
     "wb_suit_card_into_footer": ("local CARD_H, CARD_H_ARMOR = 200, 346", "local CARD_H, CARD_H_ARMOR = 200, 374"),
     "wb_gun_card_into_rows": ("local CARD_H, CARD_H_ARMOR = 200, 346", "local CARD_H, CARD_H_ARMOR = 228, 346"),
     "no_headings": ('        if i == 1 and e.id then\n            self.list:AddExistingItem(WorkbenchRow(xml, nil, T("st_arsenal_wb_carried"), "dim"))\n        end\n', ""),
@@ -321,6 +327,24 @@ def footer(g, ui, page_, src, check):
         g.NEWS_ON = True
         box = ui.get_ui().silence
         check(box.checked is False, "and unticked once they are on again: %s" % box.checked)
+    # the jailbreak lamp, as on the catalog: gone while it is off, lit in the warning color while
+    # it is on, read afresh at every open
+    lamp, lbl = page_.jailbreak, page_.jailbreak_lbl
+    check(lamp is not None and lbl is not None and lamp.shown is False and lbl.shown is False,
+          "the footer: no jailbreak lamp while the jailbreak is off: %s, %s"
+          % (lamp and lamp.shown, lbl and lbl.shown))
+    if lamp is not None and lbl is not None:
+        warn = "warn"                    # the theme stub names the role
+        g.JAILBREAK = True
+        p = ui.get_ui()
+        check(p.jailbreak.shown is True and p.jailbreak_lbl.shown is True and p.jailbreak.tcolor == warn
+              and p.jailbreak_lbl.color == warn,
+              "jailbroken in MCM, the next open lights the lamp and its label: %s %s %s %s"
+              % (p.jailbreak.shown, p.jailbreak_lbl.shown, p.jailbreak.tcolor, p.jailbreak_lbl.color))
+        g.JAILBREAK = False
+        p = ui.get_ui()
+        check(p.jailbreak.shown is False and p.jailbreak_lbl.shown is False,
+              "and it goes out once the jailbreak is off: %s, %s" % (p.jailbreak.shown, p.jailbreak_lbl.shown))
     sz = sizes()
     rule = sz["rule_foot"][1]
     card_h, armor_h = (int(v) for v in re.search(r"local CARD_H, CARD_H_ARMOR = (\d+), (\d+)", src).groups())

@@ -286,8 +286,10 @@
 
 	<!-- ============ the footer, the same on both pages ============
 	     Under a rule like the header's: Silence, which is MCM's "PDA notifications" seen here too,
-	     ticked while Arsenal's messages are off; and the line naming the app, its version and its
-	     author, so a screenshot says which Arsenal it shows. Everything above stops at 678. -->
+	     ticked while Arsenal's messages are off; the jailbreak lamp, lit while MCM's jailbreak
+	     lists everything and gone while it is off; and the line naming the app, its version and
+	     its author, so a screenshot says which Arsenal it shows and how. Everything above stops
+	     at 678. -->
 	<rule_foot x="28" y="681" width="764" height="1" stretch="1">
 		<texture>arsenal_rule</texture>
 	</rule_foot>
@@ -297,6 +299,12 @@
 	<silence x="94" y="683" width="26" height="26" stretch="1">
 		<texture>ui_inGame2_checkbox</texture>
 	</silence>
+	<jailbreak x="140" y="683" width="26" height="26" stretch="1">
+		<texture>arsenal_jailbreak</texture>
+	</jailbreak>
+	<jailbreak_lbl x="168" y="686" width="160" height="20">
+		<text font="letterica16" r="238" g="155" b="23" align="l" vert_align="c">st_arsenal_jailbroken</text>
+	</jailbreak_lbl>
 	<credit x="432" y="686" width="356" height="20">
 		<text font="letterica16" r="140" g="140" b="140" align="r" vert_align="c"/>
 	</credit>

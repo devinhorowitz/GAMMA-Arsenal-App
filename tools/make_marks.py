@@ -6,6 +6,8 @@ tints (textures_descr/ui_arsenal.xml names the parts):
 - arsenal_badge_1, _2, _3 (y 32, 20 high; 20, 28 and 36 wide at x 0, 24 and 56): the badge on
   the launcher tile for a count of 1, 2 or 3 digits, a circle or a pill with a slightly darker
   rim, so the tint reads as a raised button.
+- arsenal_jailbreak (96,24, 32x32): the footer's jailbreak lamp, an open padlock (the shackle's
+  right leg clear of the body) over a soft round glow, so the tint reads as a lit lamp.
 
     make_marks.py OUT.dds [PREVIEW.png]
 """
@@ -21,6 +23,7 @@ from make_tile import write_dds  # noqa: E402
 SS = 8                      # supersampling for the badges' edges
 BADGES = ((0, 20), (24, 28), (56, 36))
 BADGE_Y, BADGE_H = 32, 20
+JAIL_X, JAIL_Y, JAIL = 96, 24, 32
 
 
 def glow(w=128, h=20):
@@ -45,11 +48,37 @@ def pill(w, h=BADGE_H, rim_shade=170):
     return big.resize((w, h), Image.LANCZOS)
 
 
+def padlock(n=JAIL):
+    big = Image.new("RGBA", (n * SS, n * SS), (255, 255, 255, 0))
+    u = n * SS / 32.0          # drawn on a 32-unit grid
+    px = big.load()
+    cx, cy, rad = 16 * u, 18 * u, 15.5 * u
+    for y in range(n * SS):
+        for x in range(n * SS):
+            r = math.hypot(x + 0.5 - cx, y + 0.5 - cy) / rad
+            if r < 1:
+                px[x, y] = (255, 255, 255, int(round(130 * (1 - r) ** 1.6)))
+    d = ImageDraw.Draw(big)
+    white, hole = (255, 255, 255, 255), (70, 70, 70, 255)
+
+    def box(x0, y0, x1, y1, fill=white, r=0):
+        d.rounded_rectangle((x0 * u, y0 * u, x1 * u - 1, y1 * u - 1), radius=r * u, fill=fill)
+
+    box(9, 15, 23, 27, r=2)                                       # the body
+    d.arc((11 * u, 3 * u, 21 * u - 1, 13 * u - 1), 180, 360, fill=white, width=int(2.5 * u))
+    box(11, 8, 13.5, 16)                                          # the left leg, into the body
+    box(18.5, 8, 21, 11)                                          # the right leg, clear of it
+    d.ellipse((14.3 * u, 18.3 * u, 17.7 * u, 21.7 * u), fill=hole)  # the keyhole
+    box(15.2, 20, 16.8, 24, fill=hole)
+    return big.resize((n, n), Image.LANCZOS)
+
+
 def atlas():
     img = Image.new("RGBA", (128, 64), (255, 255, 255, 0))
     img.alpha_composite(glow(), (0, 0))
     for x, w in BADGES:
         img.alpha_composite(pill(w), (x, BADGE_Y))
+    img.alpha_composite(padlock(), (JAIL_X, JAIL_Y))
     return img
 
 
@@ -71,6 +100,7 @@ def main():
             bg.alpha_composite(tinted(img.crop((0, 0, 128, 20)), (238, 196, 112), a).resize((250, 20)), (10, 10 + 26 * i))
         for x, w in BADGES:
             bg.alpha_composite(tinted(img.crop((x, BADGE_Y, x + w, BADGE_Y + BADGE_H)), (200, 36, 30)), (10 + x * 2, 70))
+        bg.alpha_composite(tinted(img.crop((JAIL_X, JAIL_Y, JAIL_X + JAIL, JAIL_Y + JAIL)), (238, 155, 23)), (240, 66))
         bg.resize((900, 330), Image.NEAREST).save(sys.argv[2])
     print("marks ->", out)
 

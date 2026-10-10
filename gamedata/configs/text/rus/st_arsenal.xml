@@ -690,6 +690,9 @@
 	<string id="st_arsenal_silence">
 		<text>“ишина</text>
 	</string>
+	<string id="st_arsenal_jailbroken">
+		<text>¬зломан</text>
+	</string>
 	<string id="st_arsenal_credit">
 		<text>јрсенал v%s Ч %s</text>
 	</string>

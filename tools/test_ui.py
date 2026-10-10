@@ -125,10 +125,13 @@ db = { actor = { alive = function() return actor_alive end } }
 actor_alive = true
 -- MCM's "PDA notifications", on until a case turns it off; the credit line as arsenal_mcm makes it
 NEWS_ON = true
+-- MCM's jailbreak, off until a case turns it on
+JAILBREAK = false
 arsenal_mcm = { flat_key = function() return DIK_keys.DIK_F7 end,
     credit = function() return "Arsenal v1.2.1 by Windwalker" end,
     news = function() return NEWS_ON end,
-    set_news = function(on) NEWS_ON = on end }
+    set_news = function(on) NEWS_ON = on end,
+    jailbreak = function() return JAILBREAK end }
 
 function vector2() return { set = function(self, x, y) self.x, self.y = x, y; return self end } end
 function Frect() return { set = function(self, a, b, c, d) self.r = { a, b, c, d }; return self end } end
@@ -430,6 +433,9 @@ MUTANTS = {
     "silence_unpainted": ("function ArsenalPDA:Reset()\n    self:PaintFooter()\n", "function ArsenalPDA:Reset()\n"),
     "silence_inverted": ("arsenal_mcm.set_news(not self.silence:GetCheck())", "arsenal_mcm.set_news(self.silence:GetCheck())"),
     "no_credit": ("    self.credit:SetText(arsenal_mcm.credit())\n", ""),
+    "jailbreak_unlit": ("    self.jailbreak:Show(jb)\n", "    self.jailbreak:Show(false)\n"),
+    "jailbreak_always": ("local jb = arsenal_mcm.jailbreak() == true", "local jb = true"),
+    "jailbreak_uncolored": ('        self.jailbreak:SetTextureColor(theme.argb("warn"))\n', ""),
     "switch_not_pressed": ("    theme.set_active(self.page_catalog, true)\n", ""),
     "switch_dead": ('    arsenal_pages.open("workbench")', "    -- nothing"),
     "toggle_ignored": ("    by_faction = self.by_faction_check:GetCheck() == true\n", ""),
@@ -1235,15 +1241,36 @@ arsenal_intel = {
         g.NEWS_ON = True
         m.get_ui()
         check(sil.checked is False, "and unticked once they are on again: %s" % sil.checked)
+    # the jailbreak lamp: gone while MCM's jailbreak is off, lit in the warning color while it
+    # is on, read afresh at every open
+    lamp, lbl = ui.jailbreak, ui.jailbreak_lbl
+    check(lamp is not None and lbl is not None and lamp.shown is False and lbl.shown is False,
+          "the footer: no jailbreak lamp while the jailbreak is off: %s, %s"
+          % (lamp and lamp.shown, lbl and lbl.shown))
+    if lamp is not None and lbl is not None:
+        warn = "warn"                    # the theme stub names the role
+        g.JAILBREAK = True
+        m.get_ui()
+        check(lamp.shown is True and lbl.shown is True and lamp.tcolor == warn and lbl.color == warn,
+              "jailbroken in MCM, the next open lights the lamp and its label: %s %s %s %s"
+              % (lamp.shown, lbl.shown, lamp.tcolor, lbl.color))
+        g.JAILBREAK = False
+        m.get_ui()
+        check(lamp.shown is False and lbl.shown is False,
+              "and it goes out once the jailbreak is off: %s, %s" % (lamp.shown, lbl.shown))
     # nothing on the page reaches into the footer, which keeps the content box's last rows
     body = ["by_faction_lbl", "by_faction", "cat_list", "rule_cat", "found_only_lbl", "found_only", "wpn_list",
             "rule_wpn", "detail"]
-    foot = ["silence_lbl", "silence", "credit"]
+    foot = ["silence_lbl", "silence", "jailbreak", "jailbreak_lbl", "credit"]
     rule = sz["rule_foot"][1]
     low = [(k, sz[k][1] + sz[k][3]) for k in body if sz[k][1] + sz[k][3] > rule - 2]
     out = [k for k in foot if sz[k][1] < rule or sz[k][1] + sz[k][3] > 709]
     check(not low and not out, "the page stops above the footer's rule at %d, the footer under it and inside the "
           "content box: %s %s" % (rule, low, out))
+    # left to right, nothing in the footer over the next: Silence, the lamp and its label, the credit
+    row = [sz[k] for k in foot]
+    over = [(foot[i], foot[i + 1]) for i in range(len(row) - 1) if row[i][0] + row[i][2] > row[i + 1][0]]
+    check(not over, "the footer's parts side by side, none over the next: %s" % over)
     print("\n%d failed" % len(fails))
     return 1 if fails else 0
 

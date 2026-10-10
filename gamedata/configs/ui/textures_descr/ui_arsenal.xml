@@ -18,12 +18,13 @@
 	<file name="ui\arsenal\ui_rule">
 		<texture id="arsenal_rule" x="0" y="0" width="4" height="4" />
 	</file>
-	<!-- white, tinted by the script (tools/make_marks.py): a new row's glow, and the launcher
-	     badge for 1, 2 and 3 digits -->
+	<!-- white, tinted by the script (tools/make_marks.py): a new row's glow, the launcher
+	     badge for 1, 2 and 3 digits, and the footer's jailbreak lamp -->
 	<file name="ui\arsenal\ui_marks">
 		<texture id="arsenal_glow" x="0" y="0" width="128" height="20" />
 		<texture id="arsenal_badge_1" x="0" y="32" width="20" height="20" />
 		<texture id="arsenal_badge_2" x="24" y="32" width="28" height="20" />
 		<texture id="arsenal_badge_3" x="56" y="32" width="36" height="20" />
+		<texture id="arsenal_jailbreak" x="96" y="24" width="32" height="32" />
 	</file>
 </w>

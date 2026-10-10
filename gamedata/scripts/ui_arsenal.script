@@ -106,13 +106,15 @@ function ArsenalPDA:__init(flat) super()
     xml:InitStatic("rule_wpn", self)
     self.detail = xml:InitScrollView("detail", self)
 
-    -- the footer, the same on both pages: Silence, and the line naming the app, its version and
-    -- its author, so a screenshot says which Arsenal it shows
+    -- the footer, the same on both pages: Silence, the jailbreak lamp, and the line naming the
+    -- app, its version and its author, so a screenshot says which Arsenal it shows and how
     xml:InitStatic("rule_foot", self)
     xml:InitTextWnd("silence_lbl", self)
     self.silence = xml:InitCheck("silence", self)
     self:Register(self.silence, "silence")
     self:AddCallback("silence", ui_events.BUTTON_CLICKED, self.OnSilence, self)
+    self.jailbreak = xml:InitStatic("jailbreak", self)
+    self.jailbreak_lbl = xml:InitTextWnd("jailbreak_lbl", self)
     self.credit = xml:InitTextWnd("credit", self)
     self.credit:SetText(arsenal_mcm.credit())
 
@@ -203,8 +205,17 @@ function ArsenalPDA:OnSilence()
     arsenal_mcm.set_news(not self.silence:GetCheck())
 end
 
+-- The jailbreak lamp is lit, in the warning color, while MCM's jailbreak lists everything, and
+-- gone while it is off; every open reads the option afresh.
 function ArsenalPDA:PaintFooter()
     self.silence:SetCheck(not arsenal_mcm.news())
+    local jb = arsenal_mcm.jailbreak() == true
+    self.jailbreak:Show(jb)
+    self.jailbreak_lbl:Show(jb)
+    if jb then
+        self.jailbreak:SetTextureColor(theme.argb("warn"))
+        self.jailbreak_lbl:SetTextColor(theme.argb("warn"))
+    end
 end
 
 -- the line over the lists. Counts go over what turns up in this game only; what is new
