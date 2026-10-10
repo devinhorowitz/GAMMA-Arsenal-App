@@ -18,6 +18,8 @@ import lupa.luajit21 as L
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SRC = io.open(os.path.join(HERE, "..", "gamedata", "scripts", "arsenal_mcm.script"), encoding="latin-1").read()
+# the version line as the script has it now, so the mutant below names it whatever the release
+VERSION_LINE = re.search(r'(?m)^VERSION = "[^"]+"', SRC).group(0)
 
 STUBS = r"""
 callbacks = {}
@@ -94,7 +96,7 @@ MUTANTS = {
     "tell_unlogged": ('        printf("[arsenal] PDA (silenced): %s", tostring(text))\n', ""),
     "credit_no_version": ("game.translate_string(\"st_arsenal_credit\"), VERSION, AUTHOR)",
                           "game.translate_string(\"st_arsenal_credit\"), \"\", AUTHOR)"),
-    "version_behind": ('VERSION = "1.2.1"', 'VERSION = "1.2.0"'),
+    "version_behind": (VERSION_LINE, 'VERSION = "0.0.1"'),
 }
 
 
