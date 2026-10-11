@@ -11,6 +11,11 @@
     sections of its name that play the same), so a model's page can show which of its variants
     were found. A model counts as found once any of its variants is.
 
+    A find keeps when, where and how: looted from a stash or a body (whose), bought (from
+    whom), given in a talk (by whom), crafted, picked up, seen in a window (with the option
+    on), or already carried when a save loaded; the place is put into words when shown
+    (arsenal_where). Finds from before Arsenal kept how show their level alone.
+
     Saved with the game (m_data.arsenal, plain values only). The engine does not send
     actor_on_item_take for what the player already carries when a save loads, so the
     inventory is scanned on the first update instead, quietly. A save from an older catalog,
@@ -20,7 +25,7 @@
 
 local VERSION = 1
 
-local found = {}        -- variant section -> { y, mo, d, h, mi, lvl }
+local found = {}        -- variant section -> { y, mo, d, h, mi, lvl, how = { kind, who, faction, place } }
 local scanned = false   -- the load-time scan has run; news only after it
 
 local function stamp()
@@ -42,11 +47,15 @@ local function notify(list)
     arsenal_mcm.tell(string.format(game.translate_string("st_arsenal_new_entry"), text))
 end
 
--- count a section as found; returns its variant when that is new
-function mark(sec, quiet)
+-- count a section as found, with how (a table, or a function that makes it, run only for a new
+-- find); returns its variant when that is new
+function mark(sec, quiet, how)
     local v = arsenal_data.variant_for(sec)
     if not v or found[v.sec] then return nil end
-    found[v.sec] = stamp()
+    local at = stamp()
+    if type(how) == "function" then how = how() end
+    at.how = how
+    found[v.sec] = at
     if arsenal_intel and arsenal_intel.found then arsenal_intel.found(sec, scanned) end
     if not quiet then
         notify({ v })
@@ -59,7 +68,7 @@ function is_found(sec)
     return found[sec] ~= nil
 end
 
--- when and where a variant was found: { y, mo, d, h, mi, lvl } or nil
+-- when, where and how a variant was found: { y, mo, d, h, mi, lvl, how } or nil
 function found_at(sec)
     return found[sec]
 end
@@ -72,7 +81,7 @@ local function earlier(a, b)
     return false
 end
 
--- when and where a gun model was first found, any variant: { y, mo, d, h, mi, lvl } or nil
+-- when, where and how a gun model was first found, any variant, or nil
 function entry_found(e)
     local first
     for _, v in ipairs(e and e.variants or {}) do
@@ -104,6 +113,72 @@ function count_found(list)
     return n
 end
 
+---------------------------------------------------------------------------------------------
+-- how a find came
+---------------------------------------------------------------------------------------------
+
+-- the words for each way, and what follows them: nothing, a person (arsenal_where.who_text)
+-- or a name
+local WAYS = { stash = 0, ground = 0, craft = 0, carried = 0, loot = 0, seen_stash = 0, seen_loot = 0,
+    body = 1, seen_body = 1, trade = 2, gift = 2, seen_trade = 2 }
+
+-- a find in words: "looted from a stash in Cordon, near the rookie village", "taken from the
+-- body of Duty fighter Ivan Petrenko in ...", "bought from Sidorovich in ..."; the level
+-- alone for a find kept before Arsenal kept how
+function describe(at)
+    if not at then return "" end
+    local how = at.how
+    local way = how and WAYS[how.kind]
+    if not way then return at.lvl and game.translate_string(at.lvl) or "" end
+    local s = game.translate_string("st_arsenal_got_" .. how.kind)
+    if way == 1 then
+        s = string.format(s, arsenal_where.who_text(how))
+    elseif way == 2 then
+        s = string.format(s, how.who or game.translate_string("st_arsenal_by_someone"))
+    end
+    return arsenal_where.at_place(s, how.place, at.lvl)
+end
+
+-- a window's partner as a source: a trader, a box (a stash), a body (whose) or other loot;
+-- `seen` when its guns count only by being seen there
+local function partner_source(gui, partner, seen)
+    local pre = seen and "seen_" or ""
+    local place = arsenal_where.place_of(partner)
+    if gui.mode == "trade" then
+        return { kind = pre .. "trade", who = partner:character_name(), place = place }
+    elseif gui.npc_is_box then
+        return { kind = pre .. "stash", place = place }
+    elseif IsStalker(partner) then
+        return { kind = pre .. "body", who = partner:character_name(), faction = partner:character_community(),
+            place = place }
+    end
+    return { kind = pre .. "loot", place = place }
+end
+
+-- how a gun comes to the player as he takes it, from what is open: a trader's window, a body's
+-- or a stash's, the workshop, a talk (a reward); else he picked it up
+local function take_source()
+    local gui = ui_inventory and ui_inventory.GUI
+    if gui and gui:IsShown() and (gui.mode == "loot" or gui.mode == "trade") then
+        local ok, partner = pcall(gui.GetPartner, gui)
+        if ok and partner then return partner_source(gui, partner) end
+    end
+    local ws = ui_workshop and ui_workshop.GUI
+    if ws and ws:IsShown() then
+        return { kind = "craft", place = arsenal_where.place_of(db.actor) }
+    end
+    if db.actor:is_talking() then
+        local npc = get_speaker and get_speaker(true)
+        return { kind = "gift", who = npc and npc:character_name(), place = arsenal_where.place_of(npc or db.actor) }
+    end
+    return { kind = "ground", place = arsenal_where.place_of(db.actor) }
+end
+
+-- what the player carries when a save loads, before it counts as news
+local function carried()
+    return { kind = "carried", place = arsenal_where.place_of(db.actor) }
+end
+
 -- move finds kept under a section to the variant that holds it now; a gun the catalog does
 -- not have (a mod since removed) keeps its own key
 function regroup()
@@ -122,7 +197,7 @@ local function scan()
     if not db.actor then return end
     db.actor:iterate_inventory(function(owner, obj)
         if obj then
-            mark(obj:section(), true)
+            mark(obj:section(), true, carried)
         end
     end, db.actor)
 end
@@ -135,7 +210,7 @@ end
 
 local function actor_on_item_take(obj)
     if obj then
-        mark(obj:section(), not scanned)
+        mark(obj:section(), not scanned, scanned and take_source or carried)
     end
 end
 
@@ -149,8 +224,9 @@ local function GUI_on_show(name)
     local ok, partner = pcall(gui.GetPartner, gui)
     if not (ok and partner) then return end
     local new = {}
+    local how = partner_source(gui, partner, true)
     local function take(_, obj)
-        local v = obj and mark(obj:section(), true)
+        local v = obj and mark(obj:section(), true, how)
         if v then new[#new + 1] = v end
     end
     if gui.npc_is_box then

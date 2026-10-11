@@ -16,6 +16,7 @@ import lupa.luajit21 as L
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SRC = io.open(os.path.join(HERE, "..", "gamedata", "scripts", "arsenal_intel.script"), encoding="latin-1").read()
+WHERE = io.open(os.path.join(HERE, "..", "gamedata", "scripts", "arsenal_where.script"), encoding="latin-1").read()
 STRINGS = dict(re.findall(r'<string id="([^"]+)">\s*<text>(.*?)</text>',
                           io.open(os.path.join(HERE, "..", "gamedata", "configs", "text", "eng", "st_arsenal.xml"),
                                   encoding="cp1251").read(), re.S))
@@ -23,11 +24,22 @@ STRINGS = dict(re.findall(r'<string id="([^"]+)">\s*<text>(.*?)</text>',
 STUBS = r"""
 local T = ...
 for k, v in pairs({ st_faction_dolg = "Duty", st_faction_freedom = "Freedom", st_faction_army = "Military",
-    st_faction_ecolog = "Ecologist", st_faction_monolith = "Monolith", st_faction_stalker = "Loner" }) do T[k] = v end
+    st_faction_ecolog = "Ecologist", st_faction_monolith = "Monolith", st_faction_stalker = "Loner",
+    l01_escape = "Cordon", l02_garbage = "Garbage" }) do T[k] = v end
 game = { translate_string = function(k) return T[k] or k end,
          get_game_time = function() return { get = function() return 2012, 5, DAY, 10, 30 end } end }
 DAY = 14
-level = { name = function() return "l02_garbage" end }
+level = { name = function() return "l02_garbage" end, object_by_id = function(id) return OBJS[id] end }
+OBJS = {}
+-- where things are (arsenal_where): vertex 10 on Cordon, 20 (everyone's, unless told) on the Garbage
+local LEVEL_OF, LEVELS = { [10] = 1, [20] = 2 }, { "l01_escape", "l02_garbage" }
+function game_graph() return { valid_vertex_id = function(self, gv) return LEVEL_OF[gv] ~= nil end,
+    vertex = function(self, gv) local l = LEVEL_OF[gv]; return { level_id = function() return l end } end } end
+function alife() return { level_name = function(self, id) return LEVELS[id] end } end
+function vector() return { set = function(self, x, y, z) return { x = x, y = y, z = z } end } end
+dynamic_news_helper = { GetPointDescription = function(obj)
+    return ({ [10] = "in Cordon, near the rookie village", [20] = "in Garbage, at the Depot" })[obj.m_game_vertex_id]
+end }
 AC_ID = 0
 CALLBACKS = {}
 function RegisterScriptCallback(name, fn) CALLBACKS[name] = fn end
@@ -137,6 +149,9 @@ function person(id, comm, rank, items, extra)
     function o:alive() return not (extra and extra.dead) end
     function o:relation(a) return extra and extra.relation or 1 end
     function o:get_visual_name() return extra and extra.visual or "vis_none" end
+    function o:best_weapon() return extra and extra.weapon and item(extra.weapon) or nil end
+    function o:game_vertex_id() return extra and extra.gv or 20 end
+    function o:position() return { x = id, y = 0, z = 0 } end
     function o:iterate_inventory(fn, owner) for _, s in ipairs(self.items) do fn(owner, item(s)) end end
     function o:iterate_inventory_box(fn, owner) for _, s in ipairs(self.items) do fn(owner, item(s)) end end
     return o
@@ -167,8 +182,7 @@ MUTANTS = {
                    "        if x ~= f then"),
     "pda_rank": ("    local top = rank_at(rank) or #arsenal_data.RANKS", "    local top = #arsenal_data.RANKS"),
     "decrypt": ("        scan_pdas()\n        return r", "        return r"),
-    "trade_fact": ('learn_items(partner, { kind = "trade", who = who }, function() return { sold = who } end)',
-                   'learn_items(partner, { kind = "trade", who = who }, function() return nil end)'),
+    "trade_fact": ('function() return { sold = who } end)', 'function() return nil end)'),
     "stash_fact": ('function() return { stash = lvl } end', 'function() return nil end'),
     "talk_daily": ("    if not willing(npc) or st.talked[npc:id()] == day() then return false end",
                    "    if not willing(npc) then return false end"),
@@ -197,6 +211,26 @@ MUTANTS = {
                     "    if st.known[e.sec] ~= nil then return true end"),
     "regroup": ("        return e and e.sec or k", "        return k"),
     "load_version": ("    st = (type(d) == \"table\" and d.v == VERSION) and d or fresh()", "    st = (type(d) == \"table\") and d or fresh()"),
+    "tag_hook": ('    RegisterScriptCallback("actor_on_update", on_identify)\n', ""),
+    "tag_once": ("    if id == ii.last then return end\n", ""),
+    "tag_stale": ("    ii.last = ii.get_id()\n", "    ii.last = nil\n"),
+    "tag_line": ("    local npc = tag and level.object_by_id(id)", "    local npc = tag and tag.weap and level.object_by_id(id)"),
+    "tag_alive": ("    if not (npc and IsStalker(npc) and npc:alive()) then return end",
+                  "    if not (npc and IsStalker(npc)) then return end"),
+    "tag_faction": ("    if not is_faction(f) then return end\n    local ok, wpn", "    local ok, wpn"),
+    "tag_fact": ("    reveal(e, how, { carried = { faction = f, rank = r } })", "    reveal(e, how)"),
+    "tag_news": ('    if k == "kill" or k == "body" or k == "tag" then', '    if k == "kill" or k == "body" then'),
+    "kill_who": ("who = victim:character_name(),", "who = nil,"),
+    "kill_place": ("        place = arsenal_where.place_of(victim) }", "        place = nil }"),
+    "window_place": ("    local place = arsenal_where.place_of(partner)", "    local place = nil"),
+    "body_who": ("who = partner:character_name(), place = place }", "place = place }"),
+    "pda_who": ('{ kind = "pda", faction = c.comm, who = c.name }', '{ kind = "pda", faction = c.comm }'),
+    "pda_place": ('        return string.format(game.translate_string("st_arsenal_from_pda"), arsenal_where.who_text(how))',
+                  '        s = string.format(game.translate_string("st_arsenal_from_pda"), arsenal_where.who_text(how))'),
+    "tag_who": ("who = tag.name,", "who = nil,"),
+    "talk_place": ('{ kind = "talk", who = npc:character_name(), place = arsenal_where.place_of(npc) }',
+                   '{ kind = "talk", who = npc:character_name() }'),
+    "describe_at": ("    return at and arsenal_where.at_place(s, how.place, at.lvl) or s", "    return s"),
 }
 
 
@@ -212,6 +246,8 @@ def main():
     m = lua.eval("function(src) local env = setmetatable({}, {__index = _G}); local f = assert(loadstring(src)); "
                  "setfenv(f, env); f(); return env end")(src)
     g = lua.globals()
+    g.arsenal_where = lua.eval("function(src) local env = setmetatable({}, {__index = _G}); local f = assert(loadstring(src)); "
+                               "setfenv(f, env); f(); return env end")(WHERE)
     g.arsenal_intel = m
     m.on_game_start()
     cb = g.CALLBACKS
@@ -251,7 +287,8 @@ def main():
           "and studied, quietly: studied %s, new %s, news %d" % (studied(), new(), len(g.NEWS)))
     check(facts("wpn_duty", "carried") == {"dolg": ["novice", "trainee"]} and facts("duty_suit", "worn") == {"dolg": ["novice"]},
           "with who carries and wears them: %s %s" % (facts("wpn_duty", "carried"), facts("duty_suit", "worn")))
-    check(st().facts["wpn_kit"].ways.kit is True, "the kit's models: known as kit gear")
+    kit = st().facts["wpn_kit"]
+    check(kit is not None and kit.ways is not None and kit.ways.kit is True, "the kit's models: known as kit gear")
     lua.execute('table.insert(GEAR.dolg, { e = "wpn_army", ranks = { trainee = 0.2 }, best = 0.2 })')
     run(lambda: cb.actor_on_first_update())
     check("wpn_army" in known() and "wpn_army" in studied() and new() == [],
@@ -271,8 +308,14 @@ def main():
     check(facts("wpn_mono", "carried") == {"monolith": ["veteran"]} and facts("mono_suit", "worn") == {"monolith": ["veteran"]},
           "who had it: %s %s" % (facts("wpn_mono", "carried"), facts("mono_suit", "worn")))
     run(lambda: g.run_timers())
-    check(len(g.NEWS) == 1 and "a Monolith fighter" in g.NEWS[1] and "Monolith Rifle" in g.NEWS[1],
-          "one news line for what one kill taught: %s" % list(g.NEWS.values()))
+    check(len(g.NEWS) == 1 and "Learned from killing Monolith fighter npc 101: " in g.NEWS[1] and "Monolith Rifle" in g.NEWS[1],
+          "one news line for what one kill taught, naming him: %s" % list(g.NEWS.values()))
+    rec = st().known["wpn_mono"]
+    page = run(lambda: m.describe(rec.how, rec.at))
+    check(page == "killing Monolith fighter npc 101 in Garbage, at the Depot",
+          "and on its page, where he fell: %s" % page)
+    old = run(lambda: m.describe(lua.table_from({"kind": "kill", "faction": "dolg"}), lua.table_from({"lvl": "l01_escape"})))
+    check(old == "killing a Duty fighter in Cordon", "a kill kept before names and places: %s" % old)
     check(set(new()) == {"wpn_mono", "mono_suit", "mono_helm"}, "and marked new: %s" % new())
 
     # the tally: every TALLY kills of a faction bring word of more of its gear, up to the highest
@@ -287,6 +330,64 @@ def main():
         run(lambda: cb.npc_on_death_callback(g.person(103, "monolith", "novice", lua.table_from([])), g.db.actor))
     check("wpn_mono" in studied() and "mono_suit" in studied() and "wpn_free" not in studied(),
           "at %d kills, the gear known of them is studied: %s" % (m.STUDY, studied()))
+
+    # Immersive Identification: a fighter it identifies, who lives, shows the gun he holds, whether
+    # or not the tag has its weapon line: known and new, not studied, with who carries it, and news;
+    # never without II, for the dead, the unarmed or a non-faction; each identification read once;
+    # none counts as a kill
+    m.reset()
+    g.NEWS = lua.table_from({})
+    check(g.CALLBACKS.actor_on_update is None, "without II, no hook")
+    lua.execute("""
+        II_ID, II_WEAP, II_NAME, II_GETS = nil, "Freedom Rifle  (5.45x39)", "Ivan Petrenko", 0
+        ii_identify = { get_last_identified_id = function() return II_ID end,
+            get_last_identified = function() II_GETS = II_GETS + 1; return II_ID and { weap = II_WEAP, name = II_NAME } or nil end }
+    """)
+    g.OBJS[900] = g.person(900, "army", "novice", lua.table_from([]), lua.table_from({"weapon": "wpn_army"}))
+    g.II_ID = 900
+    run(lambda: cb.actor_on_first_update())
+    upd = g.CALLBACKS.actor_on_update
+    check(upd is not None, "with II, hooked on the first update")
+    g.OBJS[901] = g.person(901, "freedom", "experienced", lua.table_from(["wpn_eco"]), lua.table_from({"weapon": "wpn_free"}))
+    for i in range(3):
+        run(lambda: upd())
+        if i == 0:
+            g.II_ID = 901
+    run(lambda: g.run_timers())
+    check("wpn_army" not in known(), "an identification from before the hook is not read: %s" % known())
+    check("wpn_free" in known() and "wpn_free" in new() and "wpn_free" not in studied() and "wpn_eco" not in known(),
+          "an identified fighter: the gun he holds, known and new, not studied; not what else he carries: %s" % known())
+    check(facts("wpn_free", "carried") == {"freedom": ["experienced"]}, "who carries it: %s" % facts("wpn_free", "carried"))
+    how = st().known["wpn_free"] and st().known["wpn_free"].how
+    check(how and how.kind == "tag" and len(g.NEWS) == 1
+          and "Learned from identifying Freedom fighter Ivan Petrenko: Freedom Rifle" in g.NEWS[1],
+          "and news of it, by the name the tag showed: %s" % list(g.NEWS.values()))
+    page = run(lambda: m.describe(how, st().known["wpn_free"].at))
+    check(page == "identifying Freedom fighter Ivan Petrenko in Garbage, at the Depot", "where: %s" % page)
+    check(g.II_GETS == 1, "each identification read once, not every frame: %d" % g.II_GETS)
+    check(st().tally["freedom"] is None, "no kill tally from it")
+    g.OBJS[902] = g.person(902, "monolith", "veteran", lua.table_from([]), lua.table_from({"weapon": "wpn_mono_kobra"}))
+    g.II_ID, g.II_NAME = 902, None
+    run(lambda: upd())
+    check("wpn_mono" in known(), "a scoped copy as its model: %s" % known())
+    rec = st().known["wpn_mono"]
+    check(rec and run(lambda: m.describe(rec.how)) == "identifying a Monolith fighter",
+          "a name the tag kept hidden stays hidden: %s" % (rec and run(lambda: m.describe(rec.how))))
+    for npc_id, comm, extra, what in ((903, "army", {"weapon": "wpn_army", "dead": True}, "a dead fighter"),
+                                      (904, "ecolog", {}, "an unarmed one"),
+                                      (905, "trader", {"weapon": "wpn_box"}, "one of no faction"),
+                                      (906, "army", {"weapon": "wpn_never"}, "a gun that never turns up")):
+        g.OBJS[npc_id] = g.person(npc_id, comm, "novice", lua.table_from([]), lua.table_from(extra))
+        g.II_ID = npc_id
+        got = run(lambda: upd())
+        check(got is None and not any(s in known() for s in ("wpn_army", "wpn_box", "wpn_never")),
+              "nothing from %s: %s %s" % (what, got, known()))
+    g.II_WEAP = None
+    g.OBJS[907] = g.person(907, "army", "novice", lua.table_from([]), lua.table_from({"weapon": "wpn_army"}))
+    g.II_ID = 907
+    run(lambda: upd())
+    check("wpn_army" in known(), "a tag without the weapon line (a low scanner tier) teaches it too: %s" % known())
+    g.ii_identify = None
 
     # PDAs: their owner's word on his faction's gear or that of one it is allied or at war with
     # (Duty: Military, Freedom, Monolith; never the Ecologists), up to his rank; a package's size
@@ -309,11 +410,15 @@ def main():
           "a Duty PDA tells of Duty and its allies and enemies, never a neutral faction: %s" % sorted(seen_f))
     check(ranks_ok, "nothing above its owner's rank")
     m.reset()
-    g.PDA_INFO[300] = lua.table_from({"state": "default", "contact": lua.table_from({"comm": "dolg", "rank": "legend"})})
+    g.PDA_INFO[300] = lua.table_from({"state": "default", "contact": lua.table_from({"comm": "dolg", "rank": "legend",
+                                                                                     "name": "Petro"})})
     run(lambda: cb.actor_on_item_take(g.item("itm_pda_uncommon", 300)))
     n1 = len(known())
     run(lambda: cb.actor_on_item_take(g.item("itm_pda_uncommon", 300)))
     check(n1 == 2 and len(known()) == 2, "an uncommon PDA: two entries, once: %d then %d" % (n1, len(known())))
+    rec = st().known[known()[0]]
+    page = rec and run(lambda: m.describe(rec.how, rec.at))
+    check(page == "the PDA of Duty fighter Petro", "on its page, whose PDA, and no place: %s" % page)
     m.reset()
     g.PDA_INFO[301] = lua.table_from({"state": "encrypted", "contact": lua.table_from({"comm": "dolg", "rank": "legend"})})
     g.ACTOR_ITEMS = lua.table_from([g.item("itm_pda_rare", 301)])
@@ -333,14 +438,23 @@ def main():
     g.ui_inventory = lua.table_from({"GUI": gui})
     run(lambda: cb.GUI_on_show("UIInventory"))
     check(facts("wpn_trade", "sold") == {"Sidorovich": True}, "a trader's stock: sold by him: %s" % facts("wpn_trade", "sold"))
+    rec = st().known["wpn_trade"]
+    page = rec and run(lambda: m.describe(rec.how, rec.at))
+    check(page == "Sidorovich in Garbage, at the Depot", "and on its page, where: %s" % page)
     gui.mode, gui.npc_is_box = "loot", True
     gui.GetPartner = lua.eval("function(p) return function() return p end end")(g.person(401, "x", "novice", lua.table_from(["wpn_box"])))
     run(lambda: cb.GUI_on_show("UIInventory"))
     check(facts("wpn_box", "stash") == {"l02_garbage": True}, "a stash: where it lay: %s" % facts("wpn_box", "stash"))
+    rec = st().known["wpn_box"]
+    page = rec and run(lambda: m.describe(rec.how, rec.at))
+    check(page == "a stash in Garbage, at the Depot", "and on its page, the spot: %s" % page)
     gui.npc_is_box = False
     gui.GetPartner = lua.eval("function(p) return function() return p end end")(g.person(402, "freedom", "novice", lua.table_from(["wpn_free"])))
     run(lambda: cb.GUI_on_show("UIInventory"))
     check(facts("wpn_free", "carried") == {"freedom": ["novice"]}, "a body: who carried it: %s" % facts("wpn_free", "carried"))
+    rec = st().known["wpn_free"]
+    page = rec and run(lambda: m.describe(rec.how, rec.at))
+    check(page == "the body of Freedom fighter npc 402 in Garbage, at the Depot", "and on its page, whose: %s" % page)
 
     # talks: one thing a day per person; an expert's with specs; an enemy will not talk
     m.reset()
@@ -351,6 +465,9 @@ def main():
     run(lambda: m.rumor_told(g.db.actor, vet))
     check(ok1 is True and isinstance(text, str) and len(known()) == 1 and studied() == [],
           "a talk: one thing, no specs from a veteran: %s %s %s" % (ok1, text, known()))
+    rec = known() and st().known[known()[0]]
+    page = rec and run(lambda: m.describe(rec.how, rec.at))
+    check(page == "npc 500 in Garbage, at the Depot", "on its page, who told it and where: %s" % page)
     check(run(lambda: m.rumor_ok(g.db.actor, vet)) is False, "once a day")
     g.DAY = 15
     check(run(lambda: m.rumor_ok(g.db.actor, vet)) is True, "and again the next day")

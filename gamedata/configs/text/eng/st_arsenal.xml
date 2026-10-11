@@ -330,14 +330,62 @@
 	<string id="st_arsenal_learned">
 		<text>Learned from %s: %s</text>
 	</string>
-	<string id="st_arsenal_by_kill">
+	<string id="st_arsenal_who_named">
+		<text>%s fighter %s</text>
+	</string>
+	<string id="st_arsenal_who_faction">
 		<text>a %s fighter</text>
 	</string>
-	<string id="st_arsenal_by_body">
-		<text>a %s fighter's body</text>
+	<string id="st_arsenal_in">
+		<text>in %s</text>
 	</string>
-	<string id="st_arsenal_by_pda">
-		<text>a %s PDA</text>
+	<string id="st_arsenal_from_kill">
+		<text>killing %s</text>
+	</string>
+	<string id="st_arsenal_from_body">
+		<text>the body of %s</text>
+	</string>
+	<string id="st_arsenal_from_pda">
+		<text>the PDA of %s</text>
+	</string>
+	<string id="st_arsenal_from_tag">
+		<text>identifying %s</text>
+	</string>
+	<string id="st_arsenal_got_stash">
+		<text>looted from a stash</text>
+	</string>
+	<string id="st_arsenal_got_body">
+		<text>taken from the body of %s</text>
+	</string>
+	<string id="st_arsenal_got_trade">
+		<text>bought from %s</text>
+	</string>
+	<string id="st_arsenal_got_ground">
+		<text>picked up</text>
+	</string>
+	<string id="st_arsenal_got_gift">
+		<text>given to you by %s</text>
+	</string>
+	<string id="st_arsenal_got_craft">
+		<text>crafted</text>
+	</string>
+	<string id="st_arsenal_got_carried">
+		<text>already in your pack</text>
+	</string>
+	<string id="st_arsenal_got_loot">
+		<text>looted</text>
+	</string>
+	<string id="st_arsenal_got_seen_stash">
+		<text>seen in a stash</text>
+	</string>
+	<string id="st_arsenal_got_seen_body">
+		<text>seen on the body of %s</text>
+	</string>
+	<string id="st_arsenal_got_seen_trade">
+		<text>seen in %s's stock</text>
+	</string>
+	<string id="st_arsenal_got_seen_loot">
+		<text>seen while looting</text>
 	</string>
 	<string id="st_arsenal_by_tally">
 		<text>fighting %s</text>

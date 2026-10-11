@@ -8,6 +8,8 @@
       - a fighter he kills: the gun and suit he had, and who carries them (faction and rank);
         every TALLY kills of a faction bring word of more of its gear, and at STUDY kills the
         gear he knows it by is studied
+      - a fighter he identifies with Immersive Identification, who lives: the gun he holds (in
+        plain sight, whatever the tag's lines show), and who carries it
       - a body, stash or trader's stock he opens: what is in it, and where
       - a PDA he picks up: a data package, its owner's word on his own faction's gear or that of
         a faction his is allied with or at war with (the game's relations as they stand), up to
@@ -20,7 +22,8 @@
     above; its page shows its stats and what fits it only then. Only what turns up in this game
     (arsenal_data.obtainable) is ever learned. A round is known, and its values show, once the
     player knows a gun that fires it or finds one; what is learned of where rounds lie is kept
-    as facts, without news.
+    as facts, without news. How a model was first learned keeps who it came from (a name, a
+    faction) and where (arsenal_where), for its page.
 
     Saved with the game (m_data.arsenal_intel), keyed by model (its first variant's section);
     a save from another catalog moves its keys to the models that hold them now, on load.
@@ -243,21 +246,28 @@ local function faction_name(f)
     return game.translate_string("st_faction_" .. f)
 end
 
--- a source in words, for news and a page: "a Duty fighter", "a Duty PDA", "Sidorovich", ...
-function describe(how)
+-- a source in words, for news and a page: "killing Duty fighter Ivan Petrenko", "the PDA of
+-- a Duty fighter", "Sidorovich", ...; given `at` (when it was learned), where it was too:
+-- "... in Cordon, near the rookie village"
+function describe(how, at)
     local k = how and how.kind
-    if k == "kill" or k == "body" then
-        return string.format(game.translate_string("st_arsenal_by_" .. k), faction_name(how.faction))
-    elseif k == "pda" or k == "tally" then
-        return string.format(game.translate_string("st_arsenal_by_" .. k), faction_name(how.faction))
+    local s
+    if k == "kill" or k == "body" or k == "tag" then
+        s = string.format(game.translate_string("st_arsenal_from_" .. k), arsenal_where.who_text(how))
+    elseif k == "pda" then
+        return string.format(game.translate_string("st_arsenal_from_pda"), arsenal_where.who_text(how))
+    elseif k == "tally" then
+        return string.format(game.translate_string("st_arsenal_by_tally"), faction_name(how.faction))
     elseif k == "talk" or k == "gunsmith" or k == "trade" then
-        return how.who or game.translate_string("st_arsenal_by_someone")
+        s = how.who or game.translate_string("st_arsenal_by_someone")
     elseif k == "stash" then
-        return game.translate_string("st_arsenal_by_stash")
+        s = game.translate_string("st_arsenal_by_stash")
     elseif k == "start" then
         return game.translate_string("st_arsenal_by_start")
+    else
+        return game.translate_string("st_arsenal_by_found")
     end
-    return game.translate_string("st_arsenal_by_found")
+    return at and arsenal_where.at_place(s, how.place, at.lvl) or s
 end
 
 -- the gear a faction carries or wears that the player does not know yet, up to a rank:
@@ -387,7 +397,8 @@ local function on_kill(victim, who)
     local f = victim:character_community()
     if not is_faction(f) then return end
     local r = ranks.get_obj_rank_name(victim)
-    local how = { kind = "kill", faction = f, rank = r }
+    local how = { kind = "kill", faction = f, rank = r, who = victim:character_name(),
+        place = arsenal_where.place_of(victim) }
     local fact = function(e) return { [arsenal_data.ARMOR[e.cat] and "worn" or "carried"] = { faction = f, rank = r } } end
     learn_items(victim, how, fact)
     local ok, suit = pcall(death_manager.get_outfit_by_npc_visual, victim:get_visual_name())
@@ -426,7 +437,7 @@ local function on_pda(obj)
     for _ = 1, size do
         local g, f = word_of(c.comm, c.rank)
         if not g then break end
-        reveal(g.e, { kind = "pda", faction = c.comm }, gear_fact(g, f), SPECS[obj:section()] == true)
+        reveal(g.e, { kind = "pda", faction = c.comm, who = c.name }, gear_fact(g, f), SPECS[obj:section()] == true)
     end
 end
 
@@ -448,21 +459,54 @@ local function GUI_on_show(name)
     if not (gui and (gui.mode == "loot" or gui.mode == "trade")) then return end
     local ok, partner = pcall(gui.GetPartner, gui)
     if not (ok and partner) then return end
+    local place = arsenal_where.place_of(partner)
     if gui.mode == "trade" then
         local who = partner:character_name()
-        learn_items(partner, { kind = "trade", who = who }, function() return { sold = who } end)
+        learn_items(partner, { kind = "trade", who = who, place = place }, function() return { sold = who } end)
     elseif gui.npc_is_box then
         local lvl = level.name()
-        learn_items(partner, { kind = "stash", level = lvl }, function() return { stash = lvl } end)
+        learn_items(partner, { kind = "stash", level = lvl, place = place }, function() return { stash = lvl } end)
     elseif IsStalker(partner) then
         local f = partner:character_community()
         if is_faction(f) then
             local r = ranks.get_obj_rank_name(partner)
-            learn_items(partner, { kind = "body", faction = f, rank = r }, function(e)
+            local how = { kind = "body", faction = f, rank = r, who = partner:character_name(), place = place }
+            learn_items(partner, how, function(e)
                 return { [arsenal_data.ARMOR[e.cat] and "worn" or "carried"] = { faction = f, rank = r } }
             end)
         end
     end
+end
+
+-- Immersive Identification: a fighter it identifies, who lives, shows the gun he holds. It is in
+-- plain sight, so the tag need not name it: with Wearable Devices the weapon line waits for a
+-- tier 3 scanner. II publishes each identification as it completes, its last; a plain id, read
+-- every frame, so only a new one costs anything.
+local ii = {}   -- its two readers, and the last identification seen
+local function on_identify()
+    local id = ii.get_id()
+    if id == ii.last then return end
+    ii.last = id
+    local tag = id and ii.get()
+    local npc = tag and level.object_by_id(id)
+    if not (npc and IsStalker(npc) and npc:alive()) then return end
+    local f = npc:character_community()
+    if not is_faction(f) then return end
+    local ok, wpn = pcall(npc.best_weapon, npc)
+    local e = ok and wpn and model(wpn:section())
+    if not e then return end
+    local r = ranks.get_obj_rank_name(npc)
+    -- his name as the tag showed it: none when II keeps it hidden
+    local how = { kind = "tag", faction = f, rank = r, who = tag.name, place = arsenal_where.place_of(npc) }
+    reveal(e, how, { carried = { faction = f, rank = r } })
+end
+
+local function hook_ii()
+    local m = ii_identify
+    if not (m and m.get_last_identified_id and m.get_last_identified) then return end
+    ii.get_id, ii.get = m.get_last_identified_id, m.get_last_identified
+    ii.last = ii.get_id()
+    RegisterScriptCallback("actor_on_update", on_identify)
 end
 
 ---------------------------------------------------------------------------------------------
@@ -505,7 +549,8 @@ function rumor_told(a, b)
     rumors[npc:id()] = nil
     st.talked[npc:id()] = day()
     if t then
-        reveal(t.g.e, { kind = "talk", who = npc:character_name() }, gear_fact(t.g, t.f), t.specs)
+        reveal(t.g.e, { kind = "talk", who = npc:character_name(), place = arsenal_where.place_of(npc) }, gear_fact(t.g, t.f),
+            t.specs)
     end
 end
 
@@ -551,7 +596,8 @@ function gunsmith_pay(a, b)
     if not t then return end
     dialogs.relocate_money_from_actor(a, b, t.price)
     local ways = { gunsmith = true }
-    reveal(t.e, { kind = "gunsmith", who = npc:character_name() }, { ways = ways }, true)
+    reveal(t.e, { kind = "gunsmith", who = npc:character_name(), place = arsenal_where.place_of(npc) }, { ways = ways },
+        true)
     t.told = true
 end
 
@@ -600,6 +646,7 @@ local function actor_on_first_update()
     regroup()
     seed(actor_faction())
     scan_pdas()
+    hook_ii()
 end
 
 -- the PDA decryption a technician sells (ui_pda_npc_tab): the packages of what it unlocks

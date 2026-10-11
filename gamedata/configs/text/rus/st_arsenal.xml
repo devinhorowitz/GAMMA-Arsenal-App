@@ -330,14 +330,62 @@
 	<string id="st_arsenal_learned">
 		<text>”знано (%s): %s</text>
 	</string>
-	<string id="st_arsenal_by_kill">
+	<string id="st_arsenal_who_named">
+		<text>боец группировки Ђ%sї %s</text>
+	</string>
+	<string id="st_arsenal_who_faction">
 		<text>боец группировки Ђ%sї</text>
 	</string>
-	<string id="st_arsenal_by_body">
-		<text>тело бойца группировки Ђ%sї</text>
+	<string id="st_arsenal_in">
+		<text>Ч %s</text>
 	</string>
-	<string id="st_arsenal_by_pda">
-		<text> ѕ  группировки Ђ%sї</text>
+	<string id="st_arsenal_from_kill">
+		<text>убит %s</text>
+	</string>
+	<string id="st_arsenal_from_body">
+		<text>тело Ч %s</text>
+	</string>
+	<string id="st_arsenal_from_pda">
+		<text> ѕ  Ч %s</text>
+	</string>
+	<string id="st_arsenal_from_tag">
+		<text>идентифицирован %s</text>
+	</string>
+	<string id="st_arsenal_got_stash">
+		<text>вз€то из тайника</text>
+	</string>
+	<string id="st_arsenal_got_body">
+		<text>сн€то с тела Ч %s</text>
+	</string>
+	<string id="st_arsenal_got_trade">
+		<text>куплено, продавец Ч %s</text>
+	</string>
+	<string id="st_arsenal_got_ground">
+		<text>подобрано</text>
+	</string>
+	<string id="st_arsenal_got_gift">
+		<text>получено, выдал Ч %s</text>
+	</string>
+	<string id="st_arsenal_got_craft">
+		<text>изготовлено</text>
+	</string>
+	<string id="st_arsenal_got_carried">
+		<text>уже было при себе</text>
+	</string>
+	<string id="st_arsenal_got_loot">
+		<text>добыто</text>
+	</string>
+	<string id="st_arsenal_got_seen_stash">
+		<text>замечено в тайнике</text>
+	</string>
+	<string id="st_arsenal_got_seen_body">
+		<text>замечено на теле Ч %s</text>
+	</string>
+	<string id="st_arsenal_got_seen_trade">
+		<text>замечено у торговца Ч %s</text>
+	</string>
+	<string id="st_arsenal_got_seen_loot">
+		<text>замечено при обыске</text>
 	</string>
 	<string id="st_arsenal_by_tally">
 		<text>бои с группировкой Ђ%sї</text>

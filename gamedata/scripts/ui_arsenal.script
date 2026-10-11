@@ -437,9 +437,13 @@ end
 ---------------------------------------------------------------------------------------------
 -- the entry
 ---------------------------------------------------------------------------------------------
+local function date_of(at)
+    return string.format("%02d.%02d.%04d", at.d or 0, at.mo or 0, at.y or 0)
+end
+
+-- a find's date, and how and where it came ("looted from a stash in Cordon, ...")
 local function date_place(at)
-    local where = at.lvl and game.translate_string(at.lvl) or ""
-    return string.format("%02d.%02d.%04d", at.d or 0, at.mo or 0, at.y or 0), where
+    return date_of(at), arsenal_collection.describe(at)
 end
 
 -- the strings of a list, trimmed, each once, in order
@@ -758,8 +762,8 @@ function ArsenalPDA:ShowEntry(sec)
         line:SetText(string.format(game.translate_string("st_arsenal_found_on"), d, where))
         line:SetTextColor(theme.argb("good"))
     elseif learned and learned.at then
-        line:SetText(string.format(game.translate_string("st_arsenal_learned_on"), (date_place(learned.at)),
-            arsenal_intel.describe(learned.how)))
+        line:SetText(string.format(game.translate_string("st_arsenal_learned_on"), date_of(learned.at),
+            arsenal_intel.describe(learned.how, learned.at)))
     else
         line:SetText(game.translate_string("st_arsenal_not_found"))
     end

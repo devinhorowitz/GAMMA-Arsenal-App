@@ -193,7 +193,7 @@ local guns = {
     ammo = { model("5.45x39 FMJ", { { sec = "ammo_545", name = "5.45x39 FMJ" } }) },
 }
 for c, l in pairs(guns) do for _, e in ipairs(l) do e.cat = c end end
-found = { wpn_fort17 = { y = 2012, mo = 5, d = 14, lvl = "l01_escape" } }
+found = { wpn_fort17 = { y = 2012, mo = 5, d = 14, lvl = "l01_escape", how = { kind = "stash" } } }
 -- what fits the Fort-17s: four scopes (one shared), a kit, a suppressor (built into the other
 -- variant), a launcher
 FIT = {
@@ -424,6 +424,10 @@ local function first(e)
     for _, v in ipairs(e.variants) do if found[v.sec] then return found[v.sec] end end
 end
 arsenal_collection = {
+    describe = function(at)
+        local where = T[at.lvl] or at.lvl
+        return at.how and ("a " .. at.how.kind .. " in " .. where) or where
+    end,
     is_found = function(sec) return found[sec] ~= nil end,
     found_at = function(sec) return found[sec] end,
     entry_found = first,
@@ -436,6 +440,8 @@ arsenal_collection = {
 """
 
 MUTANTS = {
+    "find_words": ("    return date_of(at), arsenal_collection.describe(at)", "    return date_of(at), at.lvl"),
+    "learned_where": ("arsenal_intel.describe(learned.how, learned.at)", "arsenal_intel.describe(learned.how)"),
     "silence_unpainted": ("function ArsenalPDA:Reset()\n    self:PaintFooter()\n", "function ArsenalPDA:Reset()\n"),
     "silence_inverted": ("arsenal_mcm.set_news(not self.silence:GetCheck())", "arsenal_mcm.set_news(self.silence:GetCheck())"),
     "no_credit": ("    self.credit:SetText(arsenal_mcm.credit())\n", ""),
@@ -749,7 +755,7 @@ def main():
     check(rows == ["Fort-17"], "found only: %s" % rows)
     fort = shown(ui)
     texts = texts_of(fort)
-    check("Found 14.05.2012 in Cordon" in texts, "when and where: %s" % texts[:3])
+    check("Found 14.05.2012 in a stash in Cordon" in texts, "when, how and where: %s" % texts[:3])
     rowboxes = [c for c in fort.children.values() if c.path in ("stats_box", "item_info:stats_box")]
     card = [(c.stat or "", [k.text for k in c.children.values() if k.text and k.path != "entry_max"])
             for c in rowboxes]
@@ -757,11 +763,11 @@ def main():
           "the card's own row where the variants agree, each value where they differ: %s" % card)
     i = texts.index("Variants:") if "Variants:" in texts else -1
     check(i >= 0 and texts[i + 1:i + 3] == ["Fort-17 (reliability 89%)",
-                                             "Fort-17 (reliability 91%), found 14.05.2012 in Cordon"],
-          "the variants, the found one with when and where: %s" % texts[i:i + 3])
+                                             "Fort-17 (reliability 91%), found 14.05.2012 in a stash in Cordon"],
+          "the variants, the found one with when, how and where: %s" % texts[i:i + 3])
     lines = {c.text: c.color for c in fort.children.values() if c.text}
     check(lines.get("Fort-17 (reliability 89%)") == "dim"
-          and lines.get("Fort-17 (reliability 91%), found 14.05.2012 in Cordon") == "good",
+          and lines.get("Fort-17 (reliability 91%), found 14.05.2012 in a stash in Cordon") == "good",
           "unfound variants dim, found ones green")
     check("wpn_fort17" in list(g.icons.values()) and "wpn_fort" not in list(g.icons.values()),
           "the icon is the found variant's: %s" % list(g.icons.values()))
@@ -1022,7 +1028,7 @@ arsenal_intel = {
     studied = function(e) return STUDIED[e.sec] == true end,
     facts = function(e) return FACTS[e.sec] end,
     learned = function(e) return LEARNED[e.sec] end,
-    describe = function(how) return "a Duty PDA" end,
+    describe = function(how, at) return "a Duty PDA" .. (at and at.lvl and (" in " .. game.translate_string(at.lvl)) or "") end,
     is_new = function(e) return NEW[e.sec] == true end,
     viewed = function(e) NEW[e.sec] = nil end,
     count_new = function() local n = 0; for k in pairs(NEW) do if KNOWN[k] then n = n + 1 end end; return n end,
@@ -1070,7 +1076,7 @@ arsenal_intel = {
     texts = texts_of(pm)
     stats = [c.stat for c in pm.children.values() if c.stat]
     i = texts.index("Where to find:") if "Where to find:" in texts else -1
-    check("Learned 03.06.2012 from a Duty PDA" in texts and not stats and not any(t.startswith("Weight") for t in texts)
+    check("Learned 03.06.2012 from a Duty PDA in Cordon" in texts and not stats and not any(t.startswith("Weight") for t in texts)
           and any(t.startswith("Not studied yet") for t in texts),
           "a known model not yet studied: how it was learned, no stats: %s %s" % (stats, texts[:5]))
     check(ui.cmp_add.shown is False and ui.cmp_status.text == "", "and no Compare: its stats are unknown")

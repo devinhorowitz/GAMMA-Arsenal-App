@@ -1,0 +1,57 @@
+--[[
+    Arsenal where: a place and a person in words, for how the player learned of something or
+    found one. A place is kept as its game vertex and position and put into words only when
+    shown, by the game's own news helper ("in Cordon, near the rookie village"), so it follows
+    the language; a person is his name and, when the catalog knows it, his faction.
+--]]
+
+local function T(id) return game.translate_string(id) end
+
+-- where an object is: { gv, x, y, z }, or nil
+function place_of(obj)
+    if not obj then return nil end
+    local ok, gv, pos = pcall(function() return obj:game_vertex_id(), obj:position() end)
+    if not (ok and gv and pos) then return nil end
+    local function r(n) return math.floor(n * 10 + 0.5) / 10 end
+    return { gv = gv, x = r(pos.x), y = r(pos.y), z = r(pos.z) }
+end
+
+-- a place in words: "in Cordon, near the rookie village"; "in Cordon" when the level is all
+-- that is known, or the vertex no longer lies on it (another mod list); "" when nothing is
+function place_text(place, lvl)
+    local gg = place and place.gv and game_graph and game_graph()
+    if gg and gg:valid_vertex_id(place.gv) then
+        local on = alife():level_name(gg:vertex(place.gv):level_id())
+        if not lvl or on == lvl then
+            local ok, s = pcall(dynamic_news_helper.GetPointDescription,
+                { m_game_vertex_id = place.gv, position = vector():set(place.x, place.y, place.z) })
+            s = ok and type(s) == "string" and s:gsub("[,%s]+$", "") or nil
+            if s and s ~= "" and not s:find("st_dyn", 1, true) then return s end
+        end
+    end
+    return lvl and string.format(T("st_arsenal_in"), T(lvl)) or ""
+end
+
+-- words with a place after them, when there is one
+function at_place(s, place, lvl)
+    local p = place_text(place, lvl)
+    return p ~= "" and (s .. " " .. p) or s
+end
+
+local function is_faction(f)
+    for _, x in ipairs(arsenal_data.FACTIONS) do
+        if x == f then return true end
+    end
+    return false
+end
+
+-- a person in words: "Duty fighter Ivan Petrenko"; "a Duty fighter" unnamed; his name alone
+-- when his faction is not one of the catalog's; "someone" when nothing is known
+function who_text(how)
+    local f = how and how.faction
+    local fname = f and is_faction(f) and T("st_faction_" .. f)
+    if how and how.who and how.who ~= "" then
+        return fname and string.format(T("st_arsenal_who_named"), fname, how.who) or how.who
+    end
+    return fname and string.format(T("st_arsenal_who_faction"), fname) or T("st_arsenal_by_someone")
+end

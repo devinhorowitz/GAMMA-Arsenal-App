@@ -23,6 +23,8 @@ and what its new-game kit offers. The rest you learn in the Zone:
 - **Fights.** A fighter you kill shows you his gun and suit, and who carries them. Every ten
   kills of a faction bring word of more of its gear; after twenty-five, you know its gear
   inside out.
+- **Identifying.** With Immersive Identification, a fighter you identify shows you the gun he
+  holds, and who carries it, without a fight, whether or not his tag names the weapon.
 - **Looking.** A body, a stash or a trader's stock teaches you what is in it, and where.
 - **PDAs.** A PDA you pick up is a data package: its owner's word on his own faction's gear,
   or on a faction his is allied with or at war with, as the game's relations stand, up to his
@@ -37,6 +39,11 @@ A gun or suit shows its stats and what fits it once you have studied it: found o
 its specs from someone who knows. A round is known once you know a gun that fires it. New entries come with a PDA message and glow in the list
 until you click them, like unread mail, and so does anything you find for the first time.
 Arsenal's tile in MAC's launcher shows how many are waiting.
+
+Each entry remembers how you came by it, and where: *Found 14.05.2012: looted from a stash in
+Cordon, near the rookie village*, or *taken from the body of Duty fighter Ivan Petrenko*, *bought
+from Sidorovich*, *given to you by Wolf*. Until you find one, it tells how you learned of it:
+*Learned 12.05.2012 from killing Duty fighter Ivan Petrenko in Cordon, at the southern checkpoint*.
 
 **MCM > Arsenal > Jailbreak** opens everything, like a finished encyclopedia. While it is on, a
 lit padlock in the footer of every page says so, screenshots included.
@@ -165,6 +172,7 @@ It works in a new game or an existing one.
   below opens Arsenal only while the PDA works.
 - **ArtiGrok Ballistics** and **Leekos Munition Merge:** the anomalous rounds are listed, with
   their effects.
+- **Immersive Identification:** a fighter you identify shows you his gun, as above.
 
 ## Sharper pages with the 3D PDA
 
@@ -191,6 +199,8 @@ Workbench and Compare there too.
   falloff, reads both mods' recipes as crafting, and ships none of their files.
 - [Fatal Error](https://www.moddb.com/mods/stalker-anomaly/addons/fatal-error-by-ncenka) by
   Ncenka: Arsenal reads its PDA state and ships none of its files.
+- [Immersive Identification](https://github.com/dxshie/immersive_identification) by dxshie:
+  Arsenal reads its latest identification and ships none of its files.
 
 ## Development
 
