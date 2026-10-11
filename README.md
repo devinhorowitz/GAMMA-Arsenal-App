@@ -166,6 +166,13 @@ In Mod Organizer 2, use **Install a new mod from archive**, pick the zip, and en
 Arsenal shares no file with any other mod, so its place in the load order does not matter.
 It works in a new game or an existing one.
 
+**With Claude Code:** open it in your GAMMA folder (where `ModOrganizer.exe` is) and paste
+*"Install Arsenal by following
+https://raw.githubusercontent.com/devinhorowitz/GAMMA-Arsenal-App/main/INSTALL-WITH-CLAUDE.md"*.
+It downloads the latest release, checks it against GitHub's checksum, installs and enables it
+with MO2 closed, and reads the game log after your first launch. It asks before every change and
+moves rather than deletes. [INSTALL-WITH-CLAUDE.md](INSTALL-WITH-CLAUDE.md) is the whole procedure.
+
 ## Works with
 
 - **Fatal Error:** Arsenal's pages keep the PDA's tab bar on every PDA model, and the key
