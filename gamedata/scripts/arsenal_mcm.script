@@ -90,7 +90,7 @@ end
 local function on_key_press(key)
     local k = flat_key()
     if not (k and key == k) then return end
-    if ui_arsenal.flat_window() or ui_arsenal_workbench.flat_window() then return end
+    if ui_arsenal.flat_window() or ui_arsenal_workbench.flat_window() or ui_arsenal_compare.flat_window() then return end
     if not arsenal_pages.pda_works() then
         actor_menu.set_msg(1, game.translate_string("st_arsenal_pda_down"), 3)
         return
@@ -101,6 +101,18 @@ local function on_key_press(key)
     end)
 end
 
+-- A page open flat is a window Lua made, shown with ShowDialog. A load (a quickload while it is
+-- open) restarts the scripts and frees it while the engine still holds it, and the next frame
+-- draws freed memory: the crash at AnomalyDX11AVX.exe+0x215C52, as Immersive Identification's
+-- tag dialog did. So every page open flat closes when the level goes.
+local function close_flat()
+    for _, m in ipairs({ ui_arsenal, ui_arsenal_workbench, ui_arsenal_compare }) do
+        local ok, w = pcall(function() return m.flat_window() end)
+        if ok and w then pcall(function() w:Close() end) end
+    end
+end
+
 function on_game_start()
     RegisterScriptCallback("on_key_press", on_key_press)
+    RegisterScriptCallback("actor_on_net_destroy", close_flat)
 end

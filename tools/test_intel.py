@@ -12,7 +12,7 @@ import os
 import re
 import sys
 
-import lupa.luajit21 as L
+from lua_jit import L
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SRC = io.open(os.path.join(HERE, "..", "gamedata", "scripts", "arsenal_intel.script"), encoding="latin-1").read()
@@ -168,6 +168,7 @@ MUTANTS = {
     "ammo_studied": ('    if e.cat == "ammo" then return known(e) end\n', ""),
     "obtainable": ("    if not (e and arsenal_data.obtainable(e.sec)) then return nil end", "    if not e then return nil end"),
     "seed_kit": ("        reveal(e, how, { ways = { kit = true } }, true, true)\n", ""),
+    "seed_disguise": ('    if ok and type(f) == "string" and f ~= "" then return (f:gsub("^actor_", "")) end\n', ""),
     "seed_quiet": ("                true, true)\n", "                true, false)\n"),
     "kill_actor": ("    if not (victim and who and who:id() == AC_ID) then return end", "    if not victim then return end"),
     "kill_suit": ("        if e then reveal(e, how, fact(e)) end", "        -- no suit"),
@@ -599,6 +600,19 @@ def main():
     st().known["wpn_mono_kobra"] = lua.table_from({})
     m.regroup()
     check(known() == ["wpn_mono"], "a key under another section moves to its model: %s" % known())
+
+    # a disguise: dressed as Freedom, the live community says Freedom; what he is taught at load is
+    # still Duty's, his true faction (gameplay_disguise's), and Duty is still "his" faction
+    m.reset()
+    lua.execute('db.actor.character_community = function() return "actor_freedom" end\n'
+                'function get_actor_true_community() return "dolg" end')
+    cb.load_state(lua.table_from({}))
+    run(lambda: cb.actor_on_first_update())
+    check(known() == ["duty_suit", "wpn_duty", "wpn_duty_rare", "wpn_kit"] and "wpn_free" not in known(),
+          "disguised as Freedom, a load teaches Duty's gear, not Freedom's: %s" % known())
+    check(m.player_faction() == "dolg", "and his faction is still Duty: %s" % m.player_faction())
+    lua.execute('db.actor.character_community = function() return "actor_dolg" end\n'
+                'get_actor_true_community = nil')
 
     print("\n%d failed" % len(fails))
     return 1 if fails else 0

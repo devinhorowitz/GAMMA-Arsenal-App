@@ -11,7 +11,7 @@ import io
 import os
 import sys
 
-import lupa.luajit21 as L
+from lua_jit import L
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SRC = io.open(os.path.join(HERE, "..", "gamedata", "scripts", "arsenal_where.script"), encoding="latin-1").read()

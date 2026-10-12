@@ -17,7 +17,7 @@ import re
 import sys
 import xml.etree.ElementTree as ET
 
-import lupa.luajit21 as L
+from lua_jit import L
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
@@ -212,13 +212,13 @@ MUTANTS = {
     "no_customize": ("    ui_arsenal.add_action(\"workbench\", {", "    local _ = ({"),
     # arsenal_pages: Fatal Error's PDA
     "fe_absent": ("    if not fe then return true end", "    if not fe then return false end"),
-    "fe_npc_pda": ('        if not pda or pda:section():find("itm_pda_") then return false end',
-                   "        if not pda then return false end"),
+    "fe_npc_pda": ('        if not device or device:section():find("itm_pda_") then return false end',
+                   "        if not device then return false end"),
     "fe_charge": ("        if not item_device.is_pda_charged(true) then return false end\n", ""),
     "fe_charge_any": ("item_device.is_pda_charged(true)", "item_device.is_pda_charged()"),
-    "fe_locked": ('        if ini_sys:r_bool_ex(pda:section(), "encrypted") or (tonumber(fe.REBOOT) or 0) > 0 then return false end\n', ""),
+    "fe_locked": ('        if ini_sys:r_bool_ex(device:section(), "encrypted") or (tonumber(fe.REBOOT) or 0) > 0 then return false end\n', ""),
     "fe_bios": ('        if ActorMenu.get_pda_menu():GetActiveSection() == "eptBios" then return false end\n', ""),
-    "fe_bsod": ("        if fe_utils.is_bsod(pda) then return false end\n", ""),
+    "fe_bsod": ("        if fe_utils.is_bsod(device) then return false end\n", ""),
     "fe_guard": ('local guard = tonumber(upvalue(fe.process_pda_call, "reboot_protection")) or 0', "local guard = 0"),
     "fe_storm": ("        if not (guard > 0 or overclocked) and (xr_conditions.surge_started() or psi_storm_manager.is_started()) then",
                  "        if false then"),

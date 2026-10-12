@@ -21,7 +21,7 @@ import re
 import sys
 import xml.etree.ElementTree as ET
 
-import lupa.luajit21 as L
+from lua_jit import L
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 GD = os.path.join(HERE, "..", "gamedata")

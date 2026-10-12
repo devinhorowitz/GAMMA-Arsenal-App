@@ -354,7 +354,11 @@ local function seed(f)
     end
 end
 
+-- his true faction: a disguise (gameplay_disguise) sets the live community to the one he is
+-- dressed as, so a save loaded in Freedom's suit would otherwise teach him Freedom's gear
 local function actor_faction()
+    local ok, f = pcall(function() return get_actor_true_community and get_actor_true_community() end)
+    if ok and type(f) == "string" and f ~= "" then return (f:gsub("^actor_", "")) end
     local c = db.actor and db.actor:character_community() or ""
     return (c:gsub("^actor_", ""))
 end

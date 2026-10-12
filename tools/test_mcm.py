@@ -14,7 +14,7 @@ import os
 import re
 import sys
 
-import lupa.luajit21 as L
+from lua_jit import L
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SRC = io.open(os.path.join(HERE, "..", "gamedata", "scripts", "arsenal_mcm.script"), encoding="latin-1").read()
@@ -35,11 +35,15 @@ function printf(fmt, ...) logged[#logged + 1] = string.format(fmt, ...) end
 opened = 0
 shown = nil
 closed = 0
+-- an open flat page: its Close hides it, as HideDialog does
+unloaded = 0
+local function window() return { Close = function() shown = nil; unloaded = unloaded + 1 end } end
 ui_arsenal = {
     open_flat = function() opened = opened + 1; shown = "catalog" end,
-    flat_window = function() if shown == "catalog" then return {} end end,
+    flat_window = function() if shown == "catalog" then return window() end end,
 }
-ui_arsenal_workbench = { flat_window = function() if shown == "workbench" then return {} end end }
+ui_arsenal_workbench = { flat_window = function() if shown == "workbench" then return window() end end }
+ui_arsenal_compare = { flat_window = function() if shown == "compare" then return window() end end }
 timers = {}
 -- as _g.script: an event already queued under the same ids is kept, not replaced
 function CreateTimeEvent(ev_id, act_id, delay, fn, ...)
@@ -85,9 +89,13 @@ MUTANTS = {
                      "        ui_arsenal.open_flat()\n"
                      "        return true\n"
                      "    end)\n", "    ui_arsenal.open_flat()\n"),
-    "reopens": ("    if ui_arsenal.flat_window() or ui_arsenal_workbench.flat_window() then return end\n", ""),
-    "workbench_ignored": ("if ui_arsenal.flat_window() or ui_arsenal_workbench.flat_window() then",
-                          "if ui_arsenal.flat_window() then"),
+    "reopens": ("    if ui_arsenal.flat_window() or ui_arsenal_workbench.flat_window() or ui_arsenal_compare.flat_window() then return end\n", ""),
+    "workbench_ignored": ("if ui_arsenal.flat_window() or ui_arsenal_workbench.flat_window() or ui_arsenal_compare.flat_window() then",
+                          "if ui_arsenal.flat_window() or ui_arsenal_compare.flat_window() then"),
+    "compare_ignored": ("if ui_arsenal.flat_window() or ui_arsenal_workbench.flat_window() or ui_arsenal_compare.flat_window() then",
+                        "if ui_arsenal.flat_window() or ui_arsenal_workbench.flat_window() then"),
+    "kept_on_load": ('    RegisterScriptCallback("actor_on_net_destroy", close_flat)\n', ""),
+    "load_skips_compare": ("{ ui_arsenal, ui_arsenal_workbench, ui_arsenal_compare }", "{ ui_arsenal, ui_arsenal_workbench }"),
     "news_def": ('{ id = "news", type = "check", val = 1, def = true }', '{ id = "news", type = "check", val = 1 }'),
     "news_off_unset": ("    return not (ok and v == false)", "    return ok and v == true"),
     "news_dropped": ('            { id = "news", type = "check", val = 1, def = true },\n', ""),
@@ -201,6 +209,10 @@ def main():
     g.engine_press(65)
     check(g.shown is None and g.opened == 2,
           "with Workbench open flat, the key closes it and opens nothing: %s %d" % (g.shown, g.opened))
+    g.shown = "compare"
+    g.engine_press(65)
+    check(g.shown is None and g.opened == 2,
+          "with Compare open flat, the key closes it and opens nothing: %s %d" % (g.shown, g.opened))
     g.PDA_WORKS = False
     g.engine_press(65)
     msgs = [list(x.values()) for x in g.msgs.values()]
@@ -210,6 +222,20 @@ def main():
     g.engine_press(65)
     check(g.opened == 3 and g.shown == "catalog" and len(g.msgs) == 1,
           "and opens it again once the PDA works: %d" % g.opened)
+    # a load with a page open flat: each page closes as the level goes, so the engine holds no
+    # window the restarted scripts have freed
+    unload = g.callbacks.actor_on_net_destroy
+    check(unload is not None, "a callback closes flat pages when the level goes")
+    for page in ("catalog", "workbench", "compare"):
+        g.shown, before = page, g.unloaded
+        if unload is not None:
+            unload()
+        check(g.shown is None and g.unloaded == before + 1,
+              "a load with %s open flat closes it first: %s" % (page, g.shown))
+    g.shown = None
+    if unload is not None:
+        unload()
+    check(g.unloaded == 3, "and with nothing open, closes nothing: %d" % g.unloaded)
     g.ui_mcm = None
     check(m.flat_key() is None, "without MCM, no key")
     print("\n%d failed" % len(fails))

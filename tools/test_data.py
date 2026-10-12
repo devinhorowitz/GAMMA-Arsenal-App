@@ -11,7 +11,7 @@ import re
 import struct
 import sys
 
-import lupa.luajit21 as L
+from lua_jit import L
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 

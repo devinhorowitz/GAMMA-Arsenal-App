@@ -99,13 +99,13 @@ function pda_works()
     local fe = fatal_error_mcm
     if not fe then return true end
     local ok, works = pcall(function()
-        local pda = db.actor:item_in_slot(8)
-        if not pda or pda:section():find("itm_pda_") then return false end
+        local device = db.actor:item_in_slot(8)
+        if not device or device:section():find("itm_pda_") then return false end
         if not item_device.is_pda_charged(true) then return false end
-        if ini_sys:r_bool_ex(pda:section(), "encrypted") or (tonumber(fe.REBOOT) or 0) > 0 then return false end
+        if ini_sys:r_bool_ex(device:section(), "encrypted") or (tonumber(fe.REBOOT) or 0) > 0 then return false end
         if ActorMenu.get_pda_menu():GetActiveSection() == "eptBios" then return false end
-        if fe_utils.is_bsod(pda) then return false end
-        local overclocked = fe_utils.is_overclocked(pda)
+        if fe_utils.is_bsod(device) then return false end
+        local overclocked = fe_utils.is_overclocked(device)
         local guard = tonumber(upvalue(fe.process_pda_call, "reboot_protection")) or 0
         if not (guard > 0 or overclocked) and (xr_conditions.surge_started() or psi_storm_manager.is_started()) then
             return false
@@ -113,7 +113,7 @@ function pda_works()
         local lvl = level.name()
         if SARCOPHAGUS[lvl] and not overclocked then return false end
         if (fe.MONOLITH_HACKERS or {})[lvl]
-            and not (pda:has_upgrade("up_seconc_pda") or JAM_FREE[get_actor_true_community()] or overclocked) then
+            and not (device:has_upgrade("up_seconc_pda") or JAM_FREE[get_actor_true_community()] or overclocked) then
             return false
         end
         return true
