@@ -173,6 +173,15 @@ SECTIONS = {
     "up_gr_t": dict(elements="up_t1"),
     "up_t1": dict(section="up_sect_t1", property="prop_dispersion"),
     "up_sect_t1": dict(fire_dispersion_base="-1.5"),
+    # Full Upgrades' rewrite of a gun: each upgrade a group of its own in its "upgrades", while
+    # the AK-74's group c still comes through a1's effects (not listed: no icon)
+    "probe_fu_gun": dict(rpm="600", upgrades="up_gr_fu_a1, up_gr_fu_c1, up_gr_fu_c2"),
+    "up_gr_fu_a1": dict(elements="up_a1"),
+    "up_gr_fu_c1": dict(elements="up_c1"),
+    "up_gr_fu_c2": dict(elements="up_c2"),
+    # and of the jacket: a1, which opens c, and c1, each a group of its own
+    "up_gr_fu_j_a1": dict(elements="up_j_a1"),
+    "up_gr_fu_j_c1": dict(elements="up_j_c1"),
     # values only, for the card's handling as the engine keeps PDM (float32); no kind, so not listed
     "wpn_ak74_bad": dict(kind="w_rifle", inv_name="st_ak74"),
     "val_probe": dict(silencer_status="1", bullet_speed="300"),
@@ -793,6 +802,10 @@ end
 """
 
 MUTANTS = {
+    "tree_twice": ("                if ini_sys:section_exist(el) and not placed[el] then\n                    placed[el] = true\n",
+                   "                if ini_sys:section_exist(el) then\n"),
+    "armor_twice": ("        if not done[ps] then\n            done[ps] = true\n            add_upgrade(p, ps)\n        end\n",
+                    "        add_upgrade(p, ps)\n"),
     "hit_power_field": ('    if key == "hit_power" then\n', "    if false then\n"),
     "variants": ("if parent and parent ~= sec then return nil end", "-- variants kept"),
     "armor_f32": ("        p[k] = f32(ini_sys:r_float_ex(sec, k) or 0)", "        p[k] = ini_sys:r_float_ex(sec, k) or 0"),
@@ -1116,7 +1129,8 @@ def main():
     lua = L.LuaRuntime(unpack_returned_tuples=True)
     tbl = lambda d: lua.table_from({k: (lua.table_from(v) if isinstance(v, dict) else v) for k, v in d.items()})
     lines = lambda d: lua.table_from({s: lua.table_from([lua.table_from([k, v]) for k, v in ls]) for s, ls in d.items()})
-    lua.execute(STUBS, tbl(SECTIONS), lua.table_from(TEXT), tbl(RECOIL), tbl(PARTS),
+    sections = tbl(SECTIONS)
+    lua.execute(STUBS, sections, lua.table_from(TEXT), tbl(RECOIL), tbl(PARTS),
                 lua.table_from({name: lines(d) for name, d in FILES.items()}))
     m = lua.eval("function(src) local env = setmetatable({}, {__index = _G}); local f = assert(loadstring(src)); "
                  "setfenv(f, env); f(); return env end")(src)
@@ -1185,6 +1199,10 @@ def main():
     check(tuple(rof) == (780, 700), "fire rate fully upgraded, through a group an upgrade opens: %s" % (tuple(rof),))
     check(m.max_stat("wpn_ak74", "damage") is None and m.max_stat("wpn_ak74", "max_range") is None,
           "no maximum for a stat the formulas here do not cover")
+    # Full Upgrades: an upgrade reached both as a group of its own and through another's effects
+    # counts once: 600 + 50 + 80, not 810 with c2 twice
+    fu = tuple(m.max_stat("probe_fu_gun", "fire_rate") or ())
+    check(fu == (730, 600), "Full Upgrades' rewrite of a gun: each upgrade once, fully upgraded: %s" % (fu,))
 
     # armor: by GAMMA's armor class (its repair type; a helmet is a helmet), else by kind;
     # templates, multiplayer suits and an item without an icon are not listed
@@ -1792,6 +1810,13 @@ def main():
           "none: %s %s %s" % (a and dict(a.items()), b and dict(b.items()), gone))
     lua.execute("cxv_artigrok_bo, cxv_ammo_stats_tbl, ammo_maker, workshop_autoinject = nil, nil, nil, nil")
     m.reset()
+
+    # the jacket as Full Upgrades rewrites it: a1 (opening c) and c1 each a group of its own; c1,
+    # reached both ways, counts once, so psi fully upgraded stays 19 (24 with c1 twice)
+    sections["novice_outfit"]["upgrades"] = "up_gr_fu_j_a1, up_gr_fu_j_c1"
+    psi = tuple(m.max_stat("novice_outfit", "telepatic_protection") or ())
+    sections["novice_outfit"]["upgrades"] = "up_gr_j_a, up_gr_j_b"
+    check(psi == (19, 0), "Full Upgrades' rewrite of a jacket: each upgrade once: %s" % (psi,))
     print("\n%d failed" % len(fails))
     return 1 if fails else 0
 

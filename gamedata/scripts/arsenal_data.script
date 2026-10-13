@@ -511,13 +511,17 @@ CARD = {
 -- `fixed` when the gun ships an upgrade of the group. Kept per section: the configs do not
 -- change while the game runs, and a page asks for a tree once per stat.
 -- R.I.S.K.'s enhancement groups are no mechanic's upgrades (its kits install them, one gun at a
--- time), though its test file lists them in a few guns' "upgrades"
+-- time), though its test file lists them in a few guns' "upgrades".
+-- An upgrade counts in the first group that reaches it, and only there. Full Upgrades lists
+-- each upgrade of a gun it covers as a group of its own in the gun's "upgrades", while the
+-- original groups, pairs and all, still come through effects: counted in both, an upgrade
+-- would be added twice to the gun's fully upgraded values.
 local NOT_UPGRADES = "^risk_"
 
 local trees = {}
 function upgrade_tree(sec)
     if trees[sec] then return trees[sec] end
-    local installed, groups, seen, queue = {}, {}, {}, {}
+    local installed, groups, seen, queue, placed = {}, {}, {}, {}, {}
     for u in each_of(sec, "installed_upgrades") do
         installed[u] = true
     end
@@ -536,6 +540,9 @@ function upgrade_tree(sec)
                     for nxt in each_of(el, "effects") do
                         queue[#queue + 1] = nxt
                     end
+                end
+                if ini_sys:section_exist(el) and not placed[el] then
+                    placed[el] = true
                     local inst = installed[el] == true
                     group.fixed = group.fixed or inst
                     local ps = ini_sys:r_string_ex(el, "section")
@@ -2781,8 +2788,14 @@ function armor_max(sec, stat)
     local gain = ARMOR_GAIN[stat]
     if not gain then return base, base end
     local _, path = best_path(sec, function(ps) return gain(ps, p.bone) end)
+    -- each change once: under Full Upgrades an upgrade heads a group of its own and is opened
+    -- by another as well, so a path can reach it twice
+    local done = {}
     for _, ps in ipairs(path) do
-        add_upgrade(p, ps)
+        if not done[ps] then
+            done[ps] = true
+            add_upgrade(p, ps)
+        end
     end
     return math.max(base, f(p, gr) or base), base
 end

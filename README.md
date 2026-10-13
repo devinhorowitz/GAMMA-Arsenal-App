@@ -180,6 +180,9 @@ moves rather than deletes. [INSTALL-WITH-CLAUDE.md](INSTALL-WITH-CLAUDE.md) is t
 - **ArtiGrok Ballistics** and **Leekos Munition Merge:** the anomalous rounds are listed, with
   their effects.
 - **Immersive Identification:** a fighter you identify shows you his gun, as above.
+- **Full Upgrades DLTX for GAMMA:** found on its own. The Workbench lets both upgrades of a pair
+  join, as its toolkit does, wherever the mod rewrote the gun's tree, and fully upgraded
+  values count every upgrade once.
 
 ## Sharper pages with the 3D PDA
 

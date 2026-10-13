@@ -67,6 +67,16 @@ SECTIONS = {
     "wpn_knife": dict(upgrades="up_gr_thirda_t", inv_name="st_knife"),
     "wpn_plain": dict(inv_name="st_plain"),
     "wpn_broken": dict(upgrades="up_gr_x"),
+    # Full Upgrades' rewrite of wpn_test: each first-row upgrade a group of its own in its
+    # "upgrades" (the old groups still come through effects); the fourth row as it was, its c/d
+    # a pair in one group
+    "wpn_fu": dict(upgrades="up_gr_fu_a, up_gr_fu_b, up_gr_fu_c, up_gr_fu_d, up_gr_fu_e, up_gr_fu_f, up_gr_fourta_t",
+                   inv_name="st_fu"),
+    "up_gr_fu_a": dict(elements="up_firsta_t"), "up_gr_fu_b": dict(elements="up_firstb_t"),
+    "up_gr_fu_c": dict(elements="up_firstc_t"), "up_gr_fu_d": dict(elements="up_firstd_t"),
+    "up_gr_fu_e": dict(elements="up_firste_t"), "up_gr_fu_f": dict(elements="up_firstf_t"),
+    # a gun the mod left as it was: its first pair one group, in its own "upgrades"
+    "wpn_fu2": dict(upgrades="up_gr_firstab_t", inv_name="st_fu2"),
     "itm_basickit": {}, "itm_advancedkit": {}, "itm_expertkit": {},
 }
 
@@ -74,6 +84,9 @@ STUBS = r"""
 SEC = ...
 logs = {}
 function printf(fmt, ...) logs[#logs + 1] = string.format(fmt, ...) end
+-- the files the game can see, by path alias and name (Full Upgrades' DLTX file, for one test)
+FS_FILES = {}
+function getFS() return { exist = function(self, alias, name) return FS_FILES[alias .. name] end } end
 callbacks = {}
 function RegisterScriptCallback(name, fn) callbacks[name] = fn end
 ini_sys = {
@@ -283,6 +296,13 @@ MUTANTS = {
     "col_major": ("    for row = 1, ROWS do\n        for col = 1, COLS do\n            local c = t[row] and t[row][col]\n            if c then\n                out",
                   "    for col = 1, COLS do\n        for row = 1, ROWS do\n            local c = t[row] and t[row][col]\n            if c then\n                out"),
     "partner_off_by_one": ("t[row][(col % 2 == 1) and col + 1 or col - 1]", "t[row][(col % 2 == 1) and col - 1 or col + 1]"),
+    "full_ignored": ("    t.full = full_upgrades()\n", "    t.full = false\n"),
+    "full_file": ('"mod_system_full_upgrades.ltx"', '"mod_system_full_upgrade.ltx"'),
+    "full_any_pair": ("    if p and t.full and t.lone and t.lone[t[row][col].section] and t.lone[p.section] then return nil end",
+                      "    if p and t.full then return nil end"),
+    "full_any_root": ("        if #els == 1 then t.lone[els[1]] = true end",
+                      "        for _, el in ipairs(els) do t.lone[el] = true end"),
+    "full_said_always": ("        said_full = true\n", ""),
     "parent_any_row": ("        local p = t[row][c]\n        if p and p.effect", "        local p = t[1][c]\n        if p and p.effect"),
     "open_from_col_2": ("    if col <= 2 then return true end", "    if col <= 1 then return true end"),
     "open_from_col_3": ("    if col <= 2 then return true end", "    if col <= 3 then return true end"),
@@ -710,6 +730,35 @@ STASHED = {}
     env.install(7, "wpn_test", plan)
     r = call(g.EVENTS["arsenal_workbench/install"].f)
     check(r[0] is True and env.last_install.err is not None, "a toolkit that fails: caught, told: %s" % (r,))
+
+    # Full Upgrades: without its DLTX file every pair binds, as GAMMA's toolkit has it
+    fu = env.tree("wpn_fu")
+    check(fu.full is False and env.state(fu, 1, 4, E, S("up_firsta_t", "up_firstc_t")) == "partner",
+          "no Full Upgrades: c planned, d is its partner: %s" % env.state(fu, 1, 4, E, S("up_firsta_t", "up_firstc_t")))
+    # with it, both upgrades of a pair the mod made lone groups can join; the plan keeps both
+    g.FS_FILES["$game_config$mod_system_full_upgrades.ltx"] = True
+    n_logs = len(g.logs)
+    fu = env.tree("wpn_fu")
+    env.tree("wpn_fu")
+    check(fu.full is True and len(g.logs) == n_logs + 1 and "Full Upgrades" in g.logs[n_logs + 1],
+          "Full Upgrades found: the tree knows, said once in the log: %s" % list(g.logs.values())[n_logs:])
+    st = env.state(fu, 1, 4, E, S("up_firsta_t", "up_firstc_t"))
+    check(st == "open", "Full Upgrades: c planned, d can join too: %s" % st)
+    plan = env.toggle(fu, 1, 4, E, S("up_firsta_t", "up_firstc_t"))
+    check(plan is not None and keys(plan) == ["up_firsta_t", "up_firstc_t", "up_firstd_t"],
+          "and joins beside c, which stays: %s" % (plan and keys(plan)))
+    st = env.state(fu, 1, 2, S("up_firsta_t"), E)
+    check(st == "open", "a installed, its partner b can join: %s" % st)
+    v = env.valid(fu, E, S("up_firsta_t", "up_firstb_t", "up_firstc_t", "up_firstd_t"))
+    check(keys(v) == ["up_firsta_t", "up_firstb_t", "up_firstc_t", "up_firstd_t"],
+          "a plan with both of each pair stays as it is: %s" % keys(v))
+    # a pair the mod left in one group still binds: the engine takes one of a group
+    st = env.state(fu, 4, 4, E, S("up_fourta_t", "up_fourtc_t"))
+    check(st == "partner", "Full Upgrades: a pair still one group binds: %s" % st)
+    fu2 = env.tree("wpn_fu2")
+    st = env.state(fu2, 1, 2, S("up_firsta_t"), E)
+    check(st == "partner", "a gun the mod left as it was keeps its pairs: %s" % st)
+    g.FS_FILES["$game_config$mod_system_full_upgrades.ltx"] = None
 
     print("\n%d failed" % len(fails))
     return 1 if fails else 0

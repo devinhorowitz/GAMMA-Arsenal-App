@@ -15,6 +15,12 @@
     The engine adds one more (Group::can_install): an upgrade's group needs an upgrade in every
     group whose upgrades open it, in any row. The toolkit installs row by row, so an upgrade
     opened from a later row too waits for a second visit (the Kiparis' fourth row).
+
+    Full Upgrades (kiruha1991's and Anonim's "Full Upgrades DLTX for GAMMA", from demonized's DLTX
+    minimod) lifts the pair rule: its toolkit lets both of a pair in, and it lists each upgrade
+    of a gun it covers as a group of its own in the gun's "upgrades", so the engine takes both.
+    With it installed, a pair binds only where its two upgrades are not both such lone groups:
+    a gun the mod left as it was keeps its pairs, which its engine still enforces.
 --]]
 
 ROWS, COLS = 5, 6
@@ -53,10 +59,14 @@ end
 -- upgrades, and the groups whose upgrades open a group (the item itself, for a group it lists,
 -- is no parent)
 local function link(t, sec)
-    t.group_of, t.members, t.parents = {}, {}, {}
+    t.group_of, t.members, t.parents, t.lone = {}, {}, {}, {}
     local seen, queue, i = {}, {}, 1
     for g in each(sec, "upgrades") do
         queue[#queue + 1] = g
+        -- an upgrade that is a group of its own in the item's own list (Full Upgrades' rewrite)
+        local els = {}
+        for el in each(g, "elements") do els[#els + 1] = el end
+        if #els == 1 then t.lone[els[1]] = true end
     end
     while queue[i] do
         local g = queue[i]
@@ -77,8 +87,20 @@ local function link(t, sec)
     end
 end
 
--- The tree of a section, or an empty one; with the engine's links (above) and `at`, each
--- upgrade's cell.
+-- Whether Full Upgrades is installed: every version of it ships this DLTX file
+local said_full = false
+function full_upgrades()
+    local ok, has = pcall(function() return getFS():exist("$game_config$", "mod_system_full_upgrades.ltx") end)
+    local full = (ok and has) and true or false
+    if full and not said_full then
+        said_full = true
+        printf("[arsenal] Full Upgrades found: both upgrades of a pair can join where it rewrote the gun")
+    end
+    return full
+end
+
+-- The tree of a section, or an empty one; with the engine's links (above), `at`, each
+-- upgrade's cell, and `full`, whether Full Upgrades lifts the pair rule.
 function tree(sec)
     local t = {}
     if sec and utils_item and utils_item.get_upgrades_tree and (ini_sys:r_string_ex(sec, "upgrades") or "") ~= "" then
@@ -97,6 +119,7 @@ function tree(sec)
         end
     end
     link(t, sec or "")
+    t.full = full_upgrades()
     return t
 end
 
@@ -120,9 +143,11 @@ function has_tree(sec)
 end
 
 -- the other upgrade of a cell's pair, if it has one (GAMMA marks an odd column without one
--- `solo`; an even column always has one)
+-- `solo`; an even column always has one). With Full Upgrades, none where both are lone groups.
 function partner(t, row, col)
-    return t[row][(col % 2 == 1) and col + 1 or col - 1]
+    local p = t[row][(col % 2 == 1) and col + 1 or col - 1]
+    if p and t.full and t.lone and t.lone[t[row][col].section] and t.lone[p.section] then return nil end
+    return p
 end
 
 -- the columns of a cell's row whose upgrades open it
