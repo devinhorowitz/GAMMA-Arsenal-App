@@ -73,7 +73,28 @@ ini_sys = { r_float_ex = function(self, sec, key) return key == "cost" and COST[
 death_manager = { get_outfit_by_npc_visual = function(v) return VISUALS[v] end }
 VISUALS = { vis_mono = { "mono_suit", "mono_helm" } }
 PDA_INFO = {}
-function se_load_var(id, name, key) return PDA_INFO[id] end
+-- se vars by id, as alife_storage_manager keeps them ("info" is the PDA's own, ui_pda_npc_tab's);
+-- the game releasing an object drops them (axr_main), and a new object may get its id
+SE = {}
+function se_load_var(id, name, key)
+    if key == "info" then return PDA_INFO[id] end
+    return SE[id] and SE[id][key]
+end
+function se_save_var(id, name, key, val)
+    SE[id] = SE[id] or {}
+    SE[id][key] = val
+end
+function release(id) SE[id] = nil; PDA_INFO[id] = nil end
+ALIFE = {}
+function alife_object(id) return ALIFE[id] end
+function se_thing(sec, id) return { section_name = function() return sec end, name = function() return sec .. id end } end
+-- a fighter's logic (db.storage): dont_keep_items for the ids listed (traders, technicians, medics)
+KEEPS_NOTHING = {}
+db.storage = setmetatable({}, { __index = function(t, id)
+    if not KEEPS_NOTHING[id] then return nil end
+    return { section_logic = "logic@trader", ini = { line_exist = function(self, sec, key)
+        return sec == "logic@trader" and key == "dont_keep_items" end } }
+end })
 ui_pda_npc_tab = { unlock_encrypted_pda = function(a, b)
     for _, info in pairs(PDA_INFO) do if info.state == "encrypted" then info.state = "default" end end
 end }
@@ -154,10 +175,18 @@ function person(id, comm, rank, items, extra)
     function o:position() return { x = id, y = 0, z = 0 } end
     function o:iterate_inventory(fn, owner) for _, s in ipairs(self.items) do fn(owner, item(s)) end end
     function o:iterate_inventory_box(fn, owner) for _, s in ipairs(self.items) do fn(owner, item(s)) end end
+    function o:name() return "npc" .. id end
+    function o:spawn_ini() return extra and extra.spawn_ini or nil end
     return o
 end
 function item(sec, id)
     return { section = function() return sec end, id = function() return id or 0 end, name = function() return sec end }
+end
+-- a spawn ini with the sections given
+function spawn_ini(...)
+    local has = {}
+    for _, s in ipairs({ ... }) do has[s] = true end
+    return { section_exist = function(self, s) return has[s] == true end }
 end
 """
 
@@ -175,7 +204,21 @@ MUTANTS = {
     "tally_step": ("    if t.kills % TALLY == 0 then", "    if false then"),
     "tally_rank": ("                if i <= top and g.ranks[r] and not low then low = r end", "                if g.ranks[r] and not low then low = r end"),
     "study_at": ("    if t.kills >= STUDY then", "    if false then"),
-    "pda_once": ("    if not size or st.pdas[id] then return end", "    if not size then return end"),
+    "pda_once": ("    if mark == who or mark == true then return end", "    if false then return end"),
+    "pda_mark_any_owner": ("    if mark == who or mark == true then return end", "    if mark then return end"),
+    "pda_test_build_marks": ("    if mark == who or mark == true then return end", "    if mark == who then return end"),
+    "owner_constant": ('    return table.concat({ tostring(c.name), tostring(c.comm), tostring(c.rank), tostring(c.icon) }, "|")',
+                       '    return "x"'),
+    "marks_moved_plain": ('            se_save_var(id, se:name(), READ, owner_of(se_load_var(id, se:name(), "info")))',
+                          "            se_save_var(id, se:name(), READ, true)"),
+    "marks_not_moved": ("    move_marks()\n", ""),
+    "marks_moved_late": ("    move_marks()\n    seed(actor_faction())\n    scan_pdas()\n", "    seed(actor_faction())\n    scan_pdas()\n    move_marks()\n"),
+    "marks_any_object": ("        if se and PDA_SIZE[se:section_name()] then\n", "        if se then\n"),
+    "marks_lists_kept": ("    st.pdas, st.talked = nil, nil\n", ""),
+    "talk_mark_unsaved": ("    se_save_var(npc:id(), npc:name(), TALKED, day())\n", ""),
+    "kill_keeps_all": ("    if not keeps_nothing(victim) then learn_items(victim, how, fact) end", "    learn_items(victim, how, fact)"),
+    "kill_logic_unread": ("    local s = db.storage and db.storage[npc:id()]\n", "    local s = nil\n"),
+    "kill_spawn_ini_unread": ('    if ok and ini and ini:section_exist("dont_keep_items") then return true end\n', ""),
     "pda_encrypted": ('    if info.state == "encrypted" then return end\n', ""),
     "pda_specs": ("gear_fact(g, f), SPECS[obj:section()] == true)", "gear_fact(g, f), false)"),
     "pda_circle": ("        if x ~= f and gr and ((gr.is_factions_friends and gr.is_factions_friends(f, x))\n"
@@ -185,7 +228,7 @@ MUTANTS = {
     "decrypt": ("        scan_pdas()\n        return r", "        return r"),
     "trade_fact": ('function() return { sold = who } end)', 'function() return nil end)'),
     "stash_fact": ('function() return { stash = lvl } end', 'function() return nil end'),
-    "talk_daily": ("    if not willing(npc) or st.talked[npc:id()] == day() then return false end",
+    "talk_daily": ("    if not willing(npc) or se_load_var(npc:id(), npc:name(), TALKED) == day() then return false end",
                    "    if not willing(npc) then return false end"),
     "talk_enemy": ("        and not (npc.relation and npc:relation(db.actor) == game_object.enemy)", ""),
     "talk_specs": ("specs = KNOWS_SPECS[rank] == true", "specs = false"),
@@ -332,6 +375,23 @@ def main():
     check("wpn_mono" in studied() and "mono_suit" in studied() and "wpn_free" not in studied(),
           "at %d kills, the gear known of them is studied: %s" % (m.STUDY, studied()))
 
+    # a trader, technician or medic (dont_keep_items, in his logic or his spawn ini): death_manager
+    # releases all he had as he dies, before the kill is heard of; that stock is not what his
+    # faction carries and never reaches the body. His visual's suit does, and the kill counts.
+    m.reset()
+    g.KEEPS_NOTHING[450] = True
+    by_logic = g.person(450, "freedom", "veteran", lua.table_from(["wpn_free", "wpn_eco"]), lua.table_from({"visual": "vis_mono"}))
+    by_ini = g.person(451, "freedom", "veteran", lua.table_from(["wpn_box"]),
+                      lua.table_from({"spawn_ini": g.spawn_ini("dont_keep_items")}))
+    fighter = g.person(452, "freedom", "veteran", lua.table_from(["wpn_army"]), lua.table_from({"spawn_ini": g.spawn_ini("logic")}))
+    for v in (by_logic, by_ini, fighter):
+        run(lambda: cb.npc_on_death_callback(v, g.db.actor))
+    tally = st().tally["freedom"]
+    check(not any(s in known() for s in ("wpn_free", "wpn_eco", "wpn_box")) and "mono_suit" in known()
+          and "wpn_army" in known() and tally is not None and tally.kills == 3,
+          "a trader's or medic's kill: not his stock, by his logic or his spawn ini; his suit, and the kill counts: %s %s"
+          % (known(), tally and tally.kills))
+
     # Immersive Identification: a fighter it identifies, who lives, shows the gun he holds, whether
     # or not the tag has its weapon line: known and new, not studied, with who carries it, and news;
     # never without II, for the dead, the unarmed or a non-faction; each identification read once;
@@ -431,6 +491,44 @@ def main():
           % (locked, known(), studied()))
     g.ACTOR_ITEMS = lua.table_from([])
 
+    # the read mark is the PDA's own, so the game releasing the PDA drops it, and a new PDA given
+    # its id has a package (kept by id in Arsenal's save, the new one read as read). An Ecologist's
+    # PDA tells only of their rifle: unknown again before each pickup, so a package shows.
+    m.reset()
+    eco = lambda: lua.table_from({"state": "default", "contact": lua.table_from({"comm": "ecolog", "rank": "novice"})})
+    g.PDA_INFO[320] = eco()
+    run(lambda: cb.actor_on_item_take(g.item("itm_pda_common", 320)))
+    first = known()
+    st().known["wpn_eco"] = None
+    run(lambda: cb.actor_on_item_take(g.item("itm_pda_common", 320)))
+    again = known()
+    g.release(320)
+    g.PDA_INFO[320] = eco()
+    run(lambda: cb.actor_on_item_take(g.item("itm_pda_common", 320)))
+    check(first == ["wpn_eco"] and again == [] and known() == ["wpn_eco"],
+          "the same PDA once; released, a new PDA given its id has its package: %s %s %s" % (first, again, known()))
+    mark = g.SE[320] and g.SE[320].arsenal_read
+    check(st().pdas is None and isinstance(mark, str) and "ecolog" in mark,
+          "the mark is on the PDA and names its owner, not in Arsenal's save: %r" % (mark,))
+    # A PDA is no script class: one the engine releases itself (a trader's restock) keeps its se
+    # vars, and the next PDA given its id gets its own owner over them. Another owner's PDA: read.
+    m.reset()
+    owner = lambda name: lua.table_from({"state": "default", "contact": lua.table_from(
+        {"comm": "ecolog", "rank": "novice", "name": name})})
+    g.PDA_INFO[340] = owner("Ivan")
+    run(lambda: cb.actor_on_item_take(g.item("itm_pda_common", 340)))
+    st().known["wpn_eco"] = None
+    g.PDA_INFO[340] = owner("Petro")
+    run(lambda: cb.actor_on_item_take(g.item("itm_pda_common", 340)))
+    check(known() == ["wpn_eco"], "a stale mark from a PDA the engine released: another owner's PDA given its id is read: %s"
+          % known())
+    # a mark from 1.6.1's test build, before marks named the owner, still counts as read
+    m.reset()
+    g.PDA_INFO[350] = owner("Ivan")
+    lua.execute("SE[350] = { arsenal_read = true }")
+    run(lambda: cb.actor_on_item_take(g.item("itm_pda_common", 350)))
+    check(known() == [], "a PDA marked by the test build stays read: %s" % known())
+
     # windows: a trader's stock (who sells it), a stash (where), a body (who carried it)
     m.reset()
     gui = lua.table_from({"mode": "trade", "npc_is_box": False})
@@ -478,6 +576,18 @@ def main():
     check(len(studied()) == 1, "a legend's word comes with specs: %s" % studied())
     foe = g.person(502, "dolg", "legend", None, lua.table_from({"relation": 3}))
     check(run(lambda: m.rumor_ok(g.db.actor, foe)) is False, "an enemy does not talk")
+    # the day's mark is the fighter's own: once he is released, a new fighter given his id talks
+    m.reset()
+    one = g.person(520, "ecolog", "novice")
+    said = run(lambda: m.rumor_ok(g.db.actor, one))
+    run(lambda: m.rumor_told(g.db.actor, one))
+    st().known["wpn_eco"] = None
+    twice = run(lambda: m.rumor_ok(g.db.actor, one))
+    g.release(520)
+    other = run(lambda: m.rumor_ok(g.db.actor, g.person(520, "ecolog", "novice")))
+    check(said is True and twice is False and other is True and st().talked is None,
+          "a fighter talks once a day; released, a new one given his id talks; nothing kept in the save: %s %s %s"
+          % (said, twice, other))
 
     # a technician: word of a special gun not yet known, for money; with specs and how to get it
     m.reset()
@@ -514,6 +624,7 @@ def main():
     check(both == (True, True) and named(said) and len(told) == 1 and poor is False and "3000" in str(offer),
           "a trader's two talks keep apart, the rumor checked first: %s %r %s %r %r" % (both, said, told, poor, offer))
     m.reset()
+    lua.execute("SE[610] = nil")         # and his mark from that talk
     both = (run(lambda: m.gunsmith_ok(g.db.actor, trader)), run(lambda: m.rumor_ok(g.db.actor, trader)))
     g.MONEY = 20000
     rich = run(lambda: m.gunsmith_can_pay(g.db.actor, trader))
@@ -600,6 +711,25 @@ def main():
     st().known["wpn_mono_kobra"] = lua.table_from({})
     m.regroup()
     check(known() == ["wpn_mono"], "a key under another section moves to its model: %s" % known())
+
+    # a save from before 1.6.1: its read PDAs by id go onto the PDAs holding those ids now, before
+    # the PDAs he carries are read; an id something else holds now, or nothing, is dropped; the
+    # lists go from the save
+    m.reset()
+    g.ALIFE[330] = g.se_thing("itm_pda_uncommon", 330)
+    g.ALIFE[331] = g.se_thing("medkit", 331)
+    g.PDA_INFO[330] = lua.table_from({"state": "default", "contact": lua.table_from({"comm": "ecolog", "rank": "novice"})})
+    g.ACTOR_ITEMS = lua.table_from([g.item("itm_pda_uncommon", 330)])
+    cb.load_state(lua.table_from({"arsenal_intel": lua.table_from({
+        "v": 1, "known": lua.table_from({}), "pdas": lua.table_from({330: True, 331: True, 332: True}),
+        "talked": lua.table_from({540: 14})})}))
+    got = run(lambda: cb.actor_on_first_update())
+    mark = g.SE[330] and g.SE[330].arsenal_read
+    check(got is None and "wpn_eco" not in known() and isinstance(mark, str) and g.SE[331] is None and st().pdas is None
+          and st().talked is None,
+          "an older save's read PDA stays read, carried at the load; nothing marked that is no PDA; the lists gone: "
+          "%s %s %s %s" % (got, known(), mark, g.SE[331]))
+    g.ACTOR_ITEMS = lua.table_from([])
 
     # a disguise: dressed as Freedom, the live community says Freedom; what he is taught at load is
     # still Duty's, his true faction (gameplay_disguise's), and Duty is still "his" faction

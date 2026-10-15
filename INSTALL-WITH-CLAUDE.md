@@ -90,9 +90,9 @@ Tell the player: start the game as usual (with Seasons of the Zone installed, th
 you. Then read `<gamePath>\appdata\logs\xray_<Windows user name>.log` and report:
 
 - lines containing `STACK TRACEBACK` or `FATAL` (search without case);
-- lines starting `[arsenal]` or `Arsenal:`, Arsenal's own error reports. `[arsenal] PDA
-  (silenced):` lines are not errors: they are its PDA messages, logged instead while the player
-  has them switched off;
+- lines starting `[arsenal]` or `Arsenal:`, Arsenal's own error reports. Two kinds are not
+  errors: `[arsenal] PDA (silenced):` lines are its PDA messages, logged instead while the player
+  has them switched off, and `[arsenal] Full Upgrades found` says it found that mod;
 - `$MAC: Added app: arsenal`, which means the PDA tile is in place.
 
 No traceback and no error reports mean it is working. Arsenal works in an existing save;
@@ -108,6 +108,7 @@ nothing else is needed.
 ## If something's wrong
 
 - **No Arsenal tile:** MAC isn't installed or enabled (the log says `[arsenal] Mod App Creator
-  not found; no tile`); use the MCM key.
+  not found; no tile`); use the MCM key. If the log says `[arsenal] no tile in Mod App Creator:`
+  instead, MAC refused the tile: treat that line as an error report.
 - **Errors in the log:** show the player the lines, then open an issue at
   https://github.com/devinhorowitz/GAMMA-Arsenal-App/issues with the log attached.

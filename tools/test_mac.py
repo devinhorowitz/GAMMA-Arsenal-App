@@ -101,6 +101,7 @@ MUTANTS = {
     "no_guard": ("            local ok, err = pcall(badge, ui)", "            local ok, err = true, badge(ui)"),
     "warn_each_time": ("            if not ok and not warned then", "            if not ok then"),
     "shape_check": ('    if type(ids) ~= "table" or type(apps) ~= "table" then return end', ""),
+    "tile_unguarded": ("    local ok, err = pcall(add_tile)", "    local ok, err = true, add_tile()"),
 }
 
 
@@ -192,6 +193,18 @@ def main():
     second = open_launcher()
     check(is_page(first) and is_page(second), "a failing badge leaves the launcher working: %s" % str(first))
     check(len(g.logs) == 1 and "no badge" in g.logs[1], "logged once: %s" % list(g.logs.values()))
+
+    # MAC refusing the tile (its add_app asserts on what it is given): caught, since the game starts
+    # every script in one pass and an error would stop the rest; one line; nothing wrapped
+    lua.execute('logs = {}; mac_mcm = { add_app = function() assert(false, "no such texture") end, get_ui = original_get_ui }')
+    m3 = load(src)
+    try:
+        m3.on_game_start()
+        ok = True
+    except L.LuaError:
+        ok = False
+    check(ok and len(g.logs) == 1 and "no tile" in g.logs[1] and lua.eval("mac_mcm.get_ui == original_get_ui") is True,
+          "MAC refusing the tile: caught, one line, nothing wrapped: %s %s" % (ok, list(g.logs.values())))
 
     # no MAC: nothing to wrap, said once
     lua.execute("mac_mcm = nil; logs = {}")

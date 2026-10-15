@@ -77,11 +77,7 @@ local function wrap_launcher()
     end
 end
 
-function on_game_start()
-    if not (mac_mcm and mac_mcm.add_app) then
-        printf("[arsenal] Mod App Creator not found; no tile")
-        return
-    end
+local function add_tile()
     mac_mcm.add_app("arsenal", {
         name = "st_arsenal_title",     -- the tile's label
         texture = "arsenal_app",       -- _e, _h, _t, _d in textures_descr/ui_arsenal.xml
@@ -91,4 +87,15 @@ function on_game_start()
     if type(mac_mcm.get_ui) == "function" then
         wrap_launcher()
     end
+end
+
+function on_game_start()
+    if not (mac_mcm and mac_mcm.add_app) then
+        printf("[arsenal] Mod App Creator not found; no tile")
+        return
+    end
+    -- MAC asserts on what it is given, and the game starts every script in one pass that catches
+    -- nothing: an error here would keep every script after this one from starting
+    local ok, err = pcall(add_tile)
+    if not ok then printf("[arsenal] no tile in Mod App Creator: %s", tostring(err)) end
 end

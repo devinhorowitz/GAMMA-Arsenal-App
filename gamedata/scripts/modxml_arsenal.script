@@ -64,34 +64,54 @@ local GUNSMITHS = { "dm_tech_repair", "dm_init_trader" }
 local PAGES = { eptArsenal = "st_arsenal_title", eptWorkbench = "st_arsenal_workbench",
     eptArsenalCompare = "st_arsenal_compare" }
 
+-- DXML and the dialog lists call each mod's edit in turn and catch nothing, so an error in one
+-- would skip every mod's after it (and reach the engine's XML read): Arsenal's edits are caught
+-- and logged, each message once
+local said = {}
+local function guarded(what, fn, ...)
+    local ok, err = pcall(fn, ...)
+    if not ok and not said[tostring(err)] then
+        said[tostring(err)] = true
+        printf("[arsenal] %s: %s", what, tostring(err))
+    end
+end
+
+local function edit(name, xml)
+    if name == [[gameplay\dialogs.xml]] or name == [[gameplay/dialogs.xml]] then
+        if #xml:query("dialog[id=arsenal_rumor]") == 0 then
+            xml:insertFromXMLString(DIALOGS)
+        end
+        return
+    end
+    if not name:match("^ui[\\/]pda[%w_]*%.xml$") then return end
+    local tab = xml:query("tab")[1]
+    if not (tab and xml:query("caption_static")[1]) then return end
+    for id, title in pairs(PAGES) do
+        if #xml:query("tab > button[id=" .. id .. "]") == 0 then
+            xml:insertFromXMLString([[<button x="1000" y="0" width="0" height="0" id="]] .. id .. [[" frame_mode="0">]]
+                .. [[<text align="c" vert_align="c" x="0" y="0" font="letterica16">]] .. title .. [[</text></button>]], tab)
+        end
+    end
+end
+
+local function add_talks(character_id, list)
+    if not list:has("arsenal_rumor") then list:add("arsenal_rumor") end
+    for _, d in ipairs(GUNSMITHS) do
+        if list:has(d) then
+            if not list:has("arsenal_gunsmith") then list:add("arsenal_gunsmith") end
+            break
+        end
+    end
+end
+
 function on_xml_read()
     RegisterScriptCallback("on_xml_read", function(name, xml)
-        if name == [[gameplay\dialogs.xml]] or name == [[gameplay/dialogs.xml]] then
-            if #xml:query("dialog[id=arsenal_rumor]") == 0 then
-                xml:insertFromXMLString(DIALOGS)
-            end
-            return
-        end
-        if not name:match("^ui[\\/]pda[%w_]*%.xml$") then return end
-        local tab = xml:query("tab")[1]
-        if not (tab and xml:query("caption_static")[1]) then return end
-        for id, title in pairs(PAGES) do
-            if #xml:query("tab > button[id=" .. id .. "]") == 0 then
-                xml:insertFromXMLString([[<button x="1000" y="0" width="0" height="0" id="]] .. id .. [[" frame_mode="0">]]
-                    .. [[<text align="c" vert_align="c" x="0" y="0" font="letterica16">]] .. title .. [[</text></button>]], tab)
-            end
-        end
+        guarded("DXML " .. tostring(name), edit, name, xml)
     end)
 end
 
 function on_game_start()
     RegisterScriptCallback("on_specific_character_dialog_list", function(character_id, list)
-        if not list:has("arsenal_rumor") then list:add("arsenal_rumor") end
-        for _, d in ipairs(GUNSMITHS) do
-            if list:has(d) then
-                if not list:has("arsenal_gunsmith") then list:add("arsenal_gunsmith") end
-                break
-            end
-        end
+        guarded("the talks", add_talks, character_id, list)
     end)
 end

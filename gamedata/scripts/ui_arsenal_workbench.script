@@ -9,7 +9,8 @@
 
     The tree's widgets are made once, five rows of six cells where the toolkit puts them
     (ui_workshop_16.xml), and only filled for each item: rebuilt, their buttons would pile up
-    callbacks.
+    callbacks. The rows belong to the tree's scroll view from the start, so they go with the
+    page; a row the item lacks is folded away below the others, never let go.
 --]]
 
 local theme = arsenal_theme
@@ -164,8 +165,9 @@ function WorkbenchPDA:__init(flat) super()
     self.tree_view = xml:InitScrollView("wb_tree", self)
     self.forms = {}
     for r = 1, arsenal_workbench.ROWS do
-        local form = xml:InitStatic("wb_form", nil)
-        local f = { st = form, idx = xml:InitTextWnd("wb_form_idx", form), slots = {} }
+        local form = xml:InitStatic("wb_form", self.tree_view)
+        local f = { st = form, w = form:GetWidth(), h = form:GetHeight(), idx = xml:InitTextWnd("wb_form_idx", form),
+            slots = {} }
         f.idx:SetText(tostring(r))
         for c = 1, arsenal_workbench.COLS do
             local s = {}
@@ -179,7 +181,6 @@ function WorkbenchPDA:__init(flat) super()
             self:AddCallback("wb_cell_" .. r .. "_" .. c, ui_events.BUTTON_CLICKED, function() self:OnCell(r, c) end, self)
             f.slots[c] = s
         end
-        form:SetAutoDelete(false)
         self.forms[r] = f
     end
     self.kits_lbl = xml:InitTextWnd("wb_kits_lbl", self)
@@ -401,10 +402,38 @@ function WorkbenchPDA:Refresh()
     self:ShowInfo(nil)
 end
 
+-- a row back in the tree, open at its own height or folded away
+local function put_row(view, f, open)
+    f.st:SetWndSize(vector2():set(f.w, open and f.h or 0))
+    f.st:Show(open)
+    view:AddWindow(f.st, true)
+end
+
 function WorkbenchPDA:FillTree()
+    -- Clear frees what the scroll view owns, so the rows are let go of first; every one goes
+    -- back below, whatever the filling does
+    for _, f in ipairs(self.forms) do
+        f.st:SetAutoDelete(false)
+    end
     self.tree_view:Clear()
-    local t = self.t
-    if not t then return end
+    local filled = {}
+    if self.t then
+        local ok, err = pcall(self.FillRows, self, self.t, filled)
+        if not ok then
+            printf("[arsenal] Workbench tree for %s: %s", tostring(self.cur and self.cur.sec), tostring(err))
+        end
+    end
+    -- the item's rows in order, then the rest folded away below them
+    for r, f in ipairs(self.forms) do
+        if filled[r] then put_row(self.tree_view, f, true) end
+    end
+    for r, f in ipairs(self.forms) do
+        if not filled[r] then put_row(self.tree_view, f, false) end
+    end
+end
+
+-- each row the item has, its cells in the toolkit's places; `filled` gets the rows filled
+function WorkbenchPDA:FillRows(t, filled)
     local W = arsenal_workbench
     local later = W.later(t, self.installed, self.plan)
     local tools = {}
@@ -416,6 +445,7 @@ function WorkbenchPDA:FillTree()
     for r = 1, W.ROWS do
         local f = self.forms[r]
         if t[r] and next(t[r]) then
+            filled[r] = true
             for c = 1, W.COLS do
                 local s, cell = f.slots[c], t[r][c]
                 local shown = cell ~= nil
@@ -449,7 +479,6 @@ function WorkbenchPDA:FillTree()
                     end
                 end
             end
-            self.tree_view:AddWindow(f.st, false)
         end
     end
 end
@@ -553,8 +582,12 @@ end
 function WorkbenchPDA:FillAttachments()
     local e = self.cur
     local gun = e and e.kind ~= "suit" and e.kind ~= "helmet" and self.t and not arsenal_data.is_armor(e.sec)
-    local _, plan = self:Lists()
-    local fits = gun and arsenal_workbench.fits(e.sec, plan) or {}
+    -- the plan only for a gun: with nothing shown there is no tree to read it from
+    local fits = {}
+    if gun then
+        local _, plan = self:Lists()
+        fits = arsenal_workbench.fits(e.sec, plan) or {}
+    end
     self.fits = fits
     local att = gun and self:Planned() or {}
     for _, row in ipairs(self.att_rows) do

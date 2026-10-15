@@ -131,12 +131,18 @@ local function customize(sec)
     open("workbench", sec)
 end
 
-function on_game_start()
-    -- on_game_load, the moment MAC installs its own wrapper
-    RegisterScriptCallback("on_game_load", route)
+local function add_customize()
     ui_arsenal.add_action("workbench", {
         label = "st_arsenal_wb_customize",
         show = arsenal_workbench.plannable,
         run = customize,
     })
+end
+
+function on_game_start()
+    -- on_game_load, the moment MAC installs its own wrapper
+    RegisterScriptCallback("on_game_load", route)
+    -- caught: the game starts every script in one pass, and an error would stop the rest
+    local ok, err = pcall(add_customize)
+    if not ok then say("no Customize on the catalog: " .. tostring(err)) end
 end

@@ -37,11 +37,29 @@ WIDGETS = r"""
 local SIZES, STRINGS = ...
 local W = {}
 W.__index = W
+-- Who owns a window, as in the engine: one made with a parent is the parent's (a scroll view's
+-- item, if the parent is one), and goes with it; a scroll view frees what it owns on Clear, a
+-- list box its items on RemoveAll. A freed window is dead: any method on it is an error, as is
+-- freeing it twice or attaching a window twice.
+local FREED = { __index = function(t, k) error("a freed window used: " .. tostring(rawget(t, "path")) .. ":" .. tostring(k), 2) end }
+function free(w)
+    if rawget(w, "freed") then error("a window freed twice: " .. tostring(rawget(w, "path")), 2) end
+    rawset(w, "freed", true)
+    for _, c in ipairs(rawget(w, "children") or {}) do if rawget(c, "autodelete") then free(c) end end
+    for _, c in ipairs(rawget(w, "content") or {}) do if rawget(c, "autodelete") then free(c) end end
+    for _, c in ipairs(rawget(w, "items") or {}) do free(c) end
+    setmetatable(w, FREED)
+end
 function new_widget(path, parent)
     local s = SIZES[path] or { 0, 0, 10, 10 }
     local w = setmetatable({ path = path, x = s[1], y = s[2], w = s[3], h = s[4], children = {}, shown = true,
                              enabled = true }, W)
-    if parent and parent.children then table.insert(parent.children, w) end
+    if parent and parent.scroll then
+        parent:AddWindow(w, true)
+    elseif parent then
+        w.autodelete, w.owner = true, parent
+        if parent.children then table.insert(parent.children, w) end
+    end
     w.parent = parent
     return w
 end
@@ -67,13 +85,34 @@ function W:SetAutoDelete(b) self.autodelete = b end
 function W:GetCheck() return self.checked == true end
 function W:SetCheck(v) self.checked = v == true end
 function W:IsCursorOverWindow() return HOVER == self end
-function W:AddExistingItem(item) self.items = self.items or {}; table.insert(self.items, item) end
-function W:RemoveAll() self.items = {}; self.sel = nil end
+function W:AddExistingItem(item)
+    if item.owner then error("an item attached twice", 2) end
+    item.owner, item.autodelete = self, true
+    self.items = self.items or {}
+    table.insert(self.items, item)
+end
+function W:RemoveAll()
+    for _, it in ipairs(self.items or {}) do free(it) end
+    self.items = {}
+    self.sel = nil
+end
 function W:GetSize() return #(self.items or {}) end
 function W:SetSelectedIndex(i) self.sel = i end
 function W:GetSelectedItem() return self.sel and self.items[self.sel + 1] end
-function W:Clear() self.content = {} end
-function W:AddWindow(w, auto) self.content = self.content or {}; table.insert(self.content, w) end
+function W:Clear()
+    for _, w in ipairs(self.content or {}) do
+        w.owner = nil
+        if w.autodelete then free(w) end
+    end
+    self.content = {}
+end
+function W:AddWindow(w, auto)
+    if w.owner then error("a window attached twice: " .. tostring(w.path), 2) end
+    if auto then w.autodelete = true end
+    w.owner = self
+    self.content = self.content or {}
+    table.insert(self.content, w)
+end
 
 -- ui_arsenal.xml must have every element asked for
 CScriptXmlInit = function()
@@ -83,7 +122,12 @@ CScriptXmlInit = function()
         if self.file == "ui_arsenal.xml" and not SIZES[path] then error("no element '" .. path .. "' in the layout", 2) end
         return new_widget(path, parent)
     end
-    x.InitTextWnd, x.InitStatic, x.InitCheck, x.Init3tButton, x.InitListBox, x.InitScrollView = init, init, init, init, init, init
+    x.InitTextWnd, x.InitStatic, x.InitCheck, x.Init3tButton, x.InitListBox = init, init, init, init, init
+    function x:InitScrollView(path, parent)
+        local w = init(self, path, parent)
+        w.scroll = true
+        return w
+    end
     return x
 end
 function class(name)
@@ -165,6 +209,23 @@ MUTANTS = {
     "want_model_only": ("        elseif want.sec and secs[want.sec] then\n            key = \"id:\" .. secs[want.sec].id\n", ""),
     "no_valid": ("    self.plan = W.valid(self.t, self.installed, plan)", "    self.plan = plan"),
     "all_rows": ("        if t[r] and next(t[r]) then", "        if true then"),
+    # the tree's rows: the scroll view's from the start, through every fill
+    "tree_born_unowned": ('        local form = xml:InitStatic("wb_form", self.tree_view)', '        local form = xml:InitStatic("wb_form", nil)'),
+    "tree_clear_frees": ("    for _, f in ipairs(self.forms) do\n        f.st:SetAutoDelete(false)\n    end\n", ""),
+    "tree_rows_unowned": ("    view:AddWindow(f.st, true)", "    view:AddWindow(f.st, false)"),
+    "tree_folded_dropped": ("        if not filled[r] then put_row(self.tree_view, f, false) end\n", ""),
+    "tree_folded_open": ("    f.st:SetWndSize(vector2():set(f.w, open and f.h or 0))", "    f.st:SetWndSize(vector2():set(f.w, f.h))"),
+    "tree_folded_shown": ("    f.st:Show(open)", "    f.st:Show(true)"),
+    "tree_folded_first": ("        if filled[r] then put_row(self.tree_view, f, true) end\n    end\n    for r, f in ipairs(self.forms) do\n"
+                          "        if not filled[r] then put_row(self.tree_view, f, false) end",
+                          "        if not filled[r] then put_row(self.tree_view, f, false) end\n    end\n    for r, f in ipairs(self.forms) do\n"
+                          "        if filled[r] then put_row(self.tree_view, f, true) end"),
+    "tree_no_item": ("    local filled = {}\n    if self.t then", "    local filled = {}\n    if not self.t then return end\n    if self.t then"),
+    "tree_error_escapes": ("        local ok, err = pcall(self.FillRows, self, self.t, filled)",
+                           "        local ok, err = true, self:FillRows(self.t, filled)"),
+    "empty_page_fails": ("    local fits = {}\n    if gun then\n        local _, plan = self:Lists()\n"
+                         "        fits = arsenal_workbench.fits(e.sec, plan) or {}\n    end",
+                         "    local _, plan = self:Lists()\n    local fits = gun and arsenal_workbench.fits(e.sec, plan) or {}"),
     "solo_unshifted": ("                    local dy = (cell.solo and c % 2 == 1) and SOLO_DY or 0", "                    local dy = 0"),
     "no_marks": ("                    s.mark:Show(MARKS[st] ~= nil)", "                    s.mark:Show(false)"),
     "no_later_mark": ('                    if st == "planned" and later[cell.section] then st = "later" end\n', ""),
@@ -210,6 +271,7 @@ MUTANTS = {
     "wb_compare_dead": ('function WorkbenchPDA:OnComparePage()\n    arsenal_pages.open("compare")',
                         "function WorkbenchPDA:OnComparePage()\n    -- nothing"),
     "no_customize": ("    ui_arsenal.add_action(\"workbench\", {", "    local _ = ({"),
+    "customize_unguarded": ("    local ok, err = pcall(add_customize)", "    local ok, err = true, add_customize()"),
     # arsenal_pages: Fatal Error's PDA
     "fe_absent": ("    if not fe then return true end", "    if not fe then return false end"),
     "fe_npc_pda": ('        if not device or device:section():find("itm_pda_") then return false end',
@@ -235,13 +297,19 @@ MUTANTS = {
     "dxml_no_caption": ('if not (tab and xml:query("caption_static")[1]) then return end', "if not tab then return end"),
     "dxml_dup": ('if #xml:query("tab > button[id=" .. id .. "]") == 0 then', "if true then"),
     "dxml_dialogs_twice": ('if #xml:query("dialog[id=arsenal_rumor]") == 0 then', "if true then"),
+    "dxml_unguarded": ('        guarded("DXML " .. tostring(name), edit, name, xml)', "        edit(name, xml)"),
+    "talks_unguarded": ('        guarded("the talks", add_talks, character_id, list)', "        add_talks(character_id, list)"),
+    "guard_every_time": ("    if not ok and not said[tostring(err)] then", "    if not ok then"),
+    "talks_twice": ('    if not list:has("arsenal_rumor") then list:add("arsenal_rumor") end', '    list:add("arsenal_rumor")'),
+    "talks_gunsmith_anyone": ("        if list:has(d) then", "        if true then"),
 }
 
 PAGES_MUTANTS = {"router_all", "router_unsafe", "router_no_compare", "router_no_varargs", "router_twice", "open_no_item",
-                 "open_flat_ignored", "open_flat_compare", "no_customize",
+                 "open_flat_ignored", "open_flat_compare", "no_customize", "customize_unguarded",
                  "fe_absent", "fe_npc_pda", "fe_charge", "fe_charge_any", "fe_locked", "fe_bios", "fe_bsod", "fe_guard",
                  "fe_storm", "fe_sarcophagus", "fe_jam", "fe_jam_free", "fe_fail_closed", "fe_warn_every"}
-MODXML_MUTANTS = {"dxml_old_names", "dxml_any_file", "dxml_no_caption", "dxml_dup", "dxml_dialogs_twice"}
+MODXML_MUTANTS = {"dxml_old_names", "dxml_any_file", "dxml_no_caption", "dxml_dup", "dxml_dialogs_twice", "dxml_unguarded",
+                  "talks_unguarded", "guard_every_time", "talks_twice", "talks_gunsmith_anyone"}
 
 # Fatal Error as arsenal_pages meets it: the slotted PDA, its charge, encryption and reboot, the
 # PDA's BIOS page, a crash, overclocking, the reboot guard (a local of process_pda_call, as in
@@ -644,6 +712,17 @@ def steps(lua, g, ui, data, page_, pages, modxml, load, check):
     act = g.ui_arsenal.actions.workbench
     check(act is not None and act.label == "st_arsenal_wb_customize" and act.show("wpn_own") is True
           and act.show("wpn_plain") is False, "Customize on the catalog's pages that Workbench can plan for")
+    # the catalog refusing it: caught (the game starts every script in one pass, and an error would
+    # stop the rest), one line
+    lua.execute("REAL_ADD = ui_arsenal.add_action; ui_arsenal.add_action = function() error('no catalog') end")
+    n, err = len(g.logs), None
+    try:
+        pg.on_game_start()
+    except L.LuaError as e:
+        err = str(e).splitlines()[0]
+    lua.execute("ui_arsenal.add_action = REAL_ADD")
+    check(err is None and len(g.logs) == n + 1 and "no catalog" in g.logs[n + 1],
+          "the catalog refusing Customize: caught, one line: %s %s" % (err, list(g.logs.values())[n:]))
     lua.execute("""
 ORIG_CALLS = {}
 pda = { set_active_subdialog = function(section, a, b) ORIG_CALLS[#ORIG_CALLS + 1] = { section, a, b }; return "other page" end }
@@ -753,7 +832,140 @@ pda = { set_active_subdialog = function(section, a, b) ORIG_CALLS[#ORIG_CALLS + 
     read("gameplay\\dialogs.xml", x)
     check(sorted(x.inserted.values()) == ["arsenal_gunsmith", "arsenal_rumor"], "the talks go into the dialogs once: %s"
           % sorted(x.inserted.values()))
+    # an edit that fails is caught (DXML calls every mod's in turn, unguarded: an error would skip
+    # the rest) and logged once
+    lua.execute("function BAD_XML(x) x.query = function() error('broken layout') end; return x end")
+    n, errs = len(g.logs), []
+    for name in ("ui\\pda_16.xml", "ui\\pda.xml"):
+        try:
+            read(name, g.BAD_XML(g.make_xml(True, True)))
+        except L.LuaError as e:
+            errs.append(str(e).splitlines()[0])
+    check(not errs and len(g.logs) == n + 1 and "broken layout" in g.logs[n + 1],
+          "an edit that fails: caught, so DXML goes on to the other mods', and logged once: %s %s"
+          % (errs, list(g.logs.values())[n:]))
 
+    # the talks on each character's list: the rumor on anyone's, the gunsmith's on a technician's or
+    # trader's; each once; a list that fails, caught and logged
+    mx.on_game_start()
+    talks = g.callbacks.on_specific_character_dialog_list
+    lua.execute("""function DLIST(have)
+        local l = { d = {}, n = 0 }
+        for _, x in ipairs(have) do l.d[x] = true end
+        function l:has(x) return self.d[x] == true end
+        function l:add(x) self.d[x] = true; self.n = self.n + 1 end
+        return l
+    end""")
+    plain, smith, trader = (g.DLIST(lua.table_from(h)) for h in ([], ["dm_tech_repair"], ["dm_init_trader"]))
+    try:
+        talks(1, plain)
+        talks(2, smith)
+        talks(2, smith)
+        talks(3, trader)
+        err = None
+    except L.LuaError as e:
+        err = str(e).splitlines()[0]
+    check(err is None and plain.d.arsenal_rumor is True and plain.d.arsenal_gunsmith is None and plain.n == 1
+          and smith.d.arsenal_gunsmith is True and smith.n == 2 and trader.d.arsenal_gunsmith is True,
+          "the talks: the rumor on anyone's list, the gunsmith's on a technician's or trader's, once: %s %s %s"
+          % (err, plain.n, smith.n))
+    n, err = len(g.logs), None
+    try:
+        talks(4, lua.eval("{ has = function() error('no list') end }"))
+    except L.LuaError as e:
+        err = str(e).splitlines()[0]
+    check(err is None and len(g.logs) == n + 1 and "no list" in g.logs[n + 1],
+          "a list that fails: caught and logged: %s %s" % (err, list(g.logs.values())[n:]))
+
+    ownership(lua, g, check)
+
+
+def ownership(lua, g, check):
+    """The tree's rows are its scroll view's from the start and stay its own through every fill,
+    so they go with the page (made without a parent, five rows of 37 windows were never freed, a
+    page a load). The item's rows open in order, the rest folded away below them; a row is never
+    used once freed. Pages made here apart from the one the PDA shows."""
+    rows_of = lua.eval("""function(sec)
+        local t, out = arsenal_workbench.tree(sec), {}
+        for r = 1, arsenal_workbench.ROWS do if t and t[r] and next(t[r]) then out[#out + 1] = r end end
+        return out end""")
+    new_page = lua.eval("function() return WorkbenchPDA() end")
+
+    def layout(p):
+        return [(int(f.children[1].text), f.shown, int(f.h)) for f in p.tree_view.content.values()]
+
+    def want(rows):
+        return [(r, True, 120) for r in rows] + [(r, False, 0) for r in range(1, 6) if r not in rows]
+
+    def left(p):
+        """the rows, and the windows in them, the page took nothing of with it"""
+        out = []
+        for f in p.forms.values():
+            out += [w.path for w in [f.st] + list(f.st.children.values()) if not w.freed]
+        return out
+
+    def pick(p, key):
+        keys = [it.key for it in p.list["items"].values()]
+        p.list.sel = keys.index(key)
+        p.cb.wb_list()
+
+    try:
+        p0 = new_page()
+        g.free(p0)
+        check(not left(p0), "a page gone before it fills takes its tree's rows with it: %s" % left(p0)[:3])
+
+        gun, suit = list(rows_of("wpn_test").values()), list(rows_of("suit_x").values())
+        p1 = new_page()
+        p1.Reset(p1, None)
+        pick(p1, "id:7")
+        a = layout(p1)
+        pick(p1, "id:3")
+        b = layout(p1)
+        pick(p1, "id:7")
+        c = layout(p1)
+        check(suit == [3] and a == want(gun) and c == a, "a gun's rows open in order: %s" % a)
+        check(b == want(suit), "a suit with only its third row: that row open, the others folded away below: %s" % b)
+        pick(p1, "id:3")
+        g.free(p1)
+        check(not left(p1), "refilled and gone with rows folded: every row and window in it freed, once: %s" % left(p1)[:3])
+
+    except L.LuaError as e:
+        check(False, "the rows' owners: %s" % str(e).splitlines()[0])
+        return
+
+    # nothing carried that takes upgrades, no model planned: the page opens empty (it once failed
+    # reading a plan with no tree, and the flat window's switch raised the error)
+    lua.execute("REAL_CARRIED, REAL_MODELS = arsenal_workbench.carried, arsenal_workbench.planned_models\n"
+                "arsenal_workbench.carried = function() return {} end\n"
+                "arsenal_workbench.planned_models = function() return {} end")
+    p2, err = new_page(), None
+    try:
+        p2.Reset(p2, None)
+    except L.LuaError as e:
+        err = str(e).splitlines()[0]
+    lua.execute("arsenal_workbench.carried, arsenal_workbench.planned_models = REAL_CARRIED, REAL_MODELS")
+    lay = layout(p2)
+    atts = [r.btn.shown for r in p2.att_rows.values()]
+    check(err is None and p2.cur is None and p2.title.text == "" and not any(atts) and p2.btn_install.enabled is False,
+          "nothing to show: the page opens empty: %s %s %s" % (err, p2.cur, atts))
+    g.free(p2)
+    check(lay == want([]) and not left(p2), "and every row folded, still the page's: %s %s" % (lay, left(p2)[:3]))
+
+    # a tree that fails to fill: logged, the page opens, its rows still its own
+    lua.execute("REAL_LATER = arsenal_workbench.later; arsenal_workbench.later = function() error('boom') end")
+    n = len(g.logs)
+    err = None
+    p3 = new_page()
+    try:
+        p3.Reset(p3, None)
+    except L.LuaError as e:
+        err = str(e).splitlines()[0]
+    lua.execute("arsenal_workbench.later = REAL_LATER")
+    lay = layout(p3)
+    g.free(p3)
+    check(err is None and len(g.logs) == n + 1 and "boom" in g.logs[n + 1] and lay == want([]) and not left(p3),
+          "a tree that fails to fill: logged, the page still opens, its rows folded and its own: %s %s %s"
+          % (err, list(g.logs.values())[n:], lay))
 
 
 if __name__ == "__main__":

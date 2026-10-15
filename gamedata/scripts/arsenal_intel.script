@@ -26,7 +26,10 @@
     faction) and where (arsenal_where), for its page.
 
     Saved with the game (m_data.arsenal_intel), keyed by model (its first variant's section);
-    a save from another catalog moves its keys to the models that hold them now, on load.
+    a save from another catalog moves its keys to the models that hold them now, on load. A PDA
+    read and a fighter talked to today are marks on those objects instead (se vars), which the
+    game drops when it releases one, so a new object given the same id starts unmarked; a PDA's
+    mark also names its owner (owner_of).
 --]]
 
 local VERSION = 1
@@ -38,8 +41,10 @@ local SPECS = { itm_pda_rare = true }
 local KNOWS_SPECS = { expert = true, master = true, legend = true }
 
 local function fresh()
-    return { v = VERSION, known = {}, studied = {}, facts = {}, new = {}, tally = {}, pdas = {}, talked = {} }
+    return { v = VERSION, known = {}, studied = {}, facts = {}, new = {}, tally = {} }
 end
+-- the marks on objects (se vars, which axr_main clears as the game releases an object)
+local READ, TALKED = "arsenal_read", "arsenal_talked"
 local st = fresh()
 local pending = {}     -- news to send: { e, how }
 local scheduled = false
@@ -395,6 +400,17 @@ local function learn_items(owner, how, fact_of)
     end
 end
 
+-- whether a fighter's logic or spawn ini says dont_keep_items, where death_manager reads it: as
+-- he dies it releases all he had, just before this hears of the death, though the items still
+-- show in his inventory here. Traders, technicians, medics and barmen: their stock, never found
+-- on the body.
+local function keeps_nothing(npc)
+    local ok, ini = pcall(npc.spawn_ini, npc)
+    if ok and ini and ini:section_exist("dont_keep_items") then return true end
+    local s = db.storage and db.storage[npc:id()]
+    return (s and s.ini and s.section_logic and s.ini:line_exist(s.section_logic, "dont_keep_items")) and true or false
+end
+
 -- kills: what the fighter had (his visual's suit and helmet too), and the faction's tally
 local function on_kill(victim, who)
     if not (victim and who and who:id() == AC_ID) then return end
@@ -404,7 +420,7 @@ local function on_kill(victim, who)
     local how = { kind = "kill", faction = f, rank = r, who = victim:character_name(),
         place = arsenal_where.place_of(victim) }
     local fact = function(e) return { [arsenal_data.ARMOR[e.cat] and "worn" or "carried"] = { faction = f, rank = r } } end
-    learn_items(victim, how, fact)
+    if not keeps_nothing(victim) then learn_items(victim, how, fact) end
     local ok, suit = pcall(death_manager.get_outfit_by_npc_visual, victim:get_visual_name())
     for _, s in ipairs(ok and type(suit) == "table" and suit or {}) do
         local e = s ~= "" and model(s)
@@ -425,19 +441,32 @@ local function on_kill(victim, who)
     end
 end
 
+-- Whose PDA it is, as ui_pda_npc_tab registered it: the read mark holds this. A PDA is no script
+-- class, so the game clears its marks only when a script releases it (alife_release); one the
+-- engine releases itself (a trader's restock) keeps them, and a new PDA given its id has another
+-- owner.
+local function owner_of(info)
+    local c = type(info) == "table" and info.contact
+    if type(c) ~= "table" then return "-" end
+    return table.concat({ tostring(c.name), tostring(c.comm), tostring(c.rank), tostring(c.icon) }, "|")
+end
+
 -- a PDA: its owner's data package, once (an encrypted one when it is decrypted)
 local function on_pda(obj)
     local id = obj and obj:id()
     local size = id and PDA_SIZE[obj:section()]
-    if not size or st.pdas[id] then return end
+    if not size then return end
     local info = se_load_var(id, obj:name(), "info")
+    local who = owner_of(info)
+    local mark = se_load_var(id, obj:name(), READ)
+    if mark == who or mark == true then return end     -- true: 1.6.1's test build, before the owner
     local c = type(info) == "table" and info.contact
     if not (c and c.comm and is_faction(c.comm)) then
-        st.pdas[id] = true
+        se_save_var(id, obj:name(), READ, who)
         return
     end
     if info.state == "encrypted" then return end
-    st.pdas[id] = true
+    se_save_var(id, obj:name(), READ, who)
     for _ = 1, size do
         local g, f = word_of(c.comm, c.rank)
         if not g then break end
@@ -529,7 +558,7 @@ end
 -- anyone willing: one thing his faction, an ally or an enemy carries, once a day
 function rumor_ok(a, b)
     local npc = npc_of(a, b)
-    if not willing(npc) or st.talked[npc:id()] == day() then return false end
+    if not willing(npc) or se_load_var(npc:id(), npc:name(), TALKED) == day() then return false end
     local t = rumors[npc:id()]
     if not t then
         local rank = ranks.get_obj_rank_name(npc)
@@ -551,7 +580,7 @@ function rumor_told(a, b)
     local npc = npc_of(a, b)
     local t = rumors[npc:id()]
     rumors[npc:id()] = nil
-    st.talked[npc:id()] = day()
+    se_save_var(npc:id(), npc:name(), TALKED, day())
     if t then
         reveal(t.g.e, { kind = "talk", who = npc:character_name(), place = arsenal_where.place_of(npc) }, gear_fact(t.g, t.f),
             t.specs)
@@ -640,14 +669,28 @@ end
 local function load_state(m_data)
     local d = m_data.arsenal_intel
     st = (type(d) == "table" and d.v == VERSION) and d or fresh()
-    for _, field in ipairs({ "known", "studied", "facts", "new", "tally", "pdas", "talked" }) do
+    for _, field in ipairs({ "known", "studied", "facts", "new", "tally" }) do
         st[field] = st[field] or {}
     end
     pending, rumors, offers = {}, {}, {}
 end
 
+-- A save from before 1.6.1 keeps the read PDAs by id: each mark goes onto the PDA that holds the
+-- id now, if one does, and the lists go. Its talks by id go too: a fighter talked to that day
+-- may talk again.
+local function move_marks()
+    for id in pairs(st.pdas or {}) do
+        local se = type(id) == "number" and id < 65535 and alife_object(id)
+        if se and PDA_SIZE[se:section_name()] then
+            se_save_var(id, se:name(), READ, owner_of(se_load_var(id, se:name(), "info")))
+        end
+    end
+    st.pdas, st.talked = nil, nil
+end
+
 local function actor_on_first_update()
     regroup()
+    move_marks()
     seed(actor_faction())
     scan_pdas()
     hook_ii()
