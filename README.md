@@ -86,6 +86,8 @@ lit padlock in the footer of every page says so, screenshots included.
 
 ![Arsenal's page for the Scientific Exoskeleton: the armor card with each stat fully upgraded, and how it fares against bullets](media/armor_screenshot.png)
 
+![The APS Stechkin's page ending with where the game read it from: the files that wrote its lines, from Boomsticks and Sharpsticks' w_aps_bas.ltx to three DLTX patches, its section, model and icon](media/defined_in_screenshot.png)
+
 In English and Russian.
 
 ## Workbench
