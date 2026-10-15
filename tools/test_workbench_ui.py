@@ -281,7 +281,8 @@ MUTANTS = {
     "fe_locked": ('        if ini_sys:r_bool_ex(device:section(), "encrypted") or (tonumber(fe.REBOOT) or 0) > 0 then return false end\n', ""),
     "fe_bios": ('        if ActorMenu.get_pda_menu():GetActiveSection() == "eptBios" then return false end\n', ""),
     "fe_bsod": ("        if fe_utils.is_bsod(device) then return false end\n", ""),
-    "fe_guard": ('local guard = tonumber(upvalue(fe.process_pda_call, "reboot_protection")) or 0', "local guard = 0"),
+    "fe_guard": ('local guard = tonumber(script_local(fe, "process_pda_call", "reboot_protection")) or 0', "local guard = 0"),
+    "fe_guard_unlocalized": ("    return rawget(mod, name)\n", "    return nil\n"),
     "fe_storm": ("        if not (guard > 0 or overclocked) and (xr_conditions.surge_started() or psi_storm_manager.is_started()) then",
                  "        if false then"),
     "fe_sarcophagus": ("        if SARCOPHAGUS[lvl] and not overclocked then return false end\n", ""),
@@ -307,6 +308,7 @@ MUTANTS = {
 PAGES_MUTANTS = {"router_all", "router_unsafe", "router_no_compare", "router_no_varargs", "router_twice", "open_no_item",
                  "open_flat_ignored", "open_flat_compare", "no_customize", "customize_unguarded",
                  "fe_absent", "fe_npc_pda", "fe_charge", "fe_charge_any", "fe_locked", "fe_bios", "fe_bsod", "fe_guard",
+                 "fe_guard_unlocalized",
                  "fe_storm", "fe_sarcophagus", "fe_jam", "fe_jam_free", "fe_fail_closed", "fe_warn_every"}
 MODXML_MUTANTS = {"dxml_old_names", "dxml_any_file", "dxml_no_caption", "dxml_dup", "dxml_dialogs_twice", "dxml_unguarded",
                   "talks_unguarded", "guard_every_time", "talks_twice", "talks_gunsmith_anyone"}
@@ -794,6 +796,13 @@ pda = { set_active_subdialog = function(section, a, b) ORIG_CALLS[#ORIG_CALLS + 
             bad.append((what, got))
     check(not bad, "with Fatal Error, the flat window only when its PDA would show the page, in %d cases: %s"
           % (len(cases), bad))
+    # an unlocalizer (Modded Exes) makes the reboot guard a field of Fatal Error's script: read there
+    lua.execute("fe_working(); FE_ON.surge = true; FE_CALL = fatal_error_mcm.process_pda_call\n"
+                "fatal_error_mcm.reboot_protection = 30\n"
+                "fatal_error_mcm.process_pda_call = function() return fatal_error_mcm.reboot_protection end")
+    unloc = pg.pda_works()
+    lua.execute("fatal_error_mcm.process_pda_call, fatal_error_mcm.reboot_protection = FE_CALL, nil")
+    check(unloc is True, "an emission just after a reboot, the guard a field an unlocalizer made of it: %s" % unloc)
     lua.execute("fe_working(); fe_utils.is_bsod = function() error('changed') end")
     n = len(g.logs)
     first, second = pg.pda_works(), pg.pda_works()

@@ -83,14 +83,18 @@ local JAM_FREE = { monolith = true, greh = true, zombied = true }
 local SARCOPHAGUS = { l12u_sarcofag = true }
 local warned = false
 
--- a local of another script, through a function of that script that uses it
-local function upvalue(fn, name)
-    if type(fn) ~= "function" then return nil end
-    for i = 1, 255 do
+-- a local of another script, through its function fname that uses it, or the script's own field
+-- of that name: an unlocalizer (Modded Exes' configs\unlocalizers) makes a local one, and the
+-- function then holds no upvalue of it
+local function script_local(mod, fname, name)
+    if type(mod) ~= "table" then return nil end
+    local fn = mod[fname]
+    for i = 1, type(fn) == "function" and 255 or 0 do
         local n, v = debug.getupvalue(fn, i)
-        if n == nil then return nil end
+        if n == nil then break end
         if n == name then return v end
     end
+    return rawget(mod, name)
 end
 
 -- whether the PDA would show its pages now; true without Fatal Error, or when its state cannot
@@ -106,7 +110,7 @@ function pda_works()
         if ActorMenu.get_pda_menu():GetActiveSection() == "eptBios" then return false end
         if fe_utils.is_bsod(device) then return false end
         local overclocked = fe_utils.is_overclocked(device)
-        local guard = tonumber(upvalue(fe.process_pda_call, "reboot_protection")) or 0
+        local guard = tonumber(script_local(fe, "process_pda_call", "reboot_protection")) or 0
         if not (guard > 0 or overclocked) and (xr_conditions.surge_started() or psi_storm_manager.is_started()) then
             return false
         end

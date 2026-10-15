@@ -90,9 +90,12 @@ Tell the player: start the game as usual (with Seasons of the Zone installed, th
 you. Then read `<gamePath>\appdata\logs\xray_<Windows user name>.log` and report:
 
 - lines containing `STACK TRACEBACK` or `FATAL` (search without case);
-- lines starting `[arsenal]` or `Arsenal:`, Arsenal's own error reports. Two kinds are not
+- lines starting `[arsenal]` or `Arsenal:`, Arsenal's own error reports. Three kinds are not
   errors: `[arsenal] PDA (silenced):` lines are its PDA messages, logged instead while the player
-  has them switched off, and `[arsenal] Full Upgrades found` says it found that mod;
+  has them switched off; `[arsenal] Full Upgrades found` says it found that mod; and
+  `[arsenal] this save's records are another Arsenal's` means the save was last played with
+  another version of Arsenal, whose records it keeps untouched for that version while this one
+  starts its own;
 - `$MAC: Added app: arsenal`, which means the PDA tile is in place.
 
 No traceback and no error reports mean it is working. Arsenal works in an existing save;

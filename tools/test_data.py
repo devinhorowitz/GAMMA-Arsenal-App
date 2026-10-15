@@ -576,7 +576,11 @@ local function lini(tbl)
     return o
 end
 ini_sys = ini(S)
-function ini_file(name) return F[name] and lini(F[name]) or ini(R) end
+OPENED = {}
+function ini_file(name)
+    OPENED[name] = (OPENED[name] or 0) + 1
+    return F[name] and lini(F[name]) or ini(R)
+end
 -- the stash script: its ini files, and its level lists as locals of the functions that use them
 local map_tiers = { l01_escape = { 1, 1, 2 }, l02_garbage = { 2, 3 }, l03_agroprom = { 3, 3, 4 },
     l08_yantar = { 3, 4, 4, 4 }, lab = { 4, 4 }, l10_radar = { 4, 5 } }
@@ -1078,7 +1082,9 @@ MUTANTS = {
                   'local key = table.concat(ecos, ",")'),
     "repair_parent": ('local rt = ini_sys:r_string_ex(ini_sys:r_string_ex(sec, "parent_section") or sec, "repair_type")',
                       'local rt = ini_sys:r_string_ex(sec, "repair_type")'),
-    "repair_map": ('local map = upvalue(wpo and wpo.get_suitable_kit, "toolkit_map")', "local map = nil"),
+    "repair_map": ('local map = script_local(wpo, "get_suitable_kit", "toolkit_map")', "local map = nil"),
+    "unlocalized_unread": ("    if v == nil then v = rawget(mod, name) end\n", ""),
+    "census_reopened": ("    if census_ini == nil then", "    if true then"),
     "repair_items": ('local ok, list = pcall(GetItemList, "repair")', "local ok, list = false, nil"),
     "repair_once": ("local it = not seen[k] and item_of(k)", "local it = item_of(k)"),
     "camo_carriers": ("if carriers_of[f] and can_drop and weight and can_drop(d, f) then",
@@ -1299,6 +1305,8 @@ def main():
     check(ex("novice_outfit_b") == ([], [(["Petrenko"], "dolg", 10000, "SEVA")]) and ex("heavy_v") == ([], []),
           "a variant of a suit the exchange takes counts; a dialog nobody offers is left out: %s %s"
           % (ex("novice_outfit_b"), ex("heavy_v")))
+    opened = g.OPENED[r"plugins\arsenal_census.ltx"]
+    check(opened == 1, "the census is opened once, however often it is asked: %s times" % opened)
     # whether a model turns up: what the other sources read, traders (the sell filter, a count
     # and a chance, configs some NPC uses), story gear, bodies' lists (what a body may hold),
     # tasks, the pump station, Homestead, gifts, crafting; what comes of what turns up: Nimble
@@ -1640,6 +1648,29 @@ def main():
         none = "error: %s" % str(err)[:60]
     g.zzzz_arti_jamming_repairs = wpo
     check(none == ["Type C Cleaning Kit"], "only _g's list without Weapon Parts Overhaul: %s" % none)
+    # an unlocalizer (Modded Exes' configs\unlocalizers) makes a script's local one of its fields:
+    # its functions then hold no upvalue of that name, and the field is read instead
+    lua.execute(r"""
+        local function unlocalized(mod, locals)
+            local t = {}
+            for k, v in pairs(mod) do t[k] = v end
+            for k, v in pairs(locals) do t[k] = v end
+            return t
+        end
+        UNLOC = { treasure_manager, zzzz_arti_jamming_repairs }
+        treasure_manager = unlocalized(UNLOC[1], { map_tiers = UNLOC[1].set_random_stash(), blacklisted_maps = { lab = true } })
+        function treasure_manager.set_random_stash() return treasure_manager.map_tiers end
+        function treasure_manager.box_in_valid_map(lvl) return not treasure_manager.blacklisted_maps[lvl] end
+        zzzz_arti_jamming_repairs = unlocalized(UNLOC[2], { toolkit_map = UNLOC[2].get_suitable_kit() })
+        function zzzz_arti_jamming_repairs.get_suitable_kit() return zzzz_arti_jamming_repairs.toolkit_map end
+    """)
+    try:
+        unloc = (odds("wpn_ak74_pso"), rk("wpn_ak74_pso"))
+    except Exception as err:
+        unloc = ("error: %s" % str(err)[:60], None)
+    lua.execute("treasure_manager, zzzz_arti_jamming_repairs = UNLOC[1], UNLOC[2]")
+    check(near(unloc[0], AK) and unloc[1] == ["Type C Cleaning Kit", "Type C Repair Kit"],
+          "a local an unlocalizer made the script's field is read there: %s" % (unloc,))
     # camos: as the camo wheel lists them, each name once, discovered or not, with the factions
     # that carry the gun and can drop it in that camo, likeliest first
     camo = lambda sec: [(c.name, c.icon, c.required, c.locked, list(c.factions.values())) for c in m.camos(sec).values()]

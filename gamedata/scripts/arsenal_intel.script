@@ -421,9 +421,18 @@ local function keeps_nothing(npc)
     return (s and s.ini and s.section_logic and s.ini:line_exist(s.section_logic, "dont_keep_items")) and true or false
 end
 
+-- whether the player made a kill: the killer is he, or the weapon in his hands (Stealth Kill
+-- Detection Fix sends a silent kill that way, so that nobody blames him for it)
+local function by_player(who)
+    if not who then return false end
+    if who:id() == AC_ID then return true end
+    local holder = who.parent and who:parent()
+    return holder ~= nil and holder:id() == AC_ID
+end
+
 -- kills: what the fighter had (his visual's suit and helmet too), and the faction's tally
 local function on_kill(victim, who)
-    if not (victim and who and who:id() == AC_ID) then return end
+    if not (victim and by_player(who)) then return end
     local f = victim:character_community()
     if not is_faction(f) then return end
     local r = ranks.get_obj_rank_name(victim)
@@ -633,11 +642,20 @@ function gunsmith_can_pay(a, b)
     return t ~= nil and db.actor:money() >= t.price
 end
 
+-- Paying him: the base game's dialogs.relocate_money_from_actor, but with give_money on both
+-- sides. Its transfer_money hands the one paid the payer's change in money, a negative sum
+-- (xray-monolith's TransferMoney), so the technician lost the price instead of getting it.
+local function pay(npc, price)
+    db.actor:give_money(-price)
+    npc:give_money(price)
+    news_manager.relocate_money(db.actor, "out", price)
+end
+
 function gunsmith_pay(a, b)
     local npc = npc_of(a, b)
     local t = offers[npc:id()]
     if not t then return end
-    dialogs.relocate_money_from_actor(a, b, t.price)
+    pay(npc, t.price)
     local ways = { gunsmith = true }
     reveal(t.e, { kind = "gunsmith", who = npc:character_name(), place = arsenal_where.place_of(npc) }, { ways = ways },
         true)
@@ -672,13 +690,29 @@ function regroup()
     end
 end
 
+-- A save's record of another VERSION (a later Arsenal's, or a bump nothing here migrates) is
+-- written back as it was, never over; what this build learns meanwhile is kept beside it, under
+-- a key of its own
+local OWN = "arsenal_intel_v" .. VERSION
+local kept
+
 local function save_state(m_data)
-    m_data.arsenal_intel = st
+    if kept then
+        m_data.arsenal_intel, m_data[OWN] = kept, st
+    else
+        m_data.arsenal_intel = st
+    end
 end
 
 local function load_state(m_data)
     local d = m_data.arsenal_intel
-    st = (type(d) == "table" and d.v == VERSION) and d or fresh()
+    kept = nil
+    if type(d) == "table" and d.v ~= VERSION then
+        printf("[arsenal] this save's records are another Arsenal's (data version %s): kept as they are",
+            tostring(d.v))
+        kept, d = d, m_data[OWN]
+    end
+    st = type(d) == "table" and d or fresh()
     for _, field in ipairs({ "known", "studied", "facts", "new", "tally" }) do
         st[field] = st[field] or {}
     end

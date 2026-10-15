@@ -82,7 +82,8 @@ MUTANTS = {
     "seen_def": ('{ id = "count_seen", type = "check", val = 1, def = false }', '{ id = "count_seen", type = "check", val = 1 }'),
     "seen_any": ("return ok and v == true", "return ok"),
     "jail_def": ('{ id = "jailbreak", type = "check", val = 1, def = false }', '{ id = "jailbreak", type = "check", val = 1 }'),
-    "jail_any": ("return (ok and v == true) or false", "return ok"),
+    "jail_any": ('ui_mcm.get("arsenal/jailbreak") end)\n    return (ok and v == true) or false',
+                 'ui_mcm.get("arsenal/jailbreak") end)\n    return ok'),
     "pda_ignored": ("if not arsenal_pages.pda_works() then", "if false then"),
     "pda_silent": ('        actor_menu.set_msg(1, game.translate_string("st_arsenal_pda_down"), 3)\n', ""),
     "during_press": ('    CreateTimeEvent("arsenal_mcm", "open_flat", 0, function()\n'

@@ -53,11 +53,27 @@ db = { actor = {
     id = function() return 0 end,
     character_community = function() return "actor_dolg" end,
     money = function() return MONEY end,
+    give_money = function(self, n) MONEY = math.max(0, MONEY + n) end,
     give_game_news = function(self, title, text) NEWS[#NEWS + 1] = text end,
     iterate_inventory = function(self, fn, obj) for _, it in ipairs(ACTOR_ITEMS) do fn(obj, it) end end,
 } }
 ACTOR_ITEMS = {}
-dialogs = { relocate_money_from_actor = function(a, b, n) MONEY = MONEY - n; PAID[#PAID + 1] = n end }
+-- the money news (news_manager), and the base game's payment (dialogs.script) over the engine's
+-- transfer_money, which hands the one paid the payer's change in money, a negative sum
+-- (xray-monolith's TransferMoney)
+news_manager = { relocate_money = function(actor, kind, n) PAID[#PAID + 1] = n end }
+dialogs = { relocate_money_from_actor = function(a, b, n)
+    local npc = a == db.actor and b or a
+    local before = MONEY
+    db.actor:give_money(-n)
+    npc:give_money(MONEY - before)
+    news_manager.relocate_money(db.actor, "out", n)
+end }
+LOG = {}
+function printf(fmt, ...)
+    local args, i = { ... }, 0
+    LOG[#LOG + 1] = (fmt:gsub("%%s", function() i = i + 1; return tostring(args[i]) end))
+end
 ranks = { get_obj_rank_name = function(o) return o.rank end }
 game_object = { enemy = 3 }
 -- Duty is at war with Freedom and Monolith, allied with the Military, neutral to the rest
@@ -163,7 +179,9 @@ arsenal_mcm = { jailbreak = function() return JAIL end,
 
 -- a person or a box: what he carries, his faction and rank
 function person(id, comm, rank, items, extra)
-    local o = { stalker = true, rank = rank, items = items or {} }
+    local o = { stalker = true, rank = rank, items = items or {}, purse = extra and extra.purse or 0 }
+    function o:money() return self.purse end
+    function o:give_money(n) self.purse = math.max(0, self.purse + n) end
     function o:id() return id end
     function o:character_community() return comm end
     function o:character_name() return extra and extra.name or ("npc " .. id) end
@@ -179,8 +197,10 @@ function person(id, comm, rank, items, extra)
     function o:spawn_ini() return extra and extra.spawn_ini or nil end
     return o
 end
-function item(sec, id)
-    return { section = function() return sec end, id = function() return id or 0 end, name = function() return sec end }
+-- an item: its section, its id, and whose hands it is in (parent), if anyone's
+function item(sec, id, holder)
+    return { section = function() return sec end, id = function() return id or 0 end, name = function() return sec end,
+             parent = function() return holder end }
 end
 -- a spawn ini with the sections given
 function spawn_ini(...)
@@ -199,7 +219,9 @@ MUTANTS = {
     "seed_kit": ("        reveal(e, how, { ways = { kit = true } }, true, true)\n", ""),
     "seed_disguise": ('    if ok and type(f) == "string" and f ~= "" then return (f:gsub("^actor_", "")) end\n', ""),
     "seed_quiet": ("                true, true)\n", "                true, false)\n"),
-    "kill_actor": ("    if not (victim and who and who:id() == AC_ID) then return end", "    if not victim then return end"),
+    "kill_actor": ("    if not (victim and by_player(who)) then return end", "    if not victim then return end"),
+    "silent_kill_missed": ("    return holder ~= nil and holder:id() == AC_ID", "    return false"),
+    "silent_kill_any_holder": ("    return holder ~= nil and holder:id() == AC_ID", "    return holder ~= nil"),
     "kill_suit": ("        if e then reveal(e, how, fact(e)) end", "        -- no suit"),
     "tally_step": ("    if t.kills % TALLY == 0 then", "    if false then"),
     "tally_rank": ("                if i <= top and g.ranks[r] and not low then low = r end", "                if g.ranks[r] and not low then low = r end"),
@@ -235,6 +257,9 @@ MUTANTS = {
     "gunsmith_known": ("if not st.known[e.sec] and arsenal_data.special(e.sec) then list[#list + 1] = e end",
                        "if arsenal_data.special(e.sec) then list[#list + 1] = e end"),
     "gunsmith_money": ("    return t ~= nil and db.actor:money() >= t.price", "    return t ~= nil"),
+    "pay_by_transfer": ("    pay(npc, t.price)", "    dialogs.relocate_money_from_actor(a, b, t.price)"),
+    "pay_npc_unpaid": ("    npc:give_money(price)\n", ""),
+    "pay_no_news": ('    news_manager.relocate_money(db.actor, "out", price)\n', ""),
     "gunsmith_full": ("    local ways = { gunsmith = true }", "    local ways = {}"),
     "talks_shared": ("function reset() st, pending, rumors, offers, scheduled = fresh(), {}, {}, {}, false end",
                      "function reset() st, pending, rumors, scheduled = fresh(), {}, {}, false; offers = rumors end"),
@@ -258,7 +283,12 @@ MUTANTS = {
     "found_known": ("    if st.known[e.sec] ~= nil or (arsenal_collection and arsenal_collection.entry_found(e) ~= nil) then return true end",
                     "    if st.known[e.sec] ~= nil then return true end"),
     "regroup": ("        return e and e.sec or k", "        return k"),
-    "load_version": ("    st = (type(d) == \"table\" and d.v == VERSION) and d or fresh()", "    st = (type(d) == \"table\") and d or fresh()"),
+    "foreign_read": ('    if type(d) == "table" and d.v ~= VERSION then', "    if false then"),
+    "foreign_overwritten": ("        m_data.arsenal_intel, m_data[OWN] = kept, st", "        m_data.arsenal_intel, m_data[OWN] = st, st"),
+    "own_unsaved": ("        m_data.arsenal_intel, m_data[OWN] = kept, st", "        m_data.arsenal_intel = kept"),
+    "own_unread": ("        kept, d = d, m_data[OWN]", "        kept, d = d, nil"),
+    "foreign_unlogged": ('        printf("[arsenal] this save\'s records are another Arsenal\'s (data version %s): kept as they are",\n'
+                         "            tostring(d.v))\n", ""),
     "tag_hook": ('    RegisterScriptCallback("actor_on_update", on_identify)\n', ""),
     "tag_once": ("    if id == ii.last then return end\n", ""),
     "tag_stale": ("    ii.last = ii.get_id()\n", "    ii.last = nil\n"),
@@ -394,6 +424,21 @@ def main():
     check(not any(s in known() for s in ("wpn_free", "wpn_eco", "wpn_box")) and "mono_suit" in known()
           and "wpn_army" in known() and tally is not None and tally.kills == 3,
           "a trader's or medic's kill: not his stock, by his logic or his spawn ini; his suit, and the kill counts: %s %s"
+          % (known(), tally and tally.kills))
+
+    # a silent kill (Stealth Kill Detection Fix): the death comes with the weapon in his hands as
+    # the killer, so that nobody blames him; it is his kill all the same. A weapon in another's
+    # hands, or in nobody's, is not his.
+    m.reset()
+    freedom = lambda i: g.person(i, "freedom", "novice", lua.table_from(["wpn_free"]))
+    run(lambda: cb.npc_on_death_callback(freedom(460), g.item("wpn_knife", 9002, g.person(5, "stalker", "novice"))))
+    run(lambda: cb.npc_on_death_callback(freedom(461), g.item("wpn_knife", 9003)))
+    check(known() == [] and st().tally["freedom"] is None,
+          "a kill with a weapon in another's hands, or in nobody's, is not his: %s" % known())
+    run(lambda: cb.npc_on_death_callback(freedom(462), g.item("wpn_knife", 9001, g.db.actor)))
+    tally = st().tally["freedom"]
+    check(known() == ["wpn_free"] and tally is not None and tally.kills == 1,
+          "a silent kill, his knife the killer: what the fighter had, and the kill counts: %s %s"
           % (known(), tally and tally.kills))
 
     # Immersive Identification: a fighter it identifies, who lives, shows the gun he holds, whether
@@ -595,7 +640,7 @@ def main():
 
     # a technician: word of a special gun not yet known, for money; with specs and how to get it
     m.reset()
-    smith = g.person(600, "stalker", "expert", None, lua.table_from({"name": "Cardan"}))
+    smith = g.person(600, "stalker", "expert", None, lua.table_from({"name": "Cardan", "purse": 5000}))
     ok2 = run(lambda: m.gunsmith_ok(g.db.actor, smith))
     offer = run(lambda: m.gunsmith_offer(g.db.actor, smith))
     g.MONEY = 100
@@ -607,6 +652,9 @@ def main():
           and st().facts["wpn_special"].ways.gunsmith is True,
           "a technician sells word of a special gun (a tenth of its price), studied, with how to get it: %s %s %s"
           % (ok2, offer, known()))
+    check(g.MONEY == 17000 and smith.purse == 8000,
+          "the price leaves the player and reaches the technician (transfer_money would take it from him too): "
+          "player %s, technician %s" % (g.MONEY, smith.purse))
     check(run(lambda: m.gunsmith_ok(g.db.actor, g.person(601, "stalker", "expert"))) is False,
           "nothing more to sell once it is known")
 
@@ -734,6 +782,29 @@ def main():
     st().known["wpn_mono_kobra"] = lua.table_from({})
     m.regroup()
     check(known() == ["wpn_mono"], "a key under another section moves to its model: %s" % known())
+    # that record (a later Arsenal's) is saved back as it was, never over, and logged; what this
+    # one learns meanwhile is kept beside it, and read back on the next load
+    same = lua.eval("function(a, b) return rawequal(a, b) end")
+    later = lua.table_from({"v": 99, "known": lua.table_from({"wpn_free": True})})
+    data = lua.table_from({"arsenal_intel": later})
+    g.LOG = lua.table_from({})
+    cb.load_state(data)
+    start = known()
+    run(lambda: m.reveal("wpn_eco", lua.table_from({"kind": "kill"}), None, True, True))
+    cb.save_state(data)
+    own = data["arsenal_intel_v1"]
+    untouched = same(data.arsenal_intel, later) and later.v == 99 and list(later.known.keys()) == ["wpn_free"]
+    check(start == [] and untouched and own is not None and list(own.known.keys()) == ["wpn_eco"],
+          "a later version's record: saved back untouched, this one's beside it: %s %s %s"
+          % (start, untouched, own and list(own.known.keys())))
+    check(len(g.LOG) == 1 and "another Arsenal's (data version 99)" in g.LOG[1], "and logged: %s" % list(g.LOG.values()))
+    m.reset()
+    cb.load_state(data)
+    back = known()
+    cb.save_state(data)
+    check(back == ["wpn_eco"] and same(data.arsenal_intel, later),
+          "on the next load, this one's read back, the other's still kept: %s" % back)
+    cb.load_state(lua.table_from({}))
 
     # a save from before 1.6.1: its read PDAs by id go onto the PDAs holding those ids now, before
     # the PDAs he carries are read; an id something else holds now, or nothing, is dropped; the

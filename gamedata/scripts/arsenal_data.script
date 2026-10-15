@@ -1338,6 +1338,16 @@ local function upvalue(fn, name)
     end
 end
 
+-- A local of another script, as its function fname sees it (upvalue), or the script's own field
+-- of that name: an unlocalizer (Modded Exes' configs\unlocalizers) makes a local one, and the
+-- function then holds no upvalue of it
+local function script_local(mod, fname, name)
+    if type(mod) ~= "table" then return nil end
+    local v = upvalue(mod[fname], name)
+    if v == nil then v = rawget(mod, name) end
+    return v
+end
+
 -- NPC loadouts (npc_loadouts.ltx and what it includes, as xrs_rnd_npc_loadout gives them out).
 -- A slot is lines of "section:addons:ammo:weight:...", one picked by weight (10 when left out);
 -- a section the game lacks is skipped. A fighter's loadout is his faction-and-rank one, else
@@ -1463,23 +1473,34 @@ local function rank_counts(v)
     return out
 end
 
+-- the census file (tools/census.py), or nil: opened once, as it is asked for again and again
+-- (each exchange a suit's card lists asks who offers it)
+local census_ini
+local function census()
+    if census_ini == nil then
+        local ok, ini = pcall(ini_file, "plugins\\arsenal_census.ltx")
+        census_ini = ok and ini or false
+    end
+    return census_ini or nil
+end
+
 local function build_worn()
     worn = {}
     local death = itms_manager and itms_manager.ini_death
-    local ok, census = pcall(ini_file, "plugins\\arsenal_census.ltx")
-    if not (death and ok and census) then return end
+    local c = census()
+    if not (death and c) then return end
     -- a faction's characters per rank, all its spawn sections together, and those in each item
     -- (every visual that drops it): the share is the chance one of its fighters of that rank
     -- wears it, a story character or a small special squad weighing as little as it spawns
     local total, wearing = {}, {}
-    census:section_for_each(function(sec)
+    c:section_for_each(function(sec)
         local f = ini_sys:r_string_ex(sec, "community")
         if not (f and FACTION_AT[f]) then return end
         total[f] = total[f] or {}
-        for r, n in pairs(rank_counts(census:r_string_ex(sec, "characters"))) do
+        for r, n in pairs(rank_counts(c:r_string_ex(sec, "characters"))) do
             total[f][r] = (total[f][r] or 0) + n
         end
-        for _, l in ipairs(lines(census, sec)) do
+        for _, l in ipairs(lines(c, sec)) do
             local drop = l.k ~= "characters" and death:r_string_ex("outfit_by_visual", l.k)
             local seen = {}
             for _, item in ipairs(drop and fields(drop, ",") or {}) do
@@ -1581,12 +1602,6 @@ EXCHANGE = {
     { dialog = "armor_exchange_insider_isg", faction = "isg",
       tables = { "isg_medium", "isg_sci", "isg_skat", "isg_exolight", "isg_exo", "isg_noso" } },
 }
-
--- the census file (tools/census.py), or nil
-local function census()
-    local ok, ini = pcall(ini_file, "plugins\\arsenal_census.ltx")
-    return ok and ini or nil
-end
 
 -- the names of the characters that offer a dialog, as the census lists them
 local function givers(dialog)
@@ -1863,7 +1878,7 @@ local function build_turns_up()
     -- the guns the pump station's guards carry ({ gun, ammo } in tasks_pump_station_defense's
     -- _GUNS_FOR_GUARDS)
     local ps = tasks_pump_station_defense
-    local guards = upvalue(ps and ps.spawn_and_set, "_GUNS_FOR_GUARDS")
+    local guards = script_local(ps, "spawn_and_set", "_GUNS_FOR_GUARDS")
     for _, g in ipairs(type(guards) == "table" and guards or {}) do
         if type(g) == "table" and type(g[1]) == "string" then mark_up(g[1], "task") end
     end
@@ -1874,7 +1889,7 @@ local function build_turns_up()
     -- Homestead's stash loot when a treasure roll comes up empty (its gamma_yellow_loot: a list
     -- of sections per tier)
     local hs = stalker_camp_builder
-    local yl = upvalue(hs and hs.generate_gamma_stash_loot, "gamma_yellow_loot")
+    local yl = script_local(hs, "generate_gamma_stash_loot", "gamma_yellow_loot")
     for _, tier in pairs(type(yl) == "table" and yl or {}) do
         for _, s in ipairs(type(tier) == "table" and tier or {}) do
             if type(s) == "string" then mark_up(s, "homestead") end
@@ -2123,8 +2138,8 @@ function stash_odds(sec)
     stash_ready()
     if not stashed[e] then return nil end
     local tm = treasure_manager
-    local lists = upvalue(tm and tm.set_random_stash, "map_tiers")
-    local skip = upvalue(tm and tm.box_in_valid_map, "blacklisted_maps")
+    local lists = script_local(tm, "set_random_stash", "map_tiers")
+    local skip = script_local(tm, "box_in_valid_map", "blacklisted_maps")
     local ok, rag = pcall(function() return game_achievements.has_achievement("rag_and_bone") end)
     rag = (ok and rag) and true or false
     local mine = stash_at[e] or {}
@@ -2385,14 +2400,13 @@ function camos(sec)
     local out = {}
     local e = entry_for(sec)
     local cs = z_3dss_gamma_camo_system
-    local get = cs and cs.get_camo_options
-    local files = upvalue(get, "config_files")
-    local belongs = upvalue(get, "target_belongs_to_weapon")
-    local label_for = upvalue(get, "label_for")
-    local unlocked = upvalue(get, "camo_is_unlocked")
+    local files = script_local(cs, "get_camo_options", "config_files")
+    local belongs = script_local(cs, "get_camo_options", "target_belongs_to_weapon")
+    local label_for = script_local(cs, "get_camo_options", "label_for")
+    local unlocked = script_local(cs, "get_camo_options", "camo_is_unlocked")
     if not (e and type(files) == "table" and belongs and label_for and unlocked) then return out end
-    local can_drop = upvalue(cs.assign_drop_camo, "camo_can_drop_for")
-    local weight = upvalue(cs.assign_drop_camo, "camo_rarity_weight")
+    local can_drop = script_local(cs, "assign_drop_camo", "camo_can_drop_for")
+    local weight = script_local(cs, "assign_drop_camo", "camo_rarity_weight")
     local carriers_of = {}
     for _, c in ipairs(carriers(sec)) do carriers_of[c.faction] = true end
     local by_name = {}
@@ -2451,7 +2465,7 @@ function repair_kits(sec)
         end
     end
     local wpo = zzzz_arti_jamming_repairs
-    local map = upvalue(wpo and wpo.get_suitable_kit, "toolkit_map")
+    local map = script_local(wpo, "get_suitable_kit", "toolkit_map")
     for _, k in ipairs(type(map) == "table" and type(map[rt]) == "table" and map[rt] or {}) do
         add(k)
     end
