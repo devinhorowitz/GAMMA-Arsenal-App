@@ -14,7 +14,7 @@
 
 -- The release and its author, on the line at the foot of every page, so a screenshot says which
 -- Arsenal it shows. build.py refuses to build while VERSION is not its own.
-VERSION = "1.7.0"
+VERSION = "1.7.1"
 AUTHOR = "Windwalker"
 
 function on_mcm_load()
