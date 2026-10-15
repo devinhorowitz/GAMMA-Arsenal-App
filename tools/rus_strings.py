@@ -286,6 +286,16 @@ STRINGS = [
     ("st_arsenal_cmp_rounds", "Патроны"),
     ("st_arsenal_cmp_stops", "Держит патронов"),
     ("st_arsenal_cmp_stops_of", "%s из %s"),
+    ('st_arsenal_mark_read', 'Прочитать всё'),
+    ('st_arsenal_defined', 'Где задано'),
+    ('st_arsenal_def_section', 'Секция: %s'),
+    ('st_arsenal_def_file', '%s — строк: %s'),
+    ('st_arsenal_def_file_one', '%s — строк: 1'),
+    ('st_arsenal_def_model', 'Модель: %s'),
+    ('st_arsenal_def_icon', 'Иконка: %s'),
+    ('st_arsenal_def_no_dltx', 'Какие файлы задали строки, видно только с Modded Exes (их DLTX).'),
+    ('ui_mcm_arsenal_sources', 'Показывать, где задан предмет'),
+    ('ui_mcm_arsenal_sources_desc', 'В конце страницы каждой модели — откуда игра её прочитала: файлы конфигов, задавшие её строки, по убыванию (файл mod_ — это правка DLTX), её секция, модель и иконка. Для модостроителей и чтобы узнать, из какого мода оружие: найдите файл во вкладке «Данные» MO2.'),
 ]
 
 

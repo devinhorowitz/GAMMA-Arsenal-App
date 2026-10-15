@@ -67,6 +67,12 @@
 	<found_only x="272" y="141" width="30" height="30" stretch="1">
 		<texture>ui_inGame2_checkbox</texture>
 	</found_only>
+	<!-- beside "Found only", over the model list: every new model read at once, shown while
+	     anything is new -->
+	<mark_read x="306" y="143" width="114" height="26" stretch="1" check_mode="0">
+		<texture>ui_button_ordinary</texture>
+		<text font="letterica16" align="c" vert_align="c">st_arsenal_mark_read</text>
+	</mark_read>
 	<wpn_list x="170" y="174" width="250" height="504" item_height="22" can_select="1" always_show_scroll="0">
 		<font font="letterica16" r="200" g="200" b="200"/>
 	</wpn_list>

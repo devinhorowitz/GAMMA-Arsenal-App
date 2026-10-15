@@ -38,7 +38,8 @@ and what its new-game kit offers. The rest you learn in the Zone:
 A gun or suit shows its stats and what fits it once you have studied it: found one, or had
 its specs from someone who knows. A round is known once you know a gun that fires it. New entries come with a PDA message and glow in the list
 until you click them, like unread mail, and so does anything you find for the first time.
-Arsenal's tile in MAC's launcher shows how many are waiting.
+Arsenal's tile in MAC's launcher shows how many are waiting, and **Mark all read**, beside
+*Found only*, reads them all at once.
 
 Each entry remembers how you came by it, and where: *Found 14.05.2012: looted from a stash in
 Cordon, near the rookie village*, or *taken from the body of Duty fighter Ivan Petrenko*, *bought
@@ -78,6 +79,10 @@ lit padlock in the footer of every page says so, screenshots included.
 - **Parts,** and the **repair kits** that fit it.
 - **R.I.S.K. enhancements,** when Neffi's Randomized Item Stat Kits is installed: what each kind
   of enhancement does to this gun's stats, weakest to strongest, and the worst bad roll.
+- **Defined in,** with **MCM > Arsenal > Show where items are defined**: the config files that
+  wrote the item's lines, most first (a `mod_` file is a DLTX patch), its section, model and
+  icon. For modders, and for finding which mod a gun comes from: look the file up in MO2's
+  Data tab.
 
 ![Arsenal's page for the Scientific Exoskeleton: the armor card with each stat fully upgraded, and how it fares against bullets](media/armor_screenshot.png)
 
@@ -221,6 +226,13 @@ which story characters carry what, and which trade configs NPCs use come from fi
 cannot read while the game runs; `census.py` reads them from the install (through
 `gamecfg.py`, Mod Organizer 2's file system and the DLTX loader) and writes
 `gamedata/configs/plugins/arsenal_census.ltx`. Run it after GAMMA changes its character files.
+
+## For other mods
+
+`arsenal_api.script` is a stable API for mods that use Arsenal: read the catalog, teach the
+player of a gun, put a button on Arsenal's pages, open Arsenal at a model, and find where the
+game read an item from. [API.md](https://github.com/devinhorowitz/GAMMA-Arsenal-App/blob/main/API.md)
+describes it.
 
 ## License
 

@@ -1,0 +1,44 @@
+--[[
+    Where the game read an item from: the config files that wrote its lines, its model and its
+    icon. For modders, and for finding which mod a gun comes from; MCM's "Show where items are
+    defined" ends each model's page with it (ui_arsenal).
+
+    Modded Exes' DLTX keeps the file each line of a section came from (ini_file:dltx_get_section,
+    the file's name without its folder). A gun's own config names it; a DLTX patch (a mod_*.ltx)
+    shows as a file of its own; a line a section inherits keeps its parent's file. Without those
+    exports only the model and the icon are known. MO2's mod names cannot be seen from inside the
+    game: the files are the link back to them, in MO2's Data tab.
+--]]
+
+-- `sec` as the game has it, or nil for a section it does not have:
+--     { section, model, icon,
+--       files = { { name, lines, dltx }, ... } }   most lines first; nil without the exports
+-- `dltx` marks a mod_*.ltx, DLTX's patch files (and the sections some mods define in them).
+function of(sec)
+    if not (sec and ini_sys:section_exist(sec)) then return nil end
+    local out = { section = sec }
+    local ok, t = pcall(function() return ini_sys:dltx_get_section(sec) end)
+    if ok and type(t) == "table" then
+        local count, names = {}, {}
+        for _, line in pairs(t) do
+            local f = type(line) == "table" and line.filename
+            if type(f) == "string" and f ~= "" then
+                if not count[f] then names[#names + 1] = f end
+                count[f] = (count[f] or 0) + 1
+            end
+        end
+        table.sort(names, function(a, b)
+            if count[a] ~= count[b] then return count[a] > count[b] end
+            return a < b
+        end)
+        out.files = {}
+        for i, f in ipairs(names) do
+            out.files[i] = { name = f, lines = count[f], dltx = f:sub(1, 4) == "mod_" }
+        end
+    end
+    out.model = ini_sys:r_string_ex(sec, "visual")
+    -- the sheet its inventory icon is cut from, HD icon overrides applied, as the page draws it
+    local okI, tex = pcall(arsenal_data.icon, sec)
+    out.icon = okI and tex or ini_sys:r_string_ex(sec, "icons_texture")
+    return out
+end

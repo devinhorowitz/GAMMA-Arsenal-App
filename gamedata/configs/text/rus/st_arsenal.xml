@@ -825,4 +825,34 @@
 	<string id="st_arsenal_cmp_stops_of">
 		<text>%s из %s</text>
 	</string>
+	<string id="st_arsenal_mark_read">
+		<text>Прочитать всё</text>
+	</string>
+	<string id="st_arsenal_defined">
+		<text>Где задано</text>
+	</string>
+	<string id="st_arsenal_def_section">
+		<text>Секция: %s</text>
+	</string>
+	<string id="st_arsenal_def_file">
+		<text>%s — строк: %s</text>
+	</string>
+	<string id="st_arsenal_def_file_one">
+		<text>%s — строк: 1</text>
+	</string>
+	<string id="st_arsenal_def_model">
+		<text>Модель: %s</text>
+	</string>
+	<string id="st_arsenal_def_icon">
+		<text>Иконка: %s</text>
+	</string>
+	<string id="st_arsenal_def_no_dltx">
+		<text>Какие файлы задали строки, видно только с Modded Exes (их DLTX).</text>
+	</string>
+	<string id="ui_mcm_arsenal_sources">
+		<text>Показывать, где задан предмет</text>
+	</string>
+	<string id="ui_mcm_arsenal_sources_desc">
+		<text>В конце страницы каждой модели — откуда игра её прочитала: файлы конфигов, задавшие её строки, по убыванию (файл mod_ — это правка DLTX), её секция, модель и иконка. Для модостроителей и чтобы узнать, из какого мода оружие: найдите файл во вкладке «Данные» MO2.</text>
+	</string>
 </string_table>

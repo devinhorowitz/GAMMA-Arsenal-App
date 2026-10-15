@@ -91,6 +91,11 @@ function ArsenalPDA:__init(flat) super()
     self.found_only = xml:InitCheck("found_only", self)
     self:Register(self.found_only, "found_only")
     self:AddCallback("found_only", ui_events.BUTTON_CLICKED, self.OnFoundOnly, self)
+    -- beside "Found only": every new model read at once, shown while anything is new
+    self.mark_read = xml:Init3tButton("mark_read", self)
+    self.mark_read:Show(false)
+    self:Register(self.mark_read, "mark_read")
+    self:AddCallback("mark_read", ui_events.BUTTON_CLICKED, self.OnMarkRead, self)
     self.btn_back = xml:Init3tButton("btn_back", self)
     self:Register(self.btn_back, "btn_back")
     self:AddCallback("btn_back", ui_events.BUTTON_CLICKED, self.OnBack, self)
@@ -202,8 +207,20 @@ local function fresh_in(key)
     return false
 end
 
+-- the model the catalog shows at its next open (show_next, arsenal_api.open), or nil
+local next_sec
+
 -- every time the page is opened: what is found and known may have changed
 function ArsenalPDA:Reset()
+    if next_sec then
+        local e = arsenal_data.entry_for(next_sec) or arsenal_data.get(next_sec)
+        next_sec = nil
+        if e and listed(e) then
+            last_key[by_faction] = self.cat
+            by_faction = false
+            self.cat, self.sec = e.cat, e.sec
+        end
+    end
     self:PaintFooter()
     self:SetCounts()
     self:FillCategories()
@@ -247,9 +264,21 @@ function ArsenalPDA:SetCounts()
         self.found_count:SetText(new > 0
             and string.format(game.translate_string("st_arsenal_known_new_count"), known, found, total, new)
             or string.format(game.translate_string("st_arsenal_known_count"), known, found, total))
+        self.mark_read:Show(new > 0)
     else
         self.found_count:SetText(string.format(game.translate_string("st_arsenal_found_count"), found, total))
+        self.mark_read:Show(false)
     end
+end
+
+-- Mark all read: every new model read, as if each were clicked; the glows go, the count line
+-- drops its "new", and MAC's badge is gone at the launcher's next open
+function ArsenalPDA:OnMarkRead()
+    if not arsenal_intel then return end
+    arsenal_intel.mark_all_read()
+    self:SetCounts()
+    self:FillCategories()
+    self:FillWeapons()
 end
 
 -- new rows glow in the headings' amber, slowly brightening and fading
@@ -1459,6 +1488,29 @@ function ArsenalPDA:ShowEntry(sec)
         text("entry_line", descr)
     end
 
+    -- where the game read it from (arsenal_sources), with MCM's "Show where items are defined":
+    -- the files that wrote its lines, most first, its section, model and icon. Paths are shown
+    -- with forward slashes: in a page's text a backslash before an n starts a new line.
+    local src = arsenal_mcm.sources() and safe(arsenal_sources.of, shown.sec)
+    if src then
+        local T = game.translate_string
+        local function slashes(p) return (tostring(p):gsub("\\", "/")) end
+        y = y + GAP
+        rule()
+        text("entry_heading", T("st_arsenal_defined"))
+        text("entry_line", string.format(T("st_arsenal_def_section"), src.section))
+        if src.files then
+            for _, f in ipairs(src.files) do
+                text("entry_line", string.format(T(f.lines == 1 and "st_arsenal_def_file_one" or "st_arsenal_def_file"),
+                    f.name, f.lines))
+            end
+        else
+            text("entry_line", T("st_arsenal_def_no_dltx"), "dim")
+        end
+        if src.model then text("entry_line", string.format(T("st_arsenal_def_model"), slashes(src.model))) end
+        if src.icon then text("entry_line", string.format(T("st_arsenal_def_icon"), slashes(src.icon))) end
+    end
+
     entry:SetWndSize(vector2():set(entry:GetWidth(), y + GAP))
     self.detail:AddWindow(entry, true)
     self.detail:ScrollToBegin()
@@ -1493,6 +1545,12 @@ end
 -- the flat window, if open
 function flat_window()
     return FLAT and FLAT:IsShown() and FLAT or nil
+end
+
+-- the catalog's next open shows this model, in its category (a section of it will do); one the
+-- player does not know is not shown
+function show_next(sec)
+    next_sec = sec
 end
 
 -- the page in a window of its own (arsenal_mcm's key), when the player is up and about;

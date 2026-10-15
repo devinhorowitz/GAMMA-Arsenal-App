@@ -128,11 +128,23 @@ actor_alive = true
 NEWS_ON = true
 -- MCM's jailbreak, off until a case turns it on
 JAILBREAK = false
+-- MCM's "Show where items are defined", off until a case turns it on
+SOURCES = false
 arsenal_mcm = { flat_key = function() return DIK_keys.DIK_F7 end,
     credit = function() return "Arsenal v1.2.1 by Windwalker" end,
     news = function() return NEWS_ON end,
     set_news = function(on) NEWS_ON = on end,
-    jailbreak = function() return JAILBREAK end }
+    jailbreak = function() return JAILBREAK end,
+    sources = function() return SOURCES end }
+-- the system ini as arsenal_sources reads it: Modded Exes' DLTX lines, each with the file it came from
+DLTX_SECTIONS = { wpn_pm = {} }
+for i = 1, 40 do DLTX_SECTIONS.wpn_pm["line" .. i] = { name = "line" .. i, value = "1", filename = "w_pm.ltx" } end
+DLTX_SECTIONS.wpn_pm.cost = { name = "cost", value = "300", filename = "mod_system_x_pm.ltx" }
+ini_sys = {
+    section_exist = function(self, s) return type(s) == "string" and s ~= "" end,
+    r_string_ex = function(self, s, k) if k == "visual" then return "dynamics\\weapons\\" .. s .. "\\" .. s end end,
+    dltx_get_section = function(self, s) return DLTX_SECTIONS[s] or {} end,
+}
 
 function vector2() return { set = function(self, x, y) self.x, self.y = x, y; return self end } end
 function Frect() return { set = function(self, a, b, c, d) self.r = { a, b, c, d }; return self end } end
@@ -332,6 +344,7 @@ function arsenal_data.rank_at(v) return v < 3999 and "novice" or "trainee" end
 -- what turns up: the Ghost never does, nor the PSO-1; the SEVA also turns up on Strelok (and a
 -- story character whose name has no text) and from a workbench
 function arsenal_data.obtainable(sec) return sec ~= "wpn_ghost" end
+function arsenal_data.entry_for(sec) return arsenal_data.get(sec) end
 function arsenal_data.addon_turns_up(sec) return sec ~= "ps01" end
 function arsenal_data.turns_up_model(sec)
     if sec == "sci_suit" then return { story = { "st_strelok_name", "GENERATE_NAME_x" }, craft = true } end
@@ -442,7 +455,7 @@ arsenal_collection = {
 MUTANTS = {
     "find_words": ("    return date_of(at), arsenal_collection.describe(at)", "    return date_of(at), at.lvl"),
     "learned_where": ("arsenal_intel.describe(learned.how, learned.at)", "arsenal_intel.describe(learned.how)"),
-    "silence_unpainted": ("function ArsenalPDA:Reset()\n    self:PaintFooter()\n", "function ArsenalPDA:Reset()\n"),
+    "silence_unpainted": ("    self:PaintFooter()\n    self:SetCounts()\n", "    self:SetCounts()\n"),
     "silence_inverted": ("arsenal_mcm.set_news(not self.silence:GetCheck())", "arsenal_mcm.set_news(self.silence:GetCheck())"),
     "no_credit": ("    self.credit:SetText(arsenal_mcm.credit())\n", ""),
     "jailbreak_unlit": ("    self.jailbreak:Show(jb)\n", "    self.jailbreak:Show(false)\n"),
@@ -452,7 +465,8 @@ MUTANTS = {
     "switch_dead": ('    arsenal_pages.open("workbench")', "    -- nothing"),
     "toggle_ignored": ("    by_faction = self.by_faction_check:GetCheck() == true\n", ""),
     "toggle_no_memory": ("    self.cat = last_key[by_faction]\n", ""),
-    "toggle_no_save": ("    last_key[by_faction] = self.cat\n", ""),
+    "toggle_no_save": ("    last_key[by_faction] = self.cat\n    by_faction = self.by_faction_check:GetCheck() == true\n",
+                       "    by_faction = self.by_faction_check:GetCheck() == true\n"),
     "toggle_both": ("    if by_faction then\n        for _, f in ipairs(arsenal_data.FACTIONS) do",
                     "    if false then\n        for _, f in ipairs(arsenal_data.FACTIONS) do"),
     "toggle_check_sync": ("    self.by_faction_check:SetCheck(by_faction)\n", ""),
@@ -630,6 +644,18 @@ MUTANTS = {
     "where_row_height": ("y = y + math.max(f:GetHeight(), r:GetHeight()) + 2", "y = y + f:GetHeight() + 2"),
     "where_made": ('line(string.format(game.translate_string("st_arsenal_made_from"), mf.from, mf.kit))',
                    "-- not shown"),
+    "mark_read_never_shown": ("        self.mark_read:Show(new > 0)\n", ""),
+    "mark_read_noop": ("    arsenal_intel.mark_all_read()\n", ""),
+    "mark_read_rows_stale": ("    arsenal_intel.mark_all_read()\n    self:SetCounts()\n    self:FillCategories()\n    self:FillWeapons()\n",
+                             "    arsenal_intel.mark_all_read()\n    self:SetCounts()\n"),
+    "mark_read_unheard": ('    self:AddCallback("mark_read", ui_events.BUTTON_CLICKED, self.OnMarkRead, self)\n', ""),
+    "sources_always": ("    local src = arsenal_mcm.sources() and safe(arsenal_sources.of, shown.sec)",
+                       "    local src = safe(arsenal_sources.of, shown.sec)"),
+    "sources_backslashes": (r'local function slashes(p) return (tostring(p):gsub("\\", "/")) end',
+                            "local function slashes(p) return tostring(p) end"),
+    "sources_no_files": ("            for _, f in ipairs(src.files) do\n", "            for _, f in ipairs({}) do\n"),
+    "show_next_ignored": ("            self.cat, self.sec = e.cat, e.sec\n", ""),
+    "show_next_sticky": ("        next_sec = nil\n        if e and listed(e) then", "        if e and listed(e) then"),
 }
 
 
@@ -670,6 +696,10 @@ def main():
 
     lua = L.LuaRuntime(unpack_returned_tuples=True)
     lua.execute(STUBS, lua.table_from({k: lua.table_from(v) for k, v in sz.items()}), lua.table_from(STRINGS))
+    # the real arsenal_sources, over the ini_sys stand-in
+    lua.eval("function(src) local env = setmetatable({}, {__index = _G}); local f = assert(loadstring(src)); "
+             "setfenv(f, env); f(); arsenal_sources = env end")(
+        io.open(os.path.join(GD, "scripts", "arsenal_sources.script"), encoding="latin-1").read())
     cmp_src = io.open(os.path.join(GD, "scripts", "arsenal_compare.script"), encoding="latin-1").read()
     lua.eval("function(src) local env = setmetatable({}, {__index = _G}); local f = assert(loadstring(src)); "
              "setfenv(f, env); f(); arsenal_compare = env end")(cmp_src)
@@ -1151,6 +1181,9 @@ arsenal_intel = {
     check(ui.sec == "ammo_545" and after_in(t, "Fired by:", 1) == ["AK-74 Tactical Modernized Carbine of the Northern "
                                                                    "Expedition Special Forces Unit"],
           "immersive: only the known guns that fire it: %s" % after_in(t, "Fired by:", 1))
+
+    check(ui.mark_read.shown is False, "nothing new: no Mark all read")
+    intel = g.arsenal_intel
     lua.execute("arsenal_intel = nil")
     ui = m.get_ui()
 
@@ -1361,6 +1394,69 @@ arsenal_intel = {
     row = [sz[k] for k in foot]
     over = [(foot[i], foot[i + 1]) for i in range(len(row) - 1) if row[i][0] + row[i][2] > row[i + 1][0]]
     check(not over, "the footer's parts side by side, none over the next: %s" % over)
+    # Mark all read over the model list, beside "Found only", level with it, clear of the list
+    mr = sz["mark_read"]
+    check(sz["found_only"][0] + sz["found_only"][2] <= mr[0] and mr[0] + mr[2] <= sz["rule_wpn"][0]
+          and mr[1] + mr[3] / 2 == sz["found_only_lbl"][1] + sz["found_only_lbl"][3] / 2
+          and mr[1] + mr[3] <= sz["wpn_list"][1],
+          "Mark all read beside Found only, over the model list, level with the toggles: %s" % mr)
+
+    # without discovery there is nothing to mark read
+    check(ui.mark_read.shown is False, "with discovery off, no Mark all read")
+
+    # MCM's "Show where items are defined": the page ends with the files that wrote its lines, most
+    # first, its section, model and icon, paths with forward slashes; off, none of it
+    def pm_page():
+        u = m.get_ui()
+        u.cat_list.sel = 0
+        u.cb.cat_list()
+        names = [r.name.text for r in u.wpn_list["items"].values()]
+        u.wpn_list.sel = names.index("PM") if "PM" in names else 0
+        u.cb.wpn_list()
+        return u, texts_of(shown(u))
+    _, t = pm_page()
+    check("Defined in" not in t, "the option off: no Defined in")
+    g.SOURCES = True
+    ui, t = pm_page()
+    want = ["Section: wpn_pm", "w_pm.ltx: 40 lines", "mod_system_x_pm.ltx: 1 line",
+            "Model: dynamics/weapons/wpn_pm/wpn_pm", "Icon: ui/ui_icon_equipment"]
+    check(ui.sec == "wpn_pm" and after_in(t, "Defined in", 5) == want,
+          "on: where the game read it from: %s" % after_in(t, "Defined in", 5))
+    lua.execute("ini_sys.dltx_get_section = nil")
+    _, t = pm_page()
+    check(after_in(t, "Defined in", 2) == ["Section: wpn_pm", "Which files wrote its lines takes Modded Exes (their DLTX)."],
+          "without Modded Exes' DLTX: says so, and still the section: %s" % after_in(t, "Defined in", 2))
+    g.SOURCES = False
+
+    # show_next (arsenal_api.open): the next open shows that model, in its category, once
+    m.show_next("wpn_ak74")
+    ui = m.get_ui()
+    check(ui.sec == "wpn_ak74" and ui.cat == "rifles", "show_next: the next open shows that model: %s %s" % (ui.cat, ui.sec))
+    ui.cat_list.sel = 0
+    ui.cb.cat_list()
+    ui = m.get_ui()
+    check(ui.cat == "pistols", "and only once: the open after it keeps the page as left: %s" % ui.cat)
+
+    # Mark all read: shown while anything is new; a click reads it all, glows and count with it
+    g.arsenal_intel = intel
+    lua.execute("NEW.wpn_pm = true; NEW.wpn_fort = true; arsenal_intel.mark_all_read = function() "
+                "for k in pairs(NEW) do NEW[k] = nil end end")
+    ui = m.get_ui()
+    ui.cat_list.sel = 0
+    ui.cb.cat_list()
+    glowing = lambda: [r.key for r in list(ui.cat_list["items"].values()) + list(ui.wpn_list["items"].values())
+                       if r.glow is not None]
+    check(ui.mark_read.shown is True and glowing() and "new" in ui.found_count.text,
+          "two new guns: Mark all read shows, rows glow: %s %s" % (glowing(), ui.found_count.text))
+    mark = ui.cb.mark_read if ui.cb else None
+    check(mark is not None, "a click on Mark all read is heard")
+    if mark is not None:
+        mark()
+    check(lua.eval("next(NEW)") is None and not glowing() and ui.mark_read.shown is False
+          and "new" not in ui.found_count.text,
+          "after it: nothing new, nothing glows, the count line plain, the button gone: %s %s %s"
+          % (glowing(), ui.mark_read.shown, ui.found_count.text))
+    check(ui.sec is not None and len(texts_of(shown(ui))) > 0, "and the page shown stays shown: %s" % ui.sec)
     print("\n%d failed" % len(fails))
     return 1 if fails else 0
 

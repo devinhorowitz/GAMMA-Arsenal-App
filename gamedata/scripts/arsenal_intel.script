@@ -221,6 +221,13 @@ function viewed(e)
     st.new[e.sec] = nil
 end
 
+-- every new model read at once (Mark all read)
+function mark_all_read()
+    for k in pairs(st.new) do
+        st.new[k] = nil
+    end
+end
+
 -- how many listed models are new; none with the jailbreak
 function count_new()
     local n, seen = 0, {}
@@ -269,6 +276,9 @@ function describe(how, at)
         s = game.translate_string("st_arsenal_by_stash")
     elseif k == "start" then
         return game.translate_string("st_arsenal_by_start")
+    elseif k == "api" then
+        -- another mod's source, in its own words (arsenal_api.reveal)
+        return how.who or game.translate_string("st_arsenal_by_someone")
     else
         return game.translate_string("st_arsenal_by_found")
     end

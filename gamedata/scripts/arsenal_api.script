@@ -1,0 +1,156 @@
+--[[
+    Arsenal's API for other mods. Everything else in Arsenal is internal and changes between
+    releases; THIS file is the contract, kept stable, and API.md in Arsenal's repository
+    (github.com/devinhorowitz/GAMMA-Arsenal-App) describes it. X-Ray gives
+    each script its own table under the file's name, so call it as arsenal_api.model("wpn_ak74"),
+    and check that Arsenal is there first: `if arsenal_api then ... end`.
+
+    Contract:
+      * Nothing here throws. A missing module, a section Arsenal does not list or a call before
+        the game is up returns nil, false or an empty table.
+      * What a function returns is a copy: changing it changes nothing in Arsenal.
+      * VERSION only goes up, and only when a function changes meaning or goes away. New
+        functions and new fields come without a bump, so check VERSION >= what you need.
+--]]
+
+VERSION = 1
+
+local function try(fn, ...)
+    local ok, a = pcall(fn, ...)
+    if ok then return a end
+    printf("[arsenal_api] %s", tostring(a))
+    return nil
+end
+
+local function copy_list(t)
+    local out = {}
+    for i, v in ipairs(t or {}) do out[i] = v end
+    return out
+end
+
+-- a model as the API hands it out (see model())
+local function info(e)
+    local intel = arsenal_intel
+    local variants = {}
+    for i, v in ipairs(e.variants or {}) do
+        variants[i] = { sec = v.sec, name = v.name, members = copy_list(v.members) }
+    end
+    return {
+        sec = e.sec,
+        name = e.name,
+        category = e.cat,
+        variants = variants,
+        obtainable = arsenal_data.obtainable(e.sec) == true,
+        found = arsenal_collection ~= nil and arsenal_collection.entry_found(e) ~= nil,
+        known = intel == nil or intel.known(e) == true,
+        studied = intel == nil or intel.studied(e) == true,
+        new = intel ~= nil and intel.is_new(e) == true,
+    }
+end
+
+-- The catalog's categories in Arsenal's order: { "pistols", "smgs", ..., "helmets" }
+function categories()
+    return try(function() return copy_list(arsenal_data.CATEGORIES) end) or {}
+end
+
+-- The model a section belongs to, or nil for one Arsenal does not list. Any section of a model
+-- will do, a scoped or silenced one too:
+--     { sec,          the model's own section (its first variant's)
+--       name,         its name as the catalog shows it
+--       category,     one of categories()
+--       variants = { { sec, name, members = { section, ... } }, ... },
+--       obtainable,   whether it turns up in this game at all (else only the jailbreak lists it)
+--       found,        whether the player has had one
+--       known,        whether the catalog lists it for him (always, with the jailbreak)
+--       studied,      whether its page shows its stats
+--       new }         whether it is marked new
+function model(sec)
+    return try(function()
+        local e = sec and (arsenal_data.entry_for(sec) or arsenal_data.get(sec))
+        return e and info(e) or nil
+    end)
+end
+
+-- Every model of a category, by name, as model() gives them; {} for an unknown category
+function models(category)
+    return try(function()
+        local out = {}
+        for _, e in ipairs(arsenal_data.list(category)) do out[#out + 1] = info(e) end
+        return out
+    end) or {}
+end
+
+-- Teach the player of a model, as if a source told him. `who` names the source as it reads
+-- after "Learned from": "the Mercenary Database", "Petrenko's ledger". The model is listed from
+-- now on, its page says when and from whom, and it is marked new and announced on the PDA
+-- unless `quiet`; with `study` its page shows its stats too. Returns true when it was new to
+-- him. Nothing happens for what never turns up in this game, or with Arsenal's own discovery
+-- off (the jailbreak lists everything anyway).
+function reveal(sec, who, study, quiet)
+    return try(function()
+        if not arsenal_intel or arsenal_intel.jailbroken() then return false end
+        local how = { kind = "api", who = who ~= nil and tostring(who) or nil }
+        return arsenal_intel.reveal(sec, how, nil, study == true, quiet == true) ~= nil
+    end) or false
+end
+
+-- Every new model read at once, as the page's Mark all read does
+function mark_all_read()
+    try(function() if arsenal_intel then arsenal_intel.mark_all_read() end end)
+end
+
+-- A button on Arsenal's model pages, as Workbench's Customize is:
+--     arsenal_api.add_action("my_mod", { label = "st_my_mod_button",
+--         show = function(sec) return <whether it applies to this section> end,
+--         run = function(sec) <what a click does> end })
+-- `sec` is the section the page shows. Up to three apps' buttons show at once; adding an id
+-- again replaces it. Returns false when the arguments are wrong.
+function add_action(id, def)
+    return try(function()
+        if type(id) ~= "string" or type(def) ~= "table" or type(def.run) ~= "function" then return false end
+        ui_arsenal.add_action(id, def)
+        return true
+    end) or false
+end
+
+function remove_action(id)
+    try(function() ui_arsenal.remove_action(id) end)
+end
+
+-- Open Arsenal on a page, "catalog" (the default), "workbench" or "compare". With `sec` the
+-- catalog shows that model and Workbench that item; a model the player does not know yet is not
+-- shown. In the PDA when it is open, else in Arsenal's own window. Returns false when it could
+-- not open: an unknown page, the player not up and about, Fatal Error's PDA out of use.
+function open(page, sec)
+    return try(function()
+        page = page or "catalog"
+        if not arsenal_pages.PAGES[page] or not arsenal_pages.pda_works() then return false end
+        if sec and page == "catalog" then ui_arsenal.show_next(sec) end
+        if sec and page == "workbench" then ui_arsenal_workbench.show_next(sec) end
+        local flat = ui_arsenal.flat_window() or ui_arsenal_workbench.flat_window() or ui_arsenal_compare.flat_window()
+        local pda = ActorMenu.get_pda_menu()
+        if flat or (pda and pda:IsShown()) then
+            arsenal_pages.open(page)
+            return true
+        end
+        local m = (page == "workbench" and ui_arsenal_workbench) or (page == "compare" and ui_arsenal_compare) or ui_arsenal
+        return m.open_flat() ~= nil
+    end) or false
+end
+
+-- Where the game read a section from (the page's "Defined in", arsenal_sources), or nil:
+--     { section, model, icon, files = { { name, lines, dltx }, ... } }
+-- files, most lines first, needs Modded Exes' DLTX exports and is nil without them; `dltx`
+-- marks a mod_*.ltx.
+function defined_in(sec)
+    return try(function()
+        local s = arsenal_sources.of(sec)
+        if not s then return nil end
+        local out = { section = s.section, model = s.model, icon = s.icon }
+        if s.files then
+            out.files = {}
+            for i, f in ipairs(s.files) do out.files[i] = { name = f.name, lines = f.lines, dltx = f.dltx } end
+        end
+        return out
+    end)
+end

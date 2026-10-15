@@ -7,7 +7,9 @@
     player picks one; the PDA tile works either way. With Fatal Error, the key opens Arsenal only
     while its PDA works (arsenal_pages.pda_works). Seen guns and the jailbreak are off until the
     player turns them on. PDA notifications are on until the player silences them, here or with
-    the Silence box at the foot of Arsenal's pages, which writes the same option.
+    the Silence box at the foot of Arsenal's pages, which writes the same option. "Show where
+    items are defined" ends each model's page with the files the game read it from
+    (arsenal_sources), for modders; off until the player turns it on.
 --]]
 
 -- The release and its author, on the line at the foot of every page, so a screenshot says which
@@ -26,6 +28,7 @@ function on_mcm_load()
             { id = "count_seen", type = "check", val = 1, def = false },
             { id = "jailbreak", type = "check", val = 1, def = false },
             { id = "news", type = "check", val = 1, def = true },
+            { id = "sources", type = "check", val = 1, def = false },
             { id = "about", type = "desc", text = "ui_mcm_arsenal_about" },
         },
     }
@@ -55,6 +58,13 @@ end
 function news()
     local ok, v = pcall(function() return ui_mcm and ui_mcm.get("arsenal/news") end)
     return not (ok and v == false)
+end
+
+-- whether each model's page ends with where the game read it from (arsenal_sources); false while
+-- the option is off or MCM is missing
+function sources()
+    local ok, v = pcall(function() return ui_mcm and ui_mcm.get("arsenal/sources") end)
+    return (ok and v == true) or false
 end
 
 -- the Silence box writes the option rather than keeping a copy, so it and MCM are one setting

@@ -825,4 +825,34 @@
 	<string id="st_arsenal_cmp_stops_of">
 		<text>%s of %s</text>
 	</string>
+	<string id="st_arsenal_mark_read">
+		<text>Mark all read</text>
+	</string>
+	<string id="st_arsenal_defined">
+		<text>Defined in</text>
+	</string>
+	<string id="st_arsenal_def_section">
+		<text>Section: %s</text>
+	</string>
+	<string id="st_arsenal_def_file">
+		<text>%s: %s lines</text>
+	</string>
+	<string id="st_arsenal_def_file_one">
+		<text>%s: 1 line</text>
+	</string>
+	<string id="st_arsenal_def_model">
+		<text>Model: %s</text>
+	</string>
+	<string id="st_arsenal_def_icon">
+		<text>Icon: %s</text>
+	</string>
+	<string id="st_arsenal_def_no_dltx">
+		<text>Which files wrote its lines takes Modded Exes (their DLTX).</text>
+	</string>
+	<string id="ui_mcm_arsenal_sources">
+		<text>Show where items are defined</text>
+	</string>
+	<string id="ui_mcm_arsenal_sources_desc">
+		<text>Each model's page ends with where the game read it from: the config files that wrote its lines, most first (a mod_ file is a DLTX patch), its section, its model and its icon. For modders, and for finding which mod a gun comes from: look the file up in MO2's Data tab.</text>
+	</string>
 </string_table>

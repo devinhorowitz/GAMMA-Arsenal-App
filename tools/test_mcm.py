@@ -97,6 +97,10 @@ MUTANTS = {
     "kept_on_load": ('    RegisterScriptCallback("actor_on_net_destroy", close_flat)\n', ""),
     "load_skips_compare": ("{ ui_arsenal, ui_arsenal_workbench, ui_arsenal_compare }", "{ ui_arsenal, ui_arsenal_workbench }"),
     "news_def": ('{ id = "news", type = "check", val = 1, def = true }', '{ id = "news", type = "check", val = 1 }'),
+    "sources_def": ('{ id = "sources", type = "check", val = 1, def = false }', '{ id = "sources", type = "check", val = 1 }'),
+    "sources_dropped": ('            { id = "sources", type = "check", val = 1, def = false },\n', ""),
+    "sources_any": ('ui_mcm.get("arsenal/sources") end)\n    return (ok and v == true) or false',
+                    'ui_mcm.get("arsenal/sources") end)\n    return ok'),
     "news_off_unset": ("    return not (ok and v == false)", "    return ok and v == true"),
     "news_dropped": ('            { id = "news", type = "check", val = 1, def = true },\n', ""),
     "set_inverted": ('ui_mcm.set("arsenal/news", on and true or false)', 'ui_mcm.set("arsenal/news", not on)'),
@@ -149,6 +153,16 @@ def main():
     check(m.jailbreak() is True, "on once the player turns it on")
     mcm, g.ui_mcm = g.ui_mcm, None
     check(m.jailbreak() is False, "off without MCM")
+    g.ui_mcm = mcm
+    # "Show where items are defined": a check box, off by default, for modders
+    src = [o for o in opts.gr.values() if o.id == "sources"]
+    check(len(src) == 1 and src[0].type == "check" and src[0]["def"] is False,
+          "Show where items are defined is a check box, off by default (false, not nil)")
+    check(m.sources() is False, "off while the option is unset")
+    g.options["arsenal/sources"] = True
+    check(m.sources() is True, "on once the player turns it on")
+    mcm, g.ui_mcm = g.ui_mcm, None
+    check(m.sources() is False, "off without MCM")
     g.ui_mcm = mcm
 
     # PDA notifications: on until silenced, here or by the Silence box on the pages (set_news);
@@ -236,6 +250,18 @@ def main():
     if unload is not None:
         unload()
     check(g.unloaded == 3, "and with nothing open, closes nothing: %d" % g.unloaded)
+
+    # the string tables: English and Russian hold the same ids, and every option has its label and
+    # its description in both (a missing one shows MCM the raw id)
+    def ids(lang):
+        p = os.path.join(HERE, "..", "gamedata", "configs", "text", lang, "st_arsenal.xml")
+        return set(re.findall(r'<string id="([^"]+)">', io.open(p, encoding="cp1251").read()))
+    eng, rus = ids("eng"), ids("rus")
+    check(eng == rus, "English and Russian hold the same strings: %s %s" % (sorted(eng - rus), sorted(rus - eng)))
+    opts = [o.id for o in m.on_mcm_load().gr.values() if o.type in ("check", "key_bind")]
+    need = ["ui_mcm_arsenal_" + i + s for i in opts for s in ("", "_desc")]
+    missing = [n for n in need if n not in eng or n not in rus]
+    check(not missing, "every option's label and description, in both: %s" % (missing or opts))
     g.ui_mcm = None
     check(m.flat_key() is None, "without MCM, no key")
     print("\n%d failed" % len(fails))

@@ -242,6 +242,10 @@ MUTANTS = {
     "news_more": ("        if #names > 3 then", "        if false then"),
     "new_flag": ("            st.new[k] = true\n", ""),
     "viewed": ("    st.new[e.sec] = nil", "    -- stays new"),
+    "mark_all_read_noop": ("        st.new[k] = nil\n", ""),
+    "api_words": ('        return how.who or game.translate_string("st_arsenal_by_someone")\n',
+                  '        return game.translate_string("st_arsenal_by_someone")\n'),
+    "api_unknown": ('    elseif k == "api" then', '    elseif k == "api_" then'),
     "found_live": ("    local e = live and model(sec)", "    local e = model(sec)"),
     "found_not_new": ("    if e and arsenal_data.obtainable(e.sec) then st.new[e.sec] = true end", "    -- not new"),
     "found_never": ("    if e and arsenal_data.obtainable(e.sec) then st.new[e.sec] = true end",
@@ -660,6 +664,25 @@ def main():
     g.JAIL = False
     run(lambda: m.viewed(M.wpn_eco))
     check(run(lambda: m.count_new()) == 1, "one read, one left")
+    # Mark all read: every new model read at once, the count to none; what is known stays known
+    st().new["wpn_eco"] = True
+    check(run(lambda: m.count_new()) == 2, "two new again: %s" % run(lambda: m.count_new()))
+    run(lambda: m.mark_all_read())
+    check(new() == [] and run(lambda: m.count_new()) == 0 and "wpn_eco" in known(),
+          "Mark all read: nothing new, still known: %s %s" % (new(), known()))
+
+    # another mod's source (arsenal_api.reveal), in its own words, on the page and in the news
+    m.reset()
+    g.NEWS = lua.table_from({})
+    how = lua.table_from({"kind": "api", "who": "the Mercenary Database"})
+    got = run(lambda: m.reveal("wpn_eco", how, None, False, False))
+    run(lambda: g.run_timers())
+    check(got is not None and "wpn_eco" in known() and "wpn_eco" in new()
+          and run(lambda: m.describe(how, lua.table_from({"lvl": "l01_escape"}))) == "the Mercenary Database"
+          and len(g.NEWS) == 1 and "Learned from the Mercenary Database: " in g.NEWS[1],
+          "another mod's source, in its words: %s %s" % (run(lambda: m.describe(how)), list(g.NEWS.values())))
+    nameless = run(lambda: m.describe(lua.table_from({"kind": "api"})))
+    check(nameless == "someone", "one that gives no name: %s" % nameless)
 
     # listed and studied: with the jailbreak, everything; a found model is known and studied
     m.reset()
