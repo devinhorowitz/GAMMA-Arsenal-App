@@ -323,6 +323,27 @@ SECTIONS = {
 SECTIONS["novice_outfit"]["cost"] = "7290"
 SECTIONS["exo_z"]["cost"] = "176027"
 SECTIONS["helm_x"]["cost"] = "30000"
+# What goes on the guns is listed in its own right where it has an icon: the Kobra (the AK-74's,
+# the ISG's and the MP5's scope), the LAM (a laser module on the AK-74, a scope on the ISG, which
+# has its own laser), the kits, the PBS-1 and a lighter suppressor of its name (the USP's, which turns up nowhere), the
+# GP-25 and the TOZ's PU; the MP5K kit has no icon. A gun with a built-in suppressor keeps it.
+for _s in ("kobra", "ak_kit", "lam", "wpn_sil", "wpn_gl", "pu_scope", "rk_kit", "never_kit", "pm_kit", "kit2"):
+    SECTIONS[_s]["inv_grid_x"] = "11"
+SECTIONS["kobra"]["inv_weight"] = "0.3"
+SECTIONS["wpn_sil"]["inv_weight"] = "0.2"
+SECTIONS["wpn_sil_light"] = dict(inv_name="st_sil", inv_grid_x="11", inv_weight="0.1")
+SECTIONS["wpn_usp"].update(silencer_status="2", silencer_name="wpn_sil_light")
+SECTIONS["wpn_isg"]["scopes"] = "kobra, lam"
+SECTIONS["wpn_isg_lam"] = dict(kind="w_rifle", inv_name="st_isg", parent_section="wpn_isg", laser_status="true")
+SECTIONS["wpn_mp5"]["scopes"] = "kurtz, kobra"
+SECTIONS["wpn_mp5_kobra"] = dict(kind="w_smg", inv_name="st_mp5", parent_section="wpn_mp5")
+SECTIONS["wpn_builtin_sil"] = dict(silencer_status="1", silencer_name="wpn_sil")
+# a gun whose launcher mount names another gun: that stays a launcher, not an accessory too
+SECTIONS["wpn_saiga"].update(grenade_launcher_status="2", grenade_launcher_name="wpn_rpg7")
+# a scope that is a kit on one gun (the Saiga's combination with it has a name of its own) stays a
+# scope, as it is on three
+SECTIONS["wpn_saiga"]["scopes"] = "kobra"
+SECTIONS["wpn_saiga_kobra"] = dict(kind="w_shotgun", inv_name="st_saiga_kobra", parent_section="wpn_saiga")
 PARTS = {"con_parts_list": dict(wpn_ak74="prt_barrel, prt_bolt, prt_gone", wpn_saiga="prt_barrel, prt_bolt")}
 TEXT = {"st_saiga": "Saiga-12", "st_buck": "12x70 Buckshot", "st_zhekan": "12x76 Slug", "st_dart": "12x76 Dart",
         "st_knife_ammo": "Knife", "st_unfired": "Unfired Round", "st_buck_self": "Home-made Buckshot",
@@ -360,6 +381,7 @@ TEXT = {"st_saiga": "Saiga-12", "st_buck": "12x70 Buckshot", "st_zhekan": "12x76
 TEXT.update(re.findall(r'<string id="([^"]+)">\s*<text>(.*?)</text>',
                        io.open(os.path.join(HERE, "..", "gamedata", "configs", "text", "eng", "st_arsenal.xml"),
                                encoding="cp1251").read(), re.S))
+TEXT["st_saiga_kobra"] = "Saiga Kobra"
 RECOIL = {"wpn_ak74": dict(s="0.2, 0.3", e="0:0.5, 0.1:0"), "wpn_mount_a": dict(s="0.2, 0.3", e="0:0.5, 0.1:0")}
 
 FACTIONS = ["stalker", "dolg", "freedom", "csky", "ecolog", "killer", "army", "bandit", "monolith", "zombied",
@@ -371,9 +393,11 @@ FACTIONS = ["stalker", "dolg", "freedom", "csky", "ecolog", "killer", "army", "b
 NPC = {
     "default": [("primary", "def_primary")],
     "def_primary": [("wpn_pm:0:r", "")],
-    "stalker": [("primary", "vet_primary"), ("secondary", "vet_secondary")],
+    "stalker": [("primary", "vet_primary"), ("secondary", "vet_secondary"), ("extra", "vet_extra")],
     "vet_primary": [("wpn_toz34:0:0:5", "")],
     "vet_secondary": [("wpn_saiga:0:0:5", "")],
+    # a Kobra carried loose: still never word of mouth
+    "vet_extra": [("kobra:0:0:5", "")],
     "stalker_novice": [("primary", "st_primary"), ("secondary", "st_secondary")],
     "stalker_trainee": [("primary", "st_primary")],
     "stalker_legend": [("primary", "st_primary")],
@@ -806,6 +830,7 @@ end
 """
 
 MUTANTS = {
+    "group_missing": ('"light", "medium", "heavy", "exo", "helmets" } },', '"light", "medium", "heavy", "exo" } },'),
     "tree_twice": ("                if ini_sys:section_exist(el) and not placed[el] then\n                    placed[el] = true\n",
                    "                if ini_sys:section_exist(el) then\n"),
     "armor_twice": ("        if not done[ps] then\n            done[ps] = true\n            add_upgrade(p, ps)\n        end\n",
@@ -872,15 +897,16 @@ MUTANTS = {
     "addon_bits": ("local n = bit.band(bits, m[1]) ~= 0 and status(s, m[2]) == 2", "local n = status(s, m[2]) == 2"),
     "addon_blacklist": ("if not black[k] and not (per_gun[s] and per_gun[s][k]) and ini_sys:section_exist(combo) then",
                         "if ini_sys:section_exist(combo) then"),
-    "addon_kit_stays": ("                    if p and p ~= combo then", "                    if true then"),
-    "addon_stash": ("        mounts(s, 7)\n", ""),
+    "addon_kit_stays": ("                if p and p ~= combo then", "                if true then"),
+    "addon_stash": ("            if n then addon_ok[n] = true end\n", ""),
     "reach_kit": ("local m = addon_ok[k] and variant_of(s .. \"_\" .. k)", "local m = variant_of(s .. \"_\" .. k)"),
     "reach_nimble": ("if m and reach[m] then add(entry_for(t.gives)) end", "if m then add(entry_for(t.gives)) end"),
     "reach_exchange": ("            if #givers(x.dialog) > 0 then\n", "            if true then\n"),
     "reach_drops_off": ("and not (armor_drop(e.sec) or {}).off", ""),
     "reach_rolled": ("        for combo, base in pairs(rolled) do", "        for combo, base in pairs({}) do"),
-    "gear_turns_up": ("if r and next(r) and obtainable(e.sec) and not (src[2] and (armor_drop(e.sec) or {}).off) then",
-                      "if r and next(r) then"),
+    "gear_turns_up": ("if r and next(r) and not ATTACHMENTS[e.cat] and obtainable(e.sec)\n"
+                      "                and not (src[2] and (armor_drop(e.sec) or {}).off) then",
+                      "if r and next(r) and not ATTACHMENTS[e.cat] then"),
     "gear_worn": ("    for _, src in ipairs({ { carried, false }, { worn, true } }) do", "    for _, src in ipairs({ { carried, false } }) do"),
     "special_carried": ("        if #c.ranks > 0 then return false end\n    end\n    for _, c in ipairs(ARMOR[e.cat]",
                         "    end\n    for _, c in ipairs(ARMOR[e.cat]"),
@@ -1063,8 +1089,48 @@ MUTANTS = {
     "pen_holds": ("if not out.holds or ap > out.holds.k", "if not out.holds or ap < out.holds.k"),
     "pen_fails": ("elseif not out.fails or ap < out.fails.k", "elseif not out.fails or ap > out.fails.k"),
     "pen_ap": ('local ap = (ini_sys:r_float_ex(r, "k_ap") or 0) * 10', 'local ap = (ini_sys:r_float_ex(r, "k_ap") or 0) * 100'),
-    "special_ammo": ('if not (e and e.cat ~= "ammo" and obtainable(e.sec)) then return false end',
-                     "if not (e and obtainable(e.sec)) then return false end"),
+    "special_ammo": ('if not (e and e.cat ~= "ammo" and not ATTACHMENTS[e.cat] and obtainable(e.sec)) then return false end',
+                     "if not (e and not ATTACHMENTS[e.cat] and obtainable(e.sec)) then return false end"),
+    # what goes on the guns
+    "addon_none": ("    for _, s in ipairs(gather_addons()) do\n", "    for _, s in ipairs({}) do\n"),
+    "addon_icon": ('translated(ini_sys:r_string_ex(s, "inv_name")) and ini_sys:r_float_ex(s, "inv_grid_x") then',
+                   'translated(ini_sys:r_string_ex(s, "inv_name")) then'),
+    "addon_twice": ("if not by_var[s] and translated", "if translated"),
+    "addon_majority": ("            if n > most then\n                addon_cat[s], most = cat, n",
+                       "            if n >= most then\n                addon_cat[s], most = cat, n"),
+    "addon_tie": ('local CAT_ORDER = { "accessories", "scopes", "suppressors" }',
+                  'local CAT_ORDER = { "scopes", "accessories", "suppressors" }'),
+    "addon_any_accessory": ('                                local cat = ADDON_CAT[kind]\n',
+                            '                                local cat = (addon_cat[it.sec] == "accessories") and "accessories"'
+                            ' or ADDON_CAT[kind]\n                                addon_cat[it.sec] = cat\n'),
+    "addon_up_members": ("                if addon_ok[s] then return true end", "                if addon_ok[e.sec] then return true end"),
+    "reach_addon": (" or (ATTACHMENTS[c] and addon_up(e)) then", " then"),
+    "gear_attachment": ("if r and next(r) and not ATTACHMENTS[e.cat] and obtainable(e.sec)\n",
+                        "if r and next(r) and obtainable(e.sec)\n"),
+    "special_attachment": ('if not (e and e.cat ~= "ammo" and not ATTACHMENTS[e.cat] and obtainable(e.sec)) then',
+                           'if not (e and e.cat ~= "ammo" and obtainable(e.sec)) then'),
+    "fits_dedupe": ("                if not seen[k] then\n                    seen[k] = true\n                    out[#out + 1] = f",
+                    "                if true then\n                    seen[k] = true\n                    out[#out + 1] = f"),
+    "fits_order": ("        if a.e.cat ~= b.e.cat then return (at[a.e.cat] or 99) < (at[b.e.cat] or 99) end\n", ""),
+    "fits_variants": ("    for _, v in ipairs(e.variants) do\n        for _, s in ipairs(v.members) do\n"
+                      "            for _, f in ipairs(fits_of[s] or {}) do",
+                      "    for _, v in ipairs({ e.variants[1] }) do\n        for _, s in ipairs(v.members) do\n"
+                      "            for _, f in ipairs(fits_of[s] or {}) do"),
+    "fits_not_addon": ("    if not (e and ATTACHMENTS[e.cat]) then return {} end\n    local out, seen = {}, {}",
+                       "    if not e then return {} end\n    local out, seen = {}, {}"),
+    "mounted_none": ("for _, k in ipairs((npc_rolls(a[1], a[2], black, per_gun))) do", "for _, k in ipairs({}) do"),
+    "mounted_rank": ("                        by[rank] = 1\n", "                        by.special = 1\n"),
+    "mounted_bits": ('    if bit.band(bits, 1) ~= 0 then\n        for k in each_of(s, "scopes") do',
+                     '    if true then\n        for k in each_of(s, "scopes") do'),
+    "mounted_members": ("            for f, by in pairs(mounted and mounted[s] or {}) do",
+                        "            for f, by in pairs(mounted and mounted[e.sec] or {}) do"),
+    "blacklist_read": ("        black[x.k] = true\n", "        black[x.k] = nil\n"),
+    "on_flag": ("            if ok and on then add(", "            if ok then add("),
+    "on_status": ("        if status(sec, m[2]) == 2 then\n            local ok, on",
+                  "        if true then\n            local ok, on"),
+    "on_combo": ("        add(sec:sub(#parent + 2))\n", ""),
+    "on_exist": ("if s and not seen[s] and ini_sys:section_exist(s) then", "if s and not seen[s] then"),
+    "on_pcall": ("local ok, on = pcall(function() return obj[m[1]](obj) end)", "local ok, on = true, obj[m[1]](obj)"),
     "upvalue_wrap": ('if type(v) == "function" then held[#held + 1] = v end', "-- not followed"),
     "upvalue_depth": ("for _ = 0, WRAPS do", "for _ = 0, 1 do"),
     "made_model": ("local kit = m and m.entry ~= e and item_of(k)", "local kit = m and item_of(k)"),
@@ -1152,7 +1218,12 @@ def main():
     secs = lambda cat: [e.sec for e in m.list(cat).values()]
     names = lambda cat: [e.name for e in m.list(cat).values()]
     vnames = lambda e: [v.name for v in e.variants.values()] if e is not None else None
-    check(m.count() == 50, "thirty-five gun models, seven suits and helmets and eight rounds listed: %d" % m.count())
+    # the catalog's groups (its left list): every category in exactly one, in the categories' order
+    grouped = [c for gr in m.GROUPS.values() for c in gr.cats.values()]
+    cats = list(m.CATEGORIES.values())
+    check(grouped == cats, "the groups hold every category once, in their order: %s" % grouped)
+    check(m.count() == 60, "thirty-five gun models, seven suits and helmets, eight rounds and ten attachments "
+                           "listed: %d" % m.count())
     check(m.get("wpn_ak74_pso") is None and m.entry_for("wpn_ak74_pso") is not None
           and same(m.entry_for("wpn_ak74_pso"), m.get("wpn_ak74")),
           "a scoped combination is not listed, and counts as its gun")
@@ -1377,7 +1448,7 @@ def main():
           % (fits,))
     isg = m.attachments("wpn_isg")
     isg_fit = ([x.name for x in isg.scopes.values()], len(isg.lasers), isg.builtin.laser, att.builtin.laser)
-    check(isg_fit == (["Kobra"], 0, True, False),
+    check(isg_fit == (["Kobra", "LAM"], 0, True, False),
           "a gun with its own laser: its combinations carry the laser, so a scope stays a scope, and the "
           "laser is built in: %s" % (isg_fit,))
     kurtz = [(x.name, x.makes) for x in m.attachments("wpn_mp5").kits.values()]
@@ -1388,6 +1459,100 @@ def main():
           "a suppressor or launcher an upgrade mounts, marked so: %s %s" % (pm_sil, mp5_gl))
     check([x.upgrade for x in att.suppressors.values()] == [None],
           "the gun's own suppressor is not marked: %s" % [x.upgrade for x in att.suppressors.values()])
+
+    # what goes on the guns, listed in its own right: known by the guns that take it, under
+    # scopes, suppressors or accessories as a gun's page sorts it; one without an icon left out
+    check(secs("scopes") == ["kobra", "pu_scope"] and names("scopes") == ["Kobra", "PU"],
+          "scopes: a gun's scope wherever its list names it, the TOZ's through scopes_sect: %s %s"
+          % (secs("scopes"), names("scopes")))
+    check(secs("accessories") == ["kit2", "wpn_gl", "lam", "never_kit", "pm_kit", "rk_kit", "ak_kit"],
+          "accessories: launchers, kits, and a laser module even where a gun with its own laser takes it as a "
+          "scope: %s" % secs("accessories"))
+    sil = m.get("wpn_sil_light")
+    check(secs("suppressors") == ["wpn_sil_light"] and vnames(sil) == ["PBS-1 (0.1 kg)", "PBS-1 (0.2 kg)"],
+          "suppressors of one name: one model, its variants by weight: %s %s" % (secs("suppressors"), vnames(sil)))
+    check(m.get("kurtz") is None and m.entry_for("kurtz") is None,
+          "an attachment without an icon is not listed")
+    rpg = m.get("wpn_rpg7")
+    check(rpg is not None and rpg.cat == "launchers" and "wpn_rpg7" not in secs("accessories"),
+          "a gun a launcher mount names stays a gun: %s" % (rpg and rpg.cat))
+
+    def fits(sec):
+        try:
+            return [(f.e.name, f.how, f.makes, f.upgrade, list(f.ammo.values()) if f.ammo else None)
+                    for f in m.fits(sec).values()]
+        except Exception as err:
+            return "error: %s" % str(err)[:80]
+    check(fits("kobra") == [("MP5", "scopes", None, None, None), ("Saiga-12", "kits", "Saiga Kobra", None, None),
+                            ("AK-74", "scopes", None, None, None), ("ISG Rifle", "scopes", None, None, None)],
+          "what an attachment fits: the guns that take it, by category, then name; a scope that is a kit on one "
+          "gun stays a scope: %s" % (fits("kobra"),))
+    check(fits("lam") == [("AK-74", "lasers", None, None, None), ("ISG Rifle", "scopes", None, None, None)],
+          "how it goes on each gun: a laser module on one, a scope on a gun with its own laser: %s" % (fits("lam"),))
+    check(fits("wpn_sil") == [("PM", "suppressors", None, True, None), ("USP", "suppressors", None, None, None),
+                              ("AK-74", "suppressors", None, None, None)],
+          "a suppressor's guns, every section of its model's, one an upgrade mounts marked so: %s" % (fits("wpn_sil"),))
+    check(fits("wpn_gl") == [("MP5", "launchers", None, True, ["VOG-25"]),
+                             ("AK-74", "launchers", None, None, ["VOG-25"])],
+          "a launcher's guns, with the grenades it fires from each: %s" % (fits("wpn_gl"),))
+    check(fits("pm_kit") == [("PM", "kits", "PM Tactical", None, None)]
+          and fits("kit2") == [("Fort-17", "kits", None, None, None)],
+          "a kit names the gun it makes, one for looks none; a model of two sections that take it is named "
+          "once: %s %s" % (fits("pm_kit"), fits("kit2")))
+    check(fits("wpn_ak74") == [] and fits("ammo_545") == [] and fits("nothing_here") == [] and fits("wpn_rpg7") == [],
+          "a gun (one a launcher mount names too), a round or what is not listed fits nothing")
+
+    def rows(sec, fn):
+        try:
+            return [(c.faction, list(c.ranks.values()), c.special) for c in fn(sec).values()]
+        except Exception as err:
+            return "error: %s" % str(err)[:80]
+    mk = rows("kobra", m.mounted_on)
+    check(mk == [("stalker", ["novice", "trainee", "legend"], None), ("army", ["veteran"], None)],
+          "the fighters whose guns may come with it: a loadout line that asks for a scope on a gun that takes it, "
+          "not one that asks for a suppressor only: %s" % (mk,))
+    ms = rows("wpn_sil", m.mounted_on)
+    check(ms == [("stalker", ["novice", "trainee", "legend"], None)] and rows("lam", m.mounted_on) == []
+          and rows("rk_kit", m.mounted_on) == [] and rows("wpn_ak74", m.mounted_on) == [],
+          "a suppressor the line asks for on a gun that takes one; never a blacklisted scope, nor a kit that "
+          "makes a gun of its own: %s" % (ms,))
+    ck = rows("kobra", m.carriers)
+    stalker_gear = [x[0] for x in gear("stalker")]
+    check(ck == [("stalker", ["experienced", "professional", "veteran", "expert", "master"], None)]
+          and "kobra" not in stalker_gear,
+          "an attachment carried loose is carried, but never a faction's gear to hear of: %s %s" % (ck, stalker_gear))
+    up = {s: m.obtainable(s) for s in ("kobra", "pu_scope", "lam", "ak_kit", "rk_kit", "never_kit", "pm_kit",
+                                        "kit2", "wpn_sil", "wpn_sil_light", "wpn_gl")}
+    check(up == {"kobra": True, "pu_scope": False, "lam": False, "ak_kit": True, "rk_kit": False,
+                 "never_kit": False, "pm_kit": True, "kit2": False, "wpn_sil": True, "wpn_sil_light": True,
+                 "wpn_gl": True},
+          "an attachment turns up on a fighter's gun or a stash's, or as anything else does: %s" % up)
+    check(m.special("pm_kit") is False and m.special("wpn_gl") is False,
+          "an attachment is never a gunsmith's word of mouth")
+    check(not m.has_stat_card("kobra") and not m.has_stat_card("wpn_sil") and m.has_stat_card("wpn_ak74"),
+          "an attachment has no stat card, so nothing to compare")
+    # a weapon stand-in that counts how often its flags are asked
+    wobj = lua.eval("function(sec, sil, gl, sc) local o = { n = 0 } "
+                    "o.section = function() return sec end "
+                    "o.weapon_is_silencer = function() o.n = o.n + 1 if sil == 'err' then error('no') end return sil end "
+                    "o.weapon_is_grenadelauncher = function() o.n = o.n + 1 return gl end "
+                    "o.weapon_is_scope = function() o.n = o.n + 1 return sc end return o end")
+
+    def on(*a):
+        o = wobj(*a)
+        try:
+            return list(m.mounted_addons(o).values()), o.n
+        except Exception as err:
+            return "error: %s" % str(err)[:80], o.n
+    ons = [on("wpn_ak74_kobra", False, False, False), on("wpn_ak74", True, True, False),
+           on("wpn_ak74", False, False, False), on("wpn_ak74_rk_kit", False, False, False),
+           on("wpn_builtin_sil", True, False, False), on("wpn_ak74", "err", True, False),
+           on("wpn_ak74_pso", False, False, False), on("ammo_545", True, True, True)]
+    check(ons == [(["kobra"], 0), (["wpn_sil", "wpn_gl"], 2), ([], 2), ([], 0), ([], 0), (["wpn_gl"], 2), ([], 0),
+                  ([], 0)],
+          "a weapon's attachments: the scope its section combines with, the mounts its flags say are on, a flag "
+          "asked only where the section takes the mount; not a built-in suppressor, a kit's own gun, a flag that "
+          "fails, nor a combination's name that is no item: %s" % ons)
     opts = m.upgrade_options("wpn_ak74")
     cal = [list(c.values()) for c in opts.calibres.values()]
     check(cal == [["9x19 FMJ"]] and list(opts.fire_modes.values()) == ["1 / 3 / A"],

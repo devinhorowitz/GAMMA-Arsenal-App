@@ -137,6 +137,7 @@ function WorkbenchPDA:__init(flat) super()
     self.btn_back = xml:Init3tButton("btn_back", self)
     self:Register(self.btn_back, "btn_back")
     self:AddCallback("btn_back", ui_events.BUTTON_CLICKED, self.OnBack, self)
+    self.back_row = arsenal_pages.back_row(self.btn_back, { self.btn_install })
     xml:InitStatic("rule_top", self)
 
     -- left: the items, the card, the attachments
@@ -251,6 +252,7 @@ end
 -- without it the item shown last, else the first.
 function WorkbenchPDA:Reset(want)
     self:PaintFooter()
+    arsenal_pages.show_back(self.back_row, self.flat)
     local carried = arsenal_workbench.carried()
     local ids, secs = {}, {}
     self.entries = {}

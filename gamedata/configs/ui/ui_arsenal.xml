@@ -60,20 +60,28 @@
 	<rule_cat x="164" y="146" width="1" height="532" stretch="1">
 		<texture>arsenal_rule</texture>
 	</rule_cat>
-	<!-- over the model list, like "By faction" over the left one -->
-	<found_only_lbl x="174" y="146" width="96" height="20">
-		<text font="letterica16" r="200" g="200" b="200" align="l" vert_align="c">st_arsenal_found_only</text>
-	</found_only_lbl>
-	<found_only x="272" y="141" width="30" height="30" stretch="1">
-		<texture>ui_inGame2_checkbox</texture>
-	</found_only>
-	<!-- beside "Found only", over the model list: every new model read at once, shown while
-	     anything is new -->
-	<mark_read x="306" y="143" width="114" height="26" stretch="1" check_mode="0">
+	<!-- over the model list, level with "By faction": what it shows and its order, each a box in
+	     the options menu's drop-down look (its frame line, arrow and all, the engine's 20 high),
+	     and the order's direction on a button with the lists' own scroll arrow on it -->
+	<show_box x="170" y="145" width="90" height="20" frame_mode="1">
+		<texture_e>ui_inGame2_combobox_linetext</texture_e>
+		<texture_t>ui_inGame2_combobox_linetext</texture_t>
+		<texture_h>ui_inGame2_combobox_linetext</texture_h>
+		<text font="letterica16" r="200" g="200" b="200" align="l" vert_align="c" x="5"/>
+	</show_box>
+	<sort_box x="264" y="145" width="126" height="20" frame_mode="1">
+		<texture_e>ui_inGame2_combobox_linetext</texture_e>
+		<texture_t>ui_inGame2_combobox_linetext</texture_t>
+		<texture_h>ui_inGame2_combobox_linetext</texture_h>
+		<text font="letterica16" r="200" g="200" b="200" align="l" vert_align="c" x="5"/>
+	</sort_box>
+	<sort_dir x="394" y="143" width="26" height="26" stretch="1" check_mode="0">
 		<texture>ui_button_ordinary</texture>
-		<text font="letterica16" align="c" vert_align="c">st_arsenal_mark_read</text>
-	</mark_read>
-	<wpn_list x="170" y="174" width="250" height="504" item_height="22" can_select="1" always_show_scroll="0">
+	</sort_dir>
+	<sort_dir_arrow x="5" y="5" width="15" height="16" stretch="1">
+		<texture>ui_scroll_btn_up</texture>
+	</sort_dir_arrow>
+	<wpn_list x="170" y="174" width="250" height="504" item_height="30" can_select="1" always_show_scroll="0">
 		<font font="letterica16" r="200" g="200" b="200"/>
 	</wpn_list>
 	<rule_wpn x="424" y="146" width="1" height="532" stretch="1">
@@ -178,11 +186,17 @@
 	<row_count x="0" y="0" width="126" height="22">
 		<text font="letterica16" r="140" g="140" b="140" align="r" vert_align="c"/>
 	</row_count>
+	<!-- a model's row, 30 high: its inventory icon fitted in this box (the script centers and
+	     tints it), its name beside it -->
+	<wpn_row_icon x="2" y="3" width="52" height="24" stretch="1"/>
+	<wpn_row_name x="60" y="0" width="180" height="30">
+		<text font="letterica16" r="200" g="200" b="200" align="l" vert_align="c"/>
+	</wpn_row_name>
 	<!-- a new row's glow behind its name, as wide as its list; the script tints and pulses it -->
 	<cat_glow x="0" y="1" width="132" height="20" stretch="1">
 		<texture>arsenal_glow</texture>
 	</cat_glow>
-	<wpn_glow x="0" y="1" width="250" height="20" stretch="1">
+	<wpn_glow x="0" y="1" width="250" height="28" stretch="1">
 		<texture>arsenal_glow</texture>
 	</wpn_glow>
 
@@ -392,7 +406,34 @@
 	<jailbreak_lbl x="168" y="686" width="160" height="20">
 		<text font="letterica16" r="238" g="155" b="23" align="l" vert_align="c">st_arsenal_jailbroken</text>
 	</jailbreak_lbl>
-	<credit x="432" y="686" width="356" height="20">
+	<!-- every new model read at once, shown while anything is new -->
+	<mark_read x="334" y="683" width="120" height="26" stretch="1" check_mode="0">
+		<texture>ui_button_ordinary</texture>
+		<text font="letterica16" align="c" vert_align="c">st_arsenal_mark_read</text>
+	</mark_read>
+	<credit x="460" y="686" width="328" height="20">
 		<text font="letterica16" r="140" g="140" b="140" align="r" vert_align="c"/>
 	</credit>
+	<!-- the drop-downs' lists, opened under their boxes over the model list: the options menu's
+	     list frame, rows the height of its selection line (18), as tall as the options up to the
+	     list's own height, which then scrolls; and under an open list a button the size of the
+	     page, with nothing drawn, that closes it at a click anywhere else -->
+	<drop_catcher x="0" y="0" width="1024" height="768"/>
+	<!-- under each list, as large as its frame (placed by the script): solid, so the model list
+	     does not show through the frame, which is half see-through -->
+	<drop_back x="0" y="0" width="4" height="4" stretch="1">
+		<texture>arsenal_screen</texture>
+	</drop_back>
+	<show_list x="170" y="165" width="90" height="72">
+		<texture>ui_inGame2_combobox</texture>
+	</show_list>
+	<show_list_box x="5" y="0" width="85" height="72" item_height="18" can_select="1" always_show_scroll="0">
+		<font font="letterica16" r="170" g="170" b="170"/>
+	</show_list_box>
+	<sort_list x="264" y="165" width="126" height="180">
+		<texture>ui_inGame2_combobox</texture>
+	</sort_list>
+	<sort_list_box x="5" y="0" width="121" height="180" item_height="18" can_select="1" always_show_scroll="0">
+		<font font="letterica16" r="170" g="170" b="170"/>
+	</sort_list_box>
 </w>

@@ -79,11 +79,18 @@ function original_get_ui(...)
     calls[#calls + 1] = { ... }
     return PAGE
 end
-added = {}
+added, nadded, removed = {}, 0, {}
 mac_mcm = {
-    add_app = function(id, data) added[id] = data end,
+    add_app = function(id, data) added[id] = data; nadded = nadded + 1 end,
+    remove_app = function(id) removed[#removed + 1] = id; added[id] = nil end,
     get_ui = original_get_ui,
 }
+-- whether the catalog has a PDA tab of its own instead ("boom": the question fails)
+WANT_TAB = false
+arsenal_pages = { wants_tab = function()
+    if WANT_TAB == "boom" then error("no answer") end
+    return WANT_TAB
+end }
 """
 
 MUTANTS = {
@@ -101,7 +108,22 @@ MUTANTS = {
     "no_guard": ("            local ok, err = pcall(badge, ui)", "            local ok, err = true, badge(ui)"),
     "warn_each_time": ("            if not ok and not warned then", "            if not ok then"),
     "shape_check": ('    if type(ids) ~= "table" or type(apps) ~= "table" then return end', ""),
-    "tile_unguarded": ("    local ok, err = pcall(add_tile)", "    local ok, err = true, add_tile()"),
+    "tile_unguarded": ("    local ok, err = pcall(put_tile)", "    local ok, err = true, put_tile()"),
+    # with a PDA tab of the catalog's own: the tile comes and goes in play
+    "tile_despite_tab": ("    if ok and tab then return end\n", ""),
+    "tab_question_unguarded": ("    local ok, tab = pcall(function() return arsenal_pages.wants_tab() end)",
+                               "    local ok, tab = true, arsenal_pages.wants_tab()"),
+    "tile_twice": ("    if tiled or not (mac_mcm and mac_mcm.add_app) then return end",
+                   "    if not (mac_mcm and mac_mcm.add_app) then return end"),
+    "tile_without_mac": ("    if tiled or not (mac_mcm and mac_mcm.add_app) then return end", "    if tiled then return end"),
+    "tile_failure_counted": ("    if ok then\n        tiled = true\n", "    tiled = true\n    if ok then\n"),
+    "remove_twice": ("function remove_tile()\n    if not tiled then return end\n", "function remove_tile()\n"),
+    "remove_kept": ("    if ok then\n        tiled = false\n", "    if ok then\n"),
+    "remove_failure_forgotten": ('    local ok, err = pcall(function() mac_mcm.remove_app("arsenal") end)\n    if ok then\n        tiled = false',
+                                 '    tiled = false\n    local ok, err = pcall(function() mac_mcm.remove_app("arsenal") end)\n    if ok then'),
+    "remove_unguarded": ('    local ok, err = pcall(function() mac_mcm.remove_app("arsenal") end)',
+                         '    local ok, err = true, mac_mcm.remove_app("arsenal")'),
+    "has_tile_always": ("function has_tile()\n    return tiled\n", "function has_tile()\n    return true\n"),
 }
 
 
@@ -215,6 +237,62 @@ def main():
     except L.LuaError:
         ok = False
     check(ok and len(g.logs) == 1 and "not found" in g.logs[1], "without MAC: no tile, one line: %s" % list(g.logs.values()))
+
+    def attempt(fn):
+        """a call, or the error it raised"""
+        try:
+            fn()
+            return None
+        except L.LuaError as e:
+            return str(e).splitlines()[0]
+
+    # a PDA tab of the catalog's own (arsenal_pages.wants_tab): no tile as the game starts, nothing
+    # wrapped; arsenal_pages adds it or takes it away in play, once each way
+    lua.execute("logs = {}; added = {}; nadded = 0; removed = {}; WANT_TAB = true; mac_mcm = { "
+                "add_app = function(id, data) added[id] = data; nadded = nadded + 1 end, "
+                "remove_app = function(id) removed[#removed + 1] = id; added[id] = nil end, get_ui = original_get_ui }")
+    m4 = load(src)
+    m4.on_game_start()
+    check(g.added.arsenal is None and m4.has_tile() is False and len(g.logs) == 0
+          and lua.eval("mac_mcm.get_ui == original_get_ui") is True,
+          "with a tab of its own: no tile as the game starts, nothing wrapped, nothing logged")
+    m4.add_tile()
+    m4.add_tile()
+    check(g.added.arsenal is not None and g.nadded == 1 and m4.has_tile() is True
+          and lua.eval("mac_mcm.arsenal_get_ui == original_get_ui") is True,
+          "added in play, once, its badge with it: %d" % g.nadded)
+    m4.remove_tile()
+    m4.remove_tile()
+    check(list(g.removed.values()) == ["arsenal"] and g.added.arsenal is None and m4.has_tile() is False,
+          "taken away once: %s" % list(g.removed.values()))
+    m4.add_tile()
+    check(g.added.arsenal is not None and g.nadded == 2 and m4.has_tile() is True
+          and lua.eval("mac_mcm.arsenal_get_ui == original_get_ui") is True,
+          "and back again, the launcher still wrapped once: %d" % g.nadded)
+    # a MAC that cannot take it away: the tile stays, and the log says so
+    lua.execute("mac_mcm.remove_app = function() error('an older MAC') end")
+    err = attempt(m4.remove_tile)
+    check(err is None and m4.has_tile() is True and len(g.logs) == 1 and "stays" in g.logs[1],
+          "a MAC that cannot take it away: it stays, logged: %s %s" % (err, list(g.logs.values())))
+    # MAC refusing it in play: no tile, logged
+    lua.execute("logs = {}; mac_mcm.add_app = function() assert(false, 'no such texture') end")
+    m5 = load(src)
+    err = attempt(m5.add_tile)
+    check(err is None and m5.has_tile() is False and len(g.logs) == 1 and "no tile" in g.logs[1],
+          "refused in play: no tile, logged: %s %s" % (err, list(g.logs.values())))
+    # the question failing: the tile anyway, so the catalog stays in reach
+    lua.execute("logs = {}; added = {}; nadded = 0; WANT_TAB = 'boom'; "
+                "mac_mcm.add_app = function(id, data) added[id] = data; nadded = nadded + 1 end")
+    m6 = load(src)
+    err = attempt(m6.on_game_start)
+    check(err is None and g.added.arsenal is not None and m6.has_tile() is True,
+          "arsenal_pages failing the question: the tile anyway: %s" % err)
+    # without MAC, nothing in play either, and nothing said
+    lua.execute("logs = {}; mac_mcm = nil; WANT_TAB = false")
+    m7 = load(src)
+    err = attempt(m7.add_tile)
+    check(err is None and m7.has_tile() is False and len(g.logs) == 0,
+          "without MAC, no tile in play, nothing logged: %s %s" % (err, list(g.logs.values())))
 
     print("\n%d failed" % len(fails))
     return 1 if fails else 0

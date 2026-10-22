@@ -258,10 +258,12 @@ MUTANTS = {
     "page_not_pressed": ("    theme.set_active(self.page_workbench, true)\n", ""),
     "back_dead": ('        pda:SetActiveSubdialog("eptLauncher")', "        -- nowhere"),
     "pending_kept": ("    local want = pending\n    pending = nil\n    SINGLETON:Reset(want)", "    local want = pending\n    SINGLETON:Reset(want)"),
+    "wb_back_unplaced": ("    self:PaintFooter()\n    arsenal_pages.show_back(self.back_row, self.flat)\n", "    self:PaintFooter()\n"),
+    "wb_back_row_empty": ("arsenal_pages.back_row(self.btn_back, { self.btn_install })", "arsenal_pages.back_row(self.btn_back, {})"),
     # arsenal_pages
-    "router_all": ("        if page then\n            local ok, ui", "        if true then\n            local ok, ui"),
-    "router_unsafe": ("            local ok, ui = pcall(function() return script_of(page).get_ui() end)",
-                      "            local ok, ui = true, script_of(page).get_ui()"),
+    "router_all": ("        if page then\n            return page_ui(page)", "        if true then\n            return page_ui(page)"),
+    "router_unsafe": ("    local ok, ui = pcall(function() return script_of(page).get_ui() end)",
+                      "    local ok, ui = true, script_of(page).get_ui()"),
     "router_no_compare": ('(section == PAGES.compare.tab and "compare")', "false"),
     "router_no_varargs": ("        return orig(section, ...)", "        return orig(section)"),
     "router_twice": ("    if wrapped or not (pda and pda.set_active_subdialog) then return end", "    if not (pda and pda.set_active_subdialog) then return end"),
@@ -484,7 +486,17 @@ ui_arsenal_compare = { flat = nil }
 function ui_arsenal_compare.get_ui() return "compare page" end
 function ui_arsenal_compare.flat_window() return ui_arsenal_compare.flat end
 function ui_arsenal_compare.open_flat() ui_arsenal_compare.opened_flat = (ui_arsenal_compare.opened_flat or 0) + 1 end
+-- MAC's tile, for Back (arsenal_pages.back_to_launcher): there unless a case takes it away
+TILE = true
+z_arsenal_mac = { has_tile = function() return TILE end }
 """)
+    # the real arsenal_pages, for the page's Back; steps() loads it afresh for the switch and router
+    try:
+        load("arsenal_pages", pages)
+    except L.LuaError as e:
+        print("FAIL  arsenal_pages loads: %s" % e)
+        print("\n1 failed")
+        return 1
     lua.execute("""
 GUN = item("wpn_test", 7, { "up_firsta_t", "up_secona_t" })
 GUN.parent_obj = ACTOR_OBJ
@@ -693,13 +705,27 @@ def steps(lua, g, ui, data, page_, pages, modxml, load, check):
           "an item's plan is checked against it when shown: %s" % sorted(data.plan_of(7, "wpn_test")[0].keys()))
 
     # the switch, Back
-    lua.execute("arsenal_pages = { open = function(p) LAST_OPEN = p end }")
+    lua.execute("REAL_OPEN = arsenal_pages.open; arsenal_pages.open = function(p) LAST_OPEN = p end")
     page_.cb.page_catalog()
     check(g.LAST_OPEN == "catalog", "the switch opens the catalog")
     page_.cb.page_compare()
     check(g.LAST_OPEN == "compare", "and Compare")
     page_.cb.btn_back()
     check(g.OPENED_PAGES[len(g.OPENED_PAGES)] == "eptLauncher", "Back goes to the launcher")
+    lua.execute("arsenal_pages.open = REAL_OPEN")
+    # with a PDA tab of the catalog's own instead of MAC's tile: no Back in the PDA, Install in its
+    # place; flat, Back stays
+    sz = sizes()
+    back_end = sz["btn_back"][0] + sz["btn_back"][2]
+    inst_x, inst_w = sz["wb_install"][0], sz["wb_install"][2]
+    g.TILE = False
+    page_ = ui.get_ui()
+    untiled = (page_.btn_back.shown, page_.btn_install.x)
+    g.TILE = True
+    page_ = ui.get_ui()
+    tiled = (page_.btn_back.shown, page_.btn_install.x)
+    check(untiled == (False, back_end - inst_w) and tiled == (True, inst_x),
+          "without MAC's tile, no Back and Install in its place; with it, as laid out: %s %s" % (untiled, tiled))
     callbacks = page_.ncb
     check(max(callbacks.values()) == 1, "each callback registered once, however often the page fills: %s" % max(callbacks.values()))
 

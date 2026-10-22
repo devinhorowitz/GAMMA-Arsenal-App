@@ -124,11 +124,18 @@ for _, x in ipairs({ { "wpn_duty", "Duty Rifle", "rifles" }, { "duty_suit", "Dut
     { "wpn_mono", "Monolith Rifle", "rifles" }, { "wpn_mono2", "Monolith SMG", "smgs" }, { "wpn_mono3", "Monolith MG", "rifles" },
     { "mono_suit", "Monolith Suit", "heavy" }, { "mono_helm", "Monolith Helmet", "helmets" },
     { "wpn_special", "Special Gun", "rifles" }, { "wpn_never", "Never Gun", "rifles" }, { "wpn_trade", "Trade Knife", "melee" },
-    { "wpn_box", "Box Gun", "rifles" }, { "ammo_duty", "Duty Round", "ammo" }, { "ammo_free", "Freedom Round", "ammo" } }) do
+    { "wpn_box", "Box Gun", "rifles" }, { "ammo_duty", "Duty Round", "ammo" }, { "ammo_free", "Freedom Round", "ammo" },
+    { "kobra", "Kobra", "scopes" } }) do
     M[x[1]] = model(x[1], x[2], x[3])
 end
--- a scoped copy of the Monolith rifle counts as it
+-- a scoped copy of the Monolith rifle counts as it, and has the Kobra on (arsenal_data.mounted_addons);
+-- a gun whose attachments cannot be read
 local COMBO = { wpn_mono_kobra = "wpn_mono" }
+local ON = { wpn_mono_kobra = { "kobra" } }
+function arsenal_data_mounted(obj)
+    if obj:section() == "wpn_box" then error("cannot read it") end
+    return ON[obj:section()] or {}
+end
 local NEVER = { wpn_never = true }
 GEAR = {
     dolg = { { e = "wpn_duty", ranks = { novice = 0.5, trainee = 0.5 }, best = 0.5 },
@@ -148,6 +155,7 @@ arsenal_data = {
     ARMOR = { medium = true, heavy = true, helmets = true },
 }
 function arsenal_data.entry_for(sec) return M[COMBO[sec] or sec] end
+arsenal_data.mounted_addons = arsenal_data_mounted
 function arsenal_data.get(sec) return M[sec] end
 function arsenal_data.obtainable(sec) return not NEVER[sec] end
 function arsenal_data.list(c)
@@ -211,6 +219,10 @@ end
 """
 
 MUTANTS = {
+    # what is on a gun, learned with it
+    "mounted_none": ("local ok, on = pcall(arsenal_data.mounted_addons, item)", "local ok, on = false, nil"),
+    "mounted_pcall": ("local ok, on = pcall(arsenal_data.mounted_addons, item)",
+                      "local ok, on = true, arsenal_data.mounted_addons(item)"),
     "ammo_reveal": ('    if e.cat == "ammo" then\n        add_fact(k, fact)\n        return nil\n    end\n', ""),
     "ammo_fact": ("        add_fact(k, fact)\n        return nil", "        return nil"),
     "ammo_known_gun": ("            if known(g) then return true end", "            if false then return true end"),
@@ -381,12 +393,15 @@ def main():
     run(lambda: cb.npc_on_death_callback(mono, g.person(5, "stalker", "novice")))
     check("wpn_mono" not in known(), "a kill by someone else teaches nothing")
     run(lambda: cb.npc_on_death_callback(mono, g.db.actor))
-    check(all(s in known() for s in ("wpn_mono", "mono_suit", "mono_helm")) and "wpn_never" not in known(),
-          "a kill: his gun (a scoped copy as its model), suit and helmet; never what never turns up: %s" % known())
-    check(facts("wpn_mono", "carried") == {"monolith": ["veteran"]} and facts("mono_suit", "worn") == {"monolith": ["veteran"]},
-          "who had it: %s %s" % (facts("wpn_mono", "carried"), facts("mono_suit", "worn")))
+    check(all(s in known() for s in ("wpn_mono", "mono_suit", "mono_helm", "kobra")) and "wpn_never" not in known(),
+          "a kill: his gun (a scoped copy as its model) and the scope on it, suit and helmet; never what never "
+          "turns up: %s" % known())
+    check(facts("wpn_mono", "carried") == {"monolith": ["veteran"]} and facts("mono_suit", "worn") == {"monolith": ["veteran"]}
+          and facts("kobra", "carried") == {"monolith": ["veteran"]},
+          "who had it: %s %s %s" % (facts("wpn_mono", "carried"), facts("mono_suit", "worn"), facts("kobra", "carried")))
     run(lambda: g.run_timers())
-    check(len(g.NEWS) == 1 and "Learned from killing Monolith fighter npc 101: " in g.NEWS[1] and "Monolith Rifle" in g.NEWS[1],
+    check(len(g.NEWS) == 1 and "Learned from killing Monolith fighter npc 101: " in g.NEWS[1] and "Monolith Rifle" in g.NEWS[1]
+          and "Kobra" in g.NEWS[1],
           "one news line for what one kill taught, naming him: %s" % list(g.NEWS.values()))
     rec = st().known["wpn_mono"]
     page = run(lambda: m.describe(rec.how, rec.at))
@@ -394,7 +409,7 @@ def main():
           "and on its page, where he fell: %s" % page)
     old = run(lambda: m.describe(lua.table_from({"kind": "kill", "faction": "dolg"}), lua.table_from({"lvl": "l01_escape"})))
     check(old == "killing a Duty fighter in Cordon", "a kill kept before names and places: %s" % old)
-    check(set(new()) == {"wpn_mono", "mono_suit", "mono_helm"}, "and marked new: %s" % new())
+    check(set(new()) == {"wpn_mono", "mono_suit", "mono_helm", "kobra"}, "and marked new: %s" % new())
 
     # the tally: every TALLY kills of a faction bring word of more of its gear, up to the highest
     # rank killed; at STUDY kills its gear is studied
@@ -603,6 +618,14 @@ def main():
     rec = st().known["wpn_free"]
     page = rec and run(lambda: m.describe(rec.how, rec.at))
     check(page == "the body of Freedom fighter npc 402 in Garbage, at the Depot", "and on its page, whose: %s" % page)
+    # what is on a gun in a window, with the gun; a gun whose attachments cannot be read, still
+    gui.npc_is_box = True
+    gui.GetPartner = lua.eval("function(p) return function() return p end end")(
+        g.person(403, "x", "novice", lua.table_from(["wpn_box", "wpn_mono_kobra"])))
+    st().known["wpn_box"] = None
+    run(lambda: cb.GUI_on_show("UIInventory"))
+    check(facts("kobra", "stash") == {"l02_garbage": True} and "wpn_mono" in known() and "wpn_box" in known(),
+          "a stash's gun and the scope on it, where they lay: %s %s" % (facts("kobra", "stash"), known()))
 
     # talks: one thing a day per person; an expert's with specs; an enemy will not talk
     m.reset()

@@ -27,6 +27,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 GD = os.path.join(HERE, "..", "gamedata")
 DATA = io.open(os.path.join(GD, "scripts", "arsenal_compare.script"), encoding="latin-1").read()
 PAGE = io.open(os.path.join(GD, "scripts", "ui_arsenal_compare.script"), encoding="latin-1").read()
+PAGES = io.open(os.path.join(GD, "scripts", "arsenal_pages.script"), encoding="latin-1").read()
 XML = io.open(os.path.join(GD, "configs", "ui", "ui_arsenal.xml"), encoding="cp1251").read()
 STRINGS = dict(re.findall(r'<string id="([^"]+)">\s*<text>(.*?)</text>',
                           io.open(os.path.join(GD, "configs", "text", "eng", "st_arsenal.xml"), encoding="cp1251").read(),
@@ -132,8 +133,11 @@ logs = {}
 function printf(fmt, ...) logs[#logs + 1] = string.format(fmt, ...) end
 PDA_SECTION = nil
 ActorMenu = { get_pda_menu = function() return { SetActiveSubdialog = function(self, s) PDA_SECTION = s end } end }
+-- the switch: the real arsenal_pages (main loads it), whose open records the page asked for;
+-- and MAC's tile, for Back (arsenal_pages.back_to_launcher), there unless a case takes it away
 OPENED = {}
-arsenal_pages = { open = function(p) OPENED[#OPENED + 1] = p end }
+TILE = true
+z_arsenal_mac = { has_tile = function() return TILE end }
 
 -- the mod's strings, and the game's the card rows name (one with the color codes and the colon
 -- the card's own names carry)
@@ -331,8 +335,15 @@ PAGE_MUTANTS = {
     "cmp_no_credit": ("    self.credit:SetText(arsenal_mcm.credit())\n", ""),
     "cmp_jailbreak_always": ("local jb = arsenal_mcm.jailbreak() == true", "local jb = true"),
     "cmp_side_x": ("local SIDE_X = { left = 28, right = 418 }", "local SIDE_X = { left = 28, right = 410 }"),
+    "cmp_back_unplaced": ("    arsenal_pages.show_back(self.back_row, self.flat)\n    arsenal_compare.validate()",
+                          "    arsenal_compare.validate()"),
+    "cmp_back_row_short": ("{ self.btn_swap, self.btn_clear }", "{ self.btn_clear }"),
 }
-MUTANTS = dict(DATA_MUTANTS, **PAGE_MUTANTS)
+# arsenal_pages: Back's row of two buttons
+PAGES_MUTANTS = {
+    "pages_right_of_first": ("        right = math.max(right, row.xs[i] + b:GetWidth())", "        right = row.xs[1] + b:GetWidth()"),
+}
+MUTANTS = dict(DATA_MUTANTS, **PAGE_MUTANTS, **PAGES_MUTANTS)
 
 
 def sizes():
@@ -341,13 +352,16 @@ def sizes():
 
 
 def main():
-    data, page = DATA, PAGE
+    data, page, pages = DATA, PAGE, PAGES
     mutant = sys.argv[1] if len(sys.argv) > 1 else None
     if mutant:
         old, new = MUTANTS[mutant]
         if mutant in DATA_MUTANTS:
             assert data.count(old) == 1, old
             data = data.replace(old, new)
+        elif mutant in PAGES_MUTANTS:
+            assert pages.count(old) == 1, old
+            pages = pages.replace(old, new)
         else:
             assert page.count(old) == 1, old
             page = page.replace(old, new)
@@ -370,6 +384,8 @@ def main():
                     "setfenv(f, env); _G[name] = env; f(); return env end")
     try:
         cmp = load("arsenal_compare", data)
+        load("arsenal_pages", pages)
+        lua.execute("arsenal_pages.open = function(p) OPENED[#OPENED + 1] = p end")
         ui = load("ui_arsenal_compare", page)
     except L.LuaError as e:
         print("FAIL  the scripts load: %s" % e)
@@ -616,6 +632,18 @@ def page_steps(lua, g, cmp, ui, check, sz, src):
           % list(g.OPENED.values())[n:])
     page.cb.btn_back()
     check(g.PDA_SECTION == "eptLauncher", "Back goes to the launcher")
+    # with a PDA tab of the catalog's own instead of MAC's tile: no Back in the PDA, Swap and Clear
+    # moved over into its place, ending where it ended
+    shift = sz["btn_back"][0] + sz["btn_back"][2] - (sz["cmp_clear"][0] + sz["cmp_clear"][2])
+    g.TILE = False
+    page = ui.get_ui()
+    untiled = (page.btn_back.shown, page.btn_swap.x, page.btn_clear.x)
+    g.TILE = True
+    page = ui.get_ui()
+    tiled = (page.btn_back.shown, page.btn_swap.x, page.btn_clear.x)
+    check(untiled == (False, sz["cmp_swap"][0] + shift, sz["cmp_clear"][0] + shift)
+          and tiled == (True, sz["cmp_swap"][0], sz["cmp_clear"][0]),
+          "without MAC's tile, no Back, Swap and Clear in its place; with it, as laid out: %s %s" % (untiled, tiled))
 
     # Clear: empty again
     page.cb.cmp_clear()

@@ -3,9 +3,10 @@
     one of its kind enters the player's inventory, however it got there (picked up, looted,
     bought, crafted, a reward). With the MCM option "Count guns you see" on, the guns in a
     body, stash or trader's stock count too, when its window opens. A scoped or silenced
-    combination counts as the gun it was made from (arsenal_data.variant_for). The set only
-    grows: dropping, selling or taking a gun apart changes nothing, so there is nothing to
-    track afterwards.
+    combination counts as the gun it was made from (arsenal_data.variant_for), and what is on
+    a gun counts as found with it: an attachment counts loose or mounted. The set only grows:
+    dropping, selling or taking a gun apart changes nothing, so there is nothing to track
+    afterwards.
 
     Finds are kept per variant (arsenal_data: a gun model has one or more variants, the
     sections of its name that play the same), so a model's page can show which of its variants
@@ -61,6 +62,27 @@ function mark(sec, quiet, how)
         notify({ v })
     end
     return v
+end
+
+-- an item and what is on it: a weapon's attachments (arsenal_data.mounted_addons) are found
+-- with it, the same way; one news line for all that is new, unless quiet. Returns the new
+-- variants.
+local function mark_with(obj, quiet, how)
+    local new, made = {}, nil
+    -- how it came, worked out once for the item and what is on it, and only for a new find
+    local function once()
+        if made == nil then made = (type(how) == "function") and how() or how end
+        return made
+    end
+    local v = mark(obj:section(), true, once)
+    if v then new[#new + 1] = v end
+    local ok, on = pcall(arsenal_data.mounted_addons, obj)
+    for _, s in ipairs(ok and on or {}) do
+        local a = mark(s, true, once)
+        if a then new[#new + 1] = a end
+    end
+    if not quiet then notify(new) end
+    return new
 end
 
 -- whether a variant is found
@@ -197,7 +219,7 @@ local function scan()
     if not db.actor then return end
     db.actor:iterate_inventory(function(owner, obj)
         if obj then
-            mark(obj:section(), true, carried)
+            mark_with(obj, true, carried)
         end
     end, db.actor)
 end
@@ -210,7 +232,7 @@ end
 
 local function actor_on_item_take(obj)
     if obj then
-        mark(obj:section(), not scanned, scanned and take_source or carried)
+        mark_with(obj, not scanned, scanned and take_source or carried)
     end
 end
 
@@ -226,8 +248,9 @@ local function GUI_on_show(name)
     local new = {}
     local how = partner_source(gui, partner, true)
     local function take(_, obj)
-        local v = obj and mark(obj:section(), true, how)
-        if v then new[#new + 1] = v end
+        for _, v in ipairs(obj and mark_with(obj, true, how) or {}) do
+            new[#new + 1] = v
+        end
     end
     if gui.npc_is_box then
         partner:iterate_inventory_box(take, partner)

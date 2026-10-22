@@ -27,8 +27,9 @@ end
 ## Reading the catalog
 
 **`arsenal_api.categories()`** returns the categories in Arsenal's order: `{ "pistols", "smgs",
-"shotguns", "rifles", "snipers", "launchers", "melee", "ammo", "light", "medium", "heavy", "exo",
-"helmets" }`.
+"shotguns", "rifles", "snipers", "launchers", "melee", "ammo", "scopes", "suppressors",
+"accessories", "light", "medium", "heavy", "exo", "helmets" }`. The attachments' three came in
+1.8.0; read them by name, not by position.
 
 **`arsenal_api.model(sec)`** returns the model a section belongs to, or `nil`. Any section of
 it will do, a scoped or silenced one too.

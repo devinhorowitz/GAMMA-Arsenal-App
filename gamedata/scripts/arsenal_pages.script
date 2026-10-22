@@ -4,10 +4,19 @@
     (eptArsenalCompare, ui_arsenal_compare), and the switch between them, the plates at the top
     left of each.
 
-    Mod App Creator knows the catalog's section only, its tile's. The other two are claimed here
-    by wrapping pda.set_active_subdialog as MAC wraps it (Seasons of the Zone's two pages do the
-    same); every other section passes down untouched, and either wrap order works. A page that
-    fails to build is logged and comes back empty, so the PDA stays up.
+    The catalog is reached from its tile in Mod App Creator's launcher (z_arsenal_mac), or from a
+    tab of its own in the PDA's tab bar. Modded Exes' tab registry (pda_dynamic_tabs, since
+    2026.7.31) adds the tab after the others, in the bar's own look, under a section of its own,
+    which the catalog then opens in. The tab is there when MCM asks for it (arsenal_mcm.pda_tab)
+    or MAC is not installed; otherwise, or without the registry, the tile. The registry rebuilds
+    the live tab bar as a tab comes or goes. A tab added during a load (in on_game_start) crashed
+    the game on 2026-10-11, and one added in play worked, so the tab comes and goes only in play:
+    a moment after the first update, and once the game runs again after MCM's options change.
+
+    The sections are claimed here by wrapping pda.set_active_subdialog as MAC wraps it (Seasons of
+    the Zone's two pages do the same); every other section passes down untouched, and either wrap
+    order works. The catalog's own section stays claimed, for its tile and other mods' calls. A
+    page that fails to build is logged and comes back empty, so the PDA stays up.
 --]]
 
 PAGES = {
@@ -25,6 +34,98 @@ local function script_of(page)
     if page == "workbench" then return ui_arsenal_workbench end
     if page == "compare" then return ui_arsenal_compare end
     return ui_arsenal
+end
+
+-- a page's window, or nothing (logged) when it fails to build
+local function page_ui(page)
+    local ok, ui = pcall(function() return script_of(page).get_ui() end)
+    if ok then return ui end
+    say("the " .. page .. " page failed to build: " .. tostring(ui))
+    return nil
+end
+
+-- the catalog's tab: its caption, and the registry's section for it while it is there
+local TAB_CAPTION = "st_arsenal_title"
+local tab_section
+
+-- whether this engine can give Arsenal a tab of its own: Modded Exes' registry, and AddTab on
+-- the tab control
+function tab_supported()
+    return pda_dynamic_tabs ~= nil and type(pda_dynamic_tabs.register) == "function"
+        and CUITabControl ~= nil and CUITabControl.AddTab ~= nil
+end
+
+-- whether the catalog has a tab of its own: asked for in MCM, or MAC is not there for a tile
+function wants_tab()
+    return tab_supported() and (arsenal_mcm.pda_tab() or not (mac_mcm and mac_mcm.add_app)) or false
+end
+
+-- the section the catalog opens in: its tab's while it has one
+function catalog_section()
+    return tab_section or PAGES.catalog.tab
+end
+
+-- whether Back, in the PDA, goes to MAC's launcher: while the catalog has its tile there
+function back_to_launcher()
+    return z_arsenal_mac.has_tile() == true
+end
+
+-- A page's Back and the buttons left of it, as the layout places them (made with the page), and
+-- each open: Back is there flat, where it closes the window, and in the PDA while it goes to the
+-- launcher; without it the buttons move over into its place, ending where it ended.
+function back_row(back, buttons)
+    local row = { back = back, buttons = buttons, xs = {} }
+    local right = 0
+    for i, b in ipairs(buttons) do
+        row.xs[i] = b:GetWndPos().x
+        right = math.max(right, row.xs[i] + b:GetWidth())
+    end
+    row.shift = back:GetWndPos().x + back:GetWidth() - right
+    return row
+end
+
+function show_back(row, flat)
+    local back = flat or back_to_launcher()
+    row.back:Show(back)
+    for i, b in ipairs(row.buttons) do
+        b:SetWndPos(vector2():set(row.xs[i] + (back and 0 or row.shift), b:GetWndPos().y))
+    end
+end
+
+-- The catalog's tab there or gone, as wants_tab() says, and MAC's tile the other way round; a
+-- tab the registry refuses leaves the tile. With a tab taken away while it was the PDA's last
+-- section, the PDA would reopen on a section nothing answers, its tab bar hidden; it goes to
+-- Tasks, the PDA's own first page, instead.
+local function sync()
+    local want = wants_tab()
+    if want and not tab_section then
+        local ok, id = pcall(pda_dynamic_tabs.register, TAB_CAPTION, function() return page_ui("catalog") end)
+        if ok and type(id) == "string" then
+            tab_section = id
+            z_arsenal_mac.remove_tile()
+        else
+            say("no PDA tab of its own: " .. tostring(id))
+            z_arsenal_mac.add_tile()
+        end
+    elseif not want and tab_section then
+        local id = tab_section
+        tab_section = nil
+        local ok, err = pcall(pda_dynamic_tabs.unregister, id)
+        if not ok then say("the PDA tab could not be taken away: " .. tostring(err)) end
+        z_arsenal_mac.add_tile()
+        local pda_menu = ActorMenu.get_pda_menu()
+        if pda_menu and pda_menu:GetActiveSection() == id then pda_menu:SetActiveSubdialog("eptTasks") end
+    end
+end
+
+-- sync, `delay` seconds into play (time events run with the actor's updates); a second call
+-- before it runs changes nothing
+local function sync_soon(delay)
+    CreateTimeEvent("arsenal_pages", "sync_tab", delay, function()
+        local ok, err = pcall(sync)
+        if not ok then say("the PDA tab: " .. tostring(err)) end
+        return true
+    end)
 end
 
 -- Go to a page: in the PDA by its section; in the flat window (the MCM key) by swapping the
@@ -46,24 +147,22 @@ function open(page, sec, id)
         return
     end
     local ok, err = pcall(function()
-        ActorMenu.get_pda_menu():SetActiveSubdialog(PAGES[page].tab)
+        ActorMenu.get_pda_menu():SetActiveSubdialog(page == "catalog" and catalog_section() or PAGES[page].tab)
     end)
     if not ok then say("could not open " .. tostring(page) .. ": " .. tostring(err)) end
 end
 
--- Workbench's and Compare's sections to their pages; forwards every argument, not just the
--- section, so a signature upstream grows is not cut short
+-- the pages' sections to the pages; forwards every argument, not just the section, so a
+-- signature upstream grows is not cut short
 local wrapped = false
 local function route()
     if wrapped or not (pda and pda.set_active_subdialog) then return end
     local orig = pda.set_active_subdialog
     pda.set_active_subdialog = function(section, ...)
-        local page = (section == PAGES.workbench.tab and "workbench") or (section == PAGES.compare.tab and "compare")
+        local page = (section == PAGES.catalog.tab and "catalog") or (section == PAGES.workbench.tab and "workbench")
+            or (section == PAGES.compare.tab and "compare")
         if page then
-            local ok, ui = pcall(function() return script_of(page).get_ui() end)
-            if ok then return ui end
-            say("the " .. page .. " page failed to build: " .. tostring(ui))
-            return nil
+            return page_ui(page)
         end
         return orig(section, ...)
     end
@@ -146,6 +245,9 @@ end
 function on_game_start()
     -- on_game_load, the moment MAC installs its own wrapper
     RegisterScriptCallback("on_game_load", route)
+    -- the catalog's tab, in play only (above)
+    RegisterScriptCallback("actor_on_first_update", function() sync_soon(1) end)
+    RegisterScriptCallback("on_option_change", function() sync_soon(0) end)
     -- caught: the game starts every script in one pass, and an error would stop the rest
     local ok, err = pcall(add_customize)
     if not ok then say("no Customize on the catalog: " .. tostring(err)) end

@@ -25,8 +25,13 @@ STUBS = r"""
 callbacks = {}
 function RegisterScriptCallback(name, fn) callbacks[name] = fn end
 options = {}
+-- MCM's modifier helpers: HELD is the modifier down with the key (0 none, 1 Shift, 2 Ctrl, 3 Alt);
+-- get_mod_key(0) is true only with none held, as MCM's is
+HELD = 0
 ui_mcm = { get = function(path) return options[path] end,
-           set = function(path, v) options[path] = v end }
+           set = function(path, v) options[path] = v end,
+           kb_mod_radio = "radio_h",
+           get_mod_key = function(v) return HELD == (v or 0) end }
 -- the PDA: what reached it, and the log
 news = {}
 logged = {}
@@ -67,7 +72,10 @@ function engine_press(key)
     tick()
 end
 PDA_WORKS = true
-arsenal_pages = { pda_works = function() return PDA_WORKS end }
+-- TABS: whether the engine has Modded Exes' tab registry ("boom": the question fails)
+TABS = false
+arsenal_pages = { pda_works = function() return PDA_WORKS end,
+                  tab_supported = function() if TABS == "boom" then error("no answer") end return TABS end }
 game = { translate_string = function(k) return k == "st_arsenal_credit" and "Arsenal v%s by %s" or ("T:" .. k) end }
 msgs = {}
 actor_menu = { set_msg = function(typ, msg, tm) msgs[#msgs + 1] = { typ, msg, tm } end }
@@ -80,7 +88,8 @@ MUTANTS = {
     "no_callback": ('RegisterScriptCallback("on_key_press", on_key_press)', "-- not registered"),
     "any_key": ("if not (k and key == k) then return end", "if not k then return end"),
     "seen_def": ('{ id = "count_seen", type = "check", val = 1, def = false }', '{ id = "count_seen", type = "check", val = 1 }'),
-    "seen_any": ("return ok and v == true", "return ok"),
+    "seen_any": ('ui_mcm.get("arsenal/count_seen") end)\n    return ok and v == true',
+                 'ui_mcm.get("arsenal/count_seen") end)\n    return ok'),
     "jail_def": ('{ id = "jailbreak", type = "check", val = 1, def = false }', '{ id = "jailbreak", type = "check", val = 1 }'),
     "jail_any": ('ui_mcm.get("arsenal/jailbreak") end)\n    return (ok and v == true) or false',
                  'ui_mcm.get("arsenal/jailbreak") end)\n    return ok'),
@@ -110,6 +119,22 @@ MUTANTS = {
     "credit_no_version": ("game.translate_string(\"st_arsenal_credit\"), VERSION, AUTHOR)",
                           "game.translate_string(\"st_arsenal_credit\"), \"\", AUTHOR)"),
     "version_behind": (VERSION_LINE, 'VERSION = "0.0.1"'),
+    "mod_ignored": ("    if not mod_held() then return end\n", ""),
+    "mod_none_strict": ("    if m == 0 then return true end\n", ""),
+    "mod_def": ("val = 2, def = 0,\n              hint", "val = 2,\n              hint"),
+    "mod_old_mcm": ("return not ok or held == true", "return ok and held == true"),
+    # the PDA tab option
+    "tab_always": ("    if tab_choice() then\n", "    if true then\n"),
+    "tab_no_mac": ("return mac_mcm ~= nil and mac_mcm.add_app ~= nil and arsenal_pages.tab_supported()",
+                   "return arsenal_pages.tab_supported()"),
+    "tab_no_registry": ("return mac_mcm ~= nil and mac_mcm.add_app ~= nil and arsenal_pages.tab_supported()",
+                        "return mac_mcm ~= nil and mac_mcm.add_app ~= nil"),
+    "tab_choice_unguarded": ("    local ok, v = pcall(function() return mac_mcm ~= nil and mac_mcm.add_app ~= nil and arsenal_pages.tab_supported() end)",
+                             "    local ok, v = true, mac_mcm ~= nil and mac_mcm.add_app ~= nil and arsenal_pages.tab_supported()"),
+    "tab_at_end": ("table.insert(page.gr, 4, {", "table.insert(page.gr, {"),
+    "tab_def": ('{ id = "pda_tab", type = "check", val = 1, def = false }', '{ id = "pda_tab", type = "check", val = 1 }'),
+    "tab_any": ('ui_mcm.get("arsenal/pda_tab") end)\n    return (ok and v == true) or false',
+                'ui_mcm.get("arsenal/pda_tab") end)\n    return ok'),
 }
 
 
@@ -165,6 +190,38 @@ def main():
     mcm, g.ui_mcm = g.ui_mcm, None
     check(m.sources() is False, "off without MCM")
     g.ui_mcm = mcm
+
+    # "Arsenal tab in the PDA": offered only where there is a choice, with MAC and Modded Exes' tab
+    # registry both (without MAC the tab is there anyway, without the registry the tile), after the
+    # key and its modifier; a check box, off by default; the rest of the page whole either way
+    def option_ids():
+        try:
+            return [o.id for o in m.on_mcm_load().gr.values()]
+        except L.LuaError as e:
+            return "error: %s" % str(e).splitlines()[0]
+    plain = option_ids()
+    g.TABS = True
+    no_mac = option_ids()
+    lua.execute("mac_mcm = { add_app = function() end }")
+    both = option_ids()
+    g.TABS = False
+    no_registry = option_ids()
+    g.TABS = "boom"
+    failing = option_ids()
+    g.TABS = True
+    tab = [o for o in m.on_mcm_load().gr.values() if o.id == "pda_tab"]
+    check(no_mac == plain and no_registry == plain and failing == plain
+          and both == plain[:3] + ["pda_tab"] + plain[3:]
+          and len(tab) == 1 and tab[0].type == "check" and tab[0]["def"] is False,
+          "the PDA tab: offered with MAC and the registry only (a failing check offers none), after the "
+          "key's modifier, off by default; the rest whole: %s | %s" % (both, failing))
+    check(m.pda_tab() is False, "off while the option is unset")
+    g.options["arsenal/pda_tab"] = True
+    check(m.pda_tab() is True, "on once the player turns it on")
+    mcm, g.ui_mcm = g.ui_mcm, None
+    check(m.pda_tab() is False, "off without MCM")
+    g.ui_mcm = mcm
+    g.options["arsenal/pda_tab"] = None
 
     # PDA notifications: on until silenced, here or by the Silence box on the pages (set_news);
     # every message goes through tell, which drops it while they are off and logs that it did
@@ -237,6 +294,42 @@ def main():
     g.engine_press(65)
     check(g.opened == 3 and g.shown == "catalog" and len(g.msgs) == 1,
           "and opens it again once the PDA works: %d" % g.opened)
+    g.engine_press(65)
+    # the modifier: MCM's picker, none by default; with none the key opens Arsenal whatever is
+    # held (a sprinting player's Shift), with Ctrl asked for only Ctrl and the key do
+    mod = [o for o in opts.gr.values() if o.id == "flat_mod"]
+    content = [c[1] for c in mod[0].content.values()] if mod else []
+    check(len(mod) == 1 and mod[0].type == "radio_h" and mod[0]["def"] == 0 and mod[0].hint == "mcm_kb_modifier"
+          and content == [0, 1, 2, 3],
+          "the key's modifier is MCM's own picker (none, Shift, Ctrl, Alt), none by default: %s" % content)
+    check(m.flat_mod() == 0, "none while the option is unset")
+    g.HELD = 1
+    g.engine_press(65)
+    check(g.shown == "catalog", "with none asked for, Shift and the key open it too: %s" % g.shown)
+    g.engine_press(65)
+    g.options["arsenal/flat_mod"] = 2
+    check(m.flat_mod() == 2, "Ctrl once picked: %s" % m.flat_mod())
+    before = g.opened
+    g.HELD = 0
+    g.engine_press(65)
+    check(g.opened == before and g.shown is None, "with Ctrl asked for, the key alone opens nothing")
+    g.HELD = 1
+    g.engine_press(65)
+    check(g.opened == before and g.shown is None, "nor Shift and the key")
+    g.HELD = 2
+    g.engine_press(65)
+    check(g.opened == before + 1 and g.shown == "catalog", "Ctrl and the key open it: %d %s" % (g.opened, g.shown))
+    g.HELD = 0
+    g.engine_press(65)
+    check(g.shown is None, "and the key alone closes it again: %s" % g.shown)
+    helper, g.ui_mcm.get_mod_key = g.ui_mcm.get_mod_key, None
+    g.engine_press(65)
+    check(g.shown == "catalog", "an MCM without the helper asks for none: the key alone opens it: %s" % g.shown)
+    g.engine_press(65)
+    g.ui_mcm.get_mod_key = helper
+    g.options["arsenal/flat_mod"] = 7
+    check(m.flat_mod() == 0, "a value out of range reads as none: %s" % m.flat_mod())
+    g.options["arsenal/flat_mod"] = None
     # a load with a page open flat: each page closes as the level goes, so the engine holds no
     # window the restarted scripts have freed
     unload = g.callbacks.actor_on_net_destroy

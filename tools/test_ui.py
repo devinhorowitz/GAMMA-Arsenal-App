@@ -23,6 +23,7 @@ from lua_jit import L
 HERE = os.path.dirname(os.path.abspath(__file__))
 GD = os.path.join(HERE, "..", "gamedata")
 SRC = io.open(os.path.join(GD, "scripts", "ui_arsenal.script"), encoding="latin-1").read()
+PAGES = io.open(os.path.join(GD, "scripts", "arsenal_pages.script"), encoding="latin-1").read()
 XML = io.open(os.path.join(GD, "configs", "ui", "ui_arsenal.xml"), encoding="cp1251").read()
 STRINGS = dict(re.findall(r'<string id="([^"]+)">\s*<text>(.*?)</text>',
                           io.open(os.path.join(GD, "configs", "text", "eng", "st_arsenal.xml"), encoding="cp1251").read(),
@@ -58,21 +59,33 @@ function W:SetTextureRect(r) self.rect = r end
 function W:SetStretchTexture(b) end
 function W:SetTextureColor(c) self.tcolor = c end
 function W:Show(b) self.shown = b end
+function W:IsShown() return self.shown ~= false end
 function W:Enable(b) self.enabled = b end
 function W:TextControl() return self end
 function W:SetAutoDelete(b) self.autodelete = b end
 function W:GetCheck() return self.checked == true end
 function W:SetCheck(v) self.checked = v == true end
--- list box
+-- list box; filling one anew scrolls it to the top, as the engine's does
 function W:AddExistingItem(item) self.items = self.items or {}; table.insert(self.items, item) end
-function W:RemoveAll() self.items = {}; self.sel = nil end
+-- the engine translates an added line's text
+function W:AddTextItem(t)
+    local it = { text = game.translate_string(t) }
+    self.items = self.items or {}; table.insert(self.items, it)
+    return it
+end
+function W:RemoveAll() self.items = {}; self.sel = nil; self.scroll = 0 end
 function W:GetSize() return #(self.items or {}) end
 function W:SetSelectedIndex(i) self.sel = i end
+function W:GetSelectedIndex() return self.sel end
 function W:GetSelectedItem() return self.sel and self.items[self.sel + 1] end
--- scroll view
-function W:Clear() self.content = {} end
+-- scroll view, and the scroll of a list box: MAX_SCROLL as far as anything reaches
+MAX_SCROLL = 1000
+function W:Clear() self.content = {}; self.scroll = 0 end
 function W:AddWindow(w, auto) self.content = self.content or {}; table.insert(self.content, w) end
-function W:ScrollToBegin() end
+function W:ScrollToBegin() self.scroll = 0 end
+function W:GetCurrentScrollPos() return self.scroll or 0 end
+function W:GetMaxScrollPos() return MAX_SCROLL end
+function W:SetScrollPos(p) self.scroll = p end
 
 -- ui_arsenal.xml must have every element asked for; utils.xml is the game's
 CScriptXmlInit = function()
@@ -88,6 +101,7 @@ CScriptXmlInit = function()
     end end
     x.InitTextWnd, x.InitStatic, x.InitCheck = init(), init(), init()
     x.Init3tButton, x.InitListBox, x.InitScrollView = init(), init(), init()
+    x.InitFrame = init()
     return x
 end
 
@@ -111,10 +125,15 @@ CUIListBoxItem.__index = CUIListBoxItem
 CUIScriptWnd = setmetatable({}, { __index = W })
 function CUIScriptWnd.Update(self) end
 function CUIScriptWnd:Register(w, name) self.registered = self.registered or {}; self.registered[name] = w end
--- a selection by cb[name](), a click (LIST_ITEM_CLICKED) by clk[name]()
+-- a selection by cb[name](), a click (LIST_ITEM_CLICKED) by clk[name](). The engine finds a
+-- callback by the name Register gives a window, which also sends its messages to the page, a
+-- window inside another too
 function CUIScriptWnd:AddCallback(name, ev, fn, obj)
     local t = ev == ui_events.LIST_ITEM_CLICKED and "clk" or "cb"
-    self[t] = self[t] or {}; self[t][name] = function() fn(obj) end
+    self[t] = self[t] or {}; self[t][name] = function()
+        assert(self.registered and self.registered[name], "no window registered as '" .. name .. "'")
+        fn(obj)
+    end
 end
 function CUIScriptWnd:SetWndRect(r) self.rect = r.r end
 function CUIScriptWnd:ShowDialog(b) self.dialog_shown = true end
@@ -152,10 +171,11 @@ function GetARGB(a, r, g, b) return string.format("%d,%d,%d,%d", a, r, g, b) end
 ui_events = { BUTTON_CLICKED = 1, LIST_ITEM_SELECT = 2, LIST_ITEM_CLICKED = 3, WINDOW_KEY_PRESSED = 6 }
 TIME = 0
 function time_global() return TIME end
-local T = { st_arsenal_found_count = "Found %s of %s", st_arsenal_found_on = "Found %s in %s",
+-- the mod's own found lines come from its table (STRINGS), so the page reads as the game shows it
+local T = { st_arsenal_found_count = "Found %s of %s",
             st_arsenal_not_found = "Not found yet", st_arsenal_cat_pistols = "Pistols",
             st_arsenal_cat_rifles = "Rifles", st_arsenal_cat_melee = "Melee", st_arsenal_fire_modes = "Fire modes",
-            st_arsenal_variants = "Variants:", st_arsenal_variant_found = "%s, found %s in %s",
+            st_arsenal_variants = "Variants:",
             st_prop_weight = "Weight", st_kg = "kg", ui_ammo_types = "Ammo", l01_escape = "Cordon",
             ui_inv_rate_of_fire = "Fire Rate" }
 for k, v in pairs(STRINGS) do T[k] = T[k] or v end
@@ -180,9 +200,12 @@ utils_ui = {
 arsenal_theme = { argb = function(role, a) return a and (role .. "@" .. a) or role end,
                   markup = function(role) return "<" .. role .. ">" end,
                   set_active = function(btn, on) btn.active = on end }
--- the switch to Workbench (arsenal_pages)
+-- the switch to Workbench: the real arsenal_pages (main loads it), whose open records the page
+-- asked for; and MAC's tile, for Back (arsenal_pages.back_to_launcher), there unless a case
+-- takes it away
 opened_pages = {}
-arsenal_pages = { open = function(page, sec) opened_pages[#opened_pages + 1] = { page = page, sec = sec } end }
+TILE = true
+z_arsenal_mac = { has_tile = function() return TILE end }
 logged = {}
 function printf(fmt, ...) logged[#logged + 1] = string.format(fmt, ...) end
 
@@ -437,9 +460,11 @@ local function first(e)
     for _, v in ipairs(e.variants) do if found[v.sec] then return found[v.sec] end end
 end
 arsenal_collection = {
+    -- as the real one puts a find: how it came (st_arsenal_got_*), and where; or, for a record
+    -- that has no how, the level alone
     describe = function(at)
         local where = T[at.lvl] or at.lvl
-        return at.how and ("a " .. at.how.kind .. " in " .. where) or where
+        return at.how and (T["st_arsenal_got_" .. at.how.kind] .. " in " .. where) or where
     end,
     is_found = function(sec) return found[sec] ~= nil end,
     found_at = function(sec) return found[sec] end,
@@ -453,9 +478,32 @@ arsenal_collection = {
 """
 
 MUTANTS = {
+    # what goes on a gun
+    "fits_none": ("for _, f in ipairs(safe(arsenal_data.fits, shown.sec) or {}) do", "for _, f in ipairs({}) do"),
+    "fits_unlisted": ("            if listed(f.e) then\n                local n = f.e.name",
+                      "            if true then\n                local n = f.e.name"),
+    "fits_makes": ('                if f.makes then n = string.format("%s (%s)", n, string.format(T("st_arsenal_makes"), f.makes)) end\n', ""),
+    "fits_upgrade": ('                if f.upgrade then n = string.format("%s (%s)", n, T("st_arsenal_after_upgrade")) end\n', ""),
+    "fits_more_never": ("            elseif arsenal_data.obtainable(f.e.sec) then\n                unmet[f.e] = true",
+                        "            else\n                unmet[f.e] = true"),
+    "fits_more_once": ("        for _ in pairs(unmet) do more = more + 1 end", "        more = 3"),
+    "fits_more_hidden": ("            if more > 0 then\n                text(\"entry_line\", string.format(T(\"st_arsenal_fits_more\")",
+                         "            if false then\n                text(\"entry_line\", string.format(T(\"st_arsenal_fits_more\")"),
+    "fits_fires": ("                for _, a in ipairs(f.ammo or {}) do fires[#fires + 1] = a end\n", ""),
+    "fits_fires_distinct": ("            fires = distinct(fires)\n", ""),
+    "fits_names_distinct": ('T("st_arsenal_cat_" .. c), table.concat(distinct(names[c]), ", ")',
+                            'T("st_arsenal_cat_" .. c), table.concat(names[c], ", ")'),
+    "fits_know": ("    if know and addon then\n        local T = game.translate_string\n        local cats",
+                  "    if addon then\n        local T = game.translate_string\n        local cats"),
+    "addon_not_studied": ('addon and "st_arsenal_not_studied_addon" or "st_arsenal_not_studied"', '"st_arsenal_not_studied"'),
+    "mounted_rows": ("local mounted = known_rows(addon and safe(arsenal_data.mounted_on, shown.sec) or {}, fx.carried)",
+                     "local mounted = known_rows({}, fx.carried)"),
+    "mounted_known": ("local mounted = known_rows(addon and safe(arsenal_data.mounted_on, shown.sec) or {}, fx.carried)",
+                      "local mounted = addon and safe(arsenal_data.mounted_on, shown.sec) or {}"),
     "find_words": ("    return date_of(at), arsenal_collection.describe(at)", "    return date_of(at), at.lvl"),
     "learned_where": ("arsenal_intel.describe(learned.how, learned.at)", "arsenal_intel.describe(learned.how)"),
-    "silence_unpainted": ("    self:PaintFooter()\n    self:SetCounts()\n", "    self:SetCounts()\n"),
+    "silence_unpainted": ("    self:PaintFooter()\n    arsenal_pages.show_back(self.back_row, self.flat)\n",
+                          "    arsenal_pages.show_back(self.back_row, self.flat)\n"),
     "silence_inverted": ("arsenal_mcm.set_news(not self.silence:GetCheck())", "arsenal_mcm.set_news(self.silence:GetCheck())"),
     "no_credit": ("    self.credit:SetText(arsenal_mcm.credit())\n", ""),
     "jailbreak_unlit": ("    self.jailbreak:Show(jb)\n", "    self.jailbreak:Show(false)\n"),
@@ -515,7 +563,7 @@ MUTANTS = {
     "model_found": ("local found = arsenal_collection.entry_found(e) ~= nil",
                     "local found = arsenal_collection.is_found(e.sec)"),
     "card_always": ("if know and arsenal_data.has_stat_card(shown.sec) then", "if know then"),
-    "filter": ("if listed(e) and (found or not only) then", "if listed(e) then"),
+    "filter": ("            if passes(show, found, is_new(e)) then list[#list + 1] = e end", "            list[#list + 1] = e"),
     "add_after": ("self.detail:AddWindow(entry, true)", "-- not added"),
     "no_combine": ("if #values < 2 then", "if true then"),
     "first_variant": ("            shown = v\n            break", "            break"),
@@ -579,7 +627,7 @@ MUTANTS = {
     "never_line": ('        line(game.translate_string("st_arsenal_never"), "warn")\n', ""),
     "addon_never_note": ("            if it.never then\n", "            if false then\n"),
     "addon_hide": ("if up or not imm then", "if true then"),
-    "listed": ("if listed(e) and (found or not only) then", "if found or not only then"),
+    "listed": ("        if listed(e) then\n            local found", "        if true then\n            local found"),
     "row_glow": ('new and "wpn_glow" or nil', "nil"),
     "action_always": ("        b:Show(a ~= nil)", "        b:Show(true)"),
     "action_everywhere": ("        if not a.show or safe(a.show, sec) then", "        if true then"),
@@ -615,10 +663,11 @@ MUTANTS = {
     "no_click": ('    self:AddCallback("wpn_list", ui_events.LIST_ITEM_CLICKED, self.OnWeaponClicked, self)\n', ""),
     "click_glow_stays": ("        item.glow:Show(false)\n        item.glow = nil\n", ""),
     "click_cat_stays": ("        if row.glow and not fresh_in(key) then", "        if false then"),
-    "click_count_stale": ('            row.name:SetTextColor(theme.argb("body"))\n        end\n    end\n    self:SetCounts()\n',
-                          '            row.name:SetTextColor(theme.argb("body"))\n        end\n    end\n'),
+    "click_count_stale": ('            row.name:SetTextColor(theme.argb(row.heading and "heading" or "body"))\n        end\n    end\n    self:SetCounts()\n',
+                          '            row.name:SetTextColor(theme.argb(row.heading and "heading" or "body"))\n        end\n    end\n'),
     "header_no_new": ("    self.found_count:SetText(new > 0", "    self.found_count:SetText(false"),
-    "not_studied_note": ('        text("entry_line", game.translate_string("st_arsenal_not_studied"), "dim")\n', ""),
+    "not_studied_note": ('        text("entry_line", game.translate_string(addon and "st_arsenal_not_studied_addon" or "st_arsenal_not_studied"),\n'
+                         '            "dim")\n', ""),
     "gate_fits": ("    -- what fits it, its camos, parts and repair kits, once it is studied\n    if know then",
                   "    -- what fits it, its camos, parts and repair kits, once it is studied\n    if true then"),
     "facts_rows": ("        if full then return rows end\n", ""),
@@ -656,7 +705,83 @@ MUTANTS = {
     "sources_no_files": ("            for _, f in ipairs(src.files) do\n", "            for _, f in ipairs({}) do\n"),
     "show_next_ignored": ("            self.cat, self.sec = e.cat, e.sec\n", ""),
     "show_next_sticky": ("        next_sec = nil\n        if e and listed(e) then", "        if e and listed(e) then"),
+    # 1.8: groups that fold, the Show and Sort boxes, icons in the rows, the page opened where it was left
+    "group_flat": ("    return arsenal_data.GROUPS or {", "    return nil or {"),
+    "group_no_heading": ("            if g.flat or #g.cats < 2 then", "            if true then"),
+    "group_one_heading": ("            if g.flat or #g.cats < 2 then", "            if g.flat then"),
+    "fold_ignored": ("    view.folded[id] = (not view.folded[id]) or nil\n", ""),
+    "fold_drops_cat": ("                            present[c] = true\n", ""),
+    "fold_selects_nothing": ("        idx = g and self.cat_index[GROUP .. g.id]\n", ""),
+    "heading_selects": ("    if item and not item.heading and item.key ~= self.cat then", "    if item and item.key ~= self.cat then"),
+    "heading_color_lost": ('row.name:SetTextColor(theme.argb(row.heading and "heading" or "body"))',
+                           'row.name:SetTextColor(theme.argb("body"))'),
+    "heading_counts_one": ("                    n, f = n + cn, f + cf\n", ""),
+    "show_missing": ('    if show == "missing" then return not found end\n', ""),
+    "show_new_offered": ('        if s ~= "new" or immersive() then out[#out + 1] = s end', "        out[#out + 1] = s"),
+    # the Show and Sort boxes' lists, the page's own
+    "drop_unmarked": ("        d.list:SetSelectedIndex(cur - 1)\n", ""),
+    "drop_unnamed": ("        d.box:TextControl():SetText(labels[cur])\n", ""),
+    "drop_full_height": ("math.min(#labels, d.rows) * DROP_ROW_H", "d.rows * DROP_ROW_H"),
+    "drop_uncapped": ("math.min(#labels, d.rows) * DROP_ROW_H", "#labels * DROP_ROW_H"),
+    "drop_both_open": ("function ArsenalPDA:OpenDrop(id)\n    self:CloseDrops()\n", "function ArsenalPDA:OpenDrop(id)\n"),
+    "drop_no_catcher": ("    d.frame:Show(true)\n    self.drop_catcher:Show(true)\n", "    d.frame:Show(true)\n"),
+    "drop_back_never": ("    d.back:Show(true)\n", ""),
+    "drop_back_left_open": ("        d.back:Show(false)\n        d.frame:Show(false)\n", "        d.frame:Show(false)\n"),
+    "drop_back_unsized": ("    d.back:SetWndSize(size)\n", ""),
+    "drop_back_over": ('        local back = xml:InitStatic("drop_back", self)\n        local frame = xml:InitFrame(id .. "_list", self)\n',
+                       '        local frame = xml:InitFrame(id .. "_list", self)\n        local back = xml:InitStatic("drop_back", self)\n'),
+    "drop_back_unplaced": ("        back:SetWndPos(frame:GetWndPos())\n", ""),
+    "drop_catcher_deaf": ('    self:Register(self.drop_catcher, "drop_catcher")\n', ""),
+    "drop_list_deaf": ('        self:Register(list, id .. "_list_box")\n', ""),
+    "drop_pick_stays_open": ("    local i = self.drops[id].list:GetSelectedIndex() + 1\n    self:CloseDrops()\n",
+                             "    local i = self.drops[id].list:GetSelectedIndex() + 1\n"),
+    "drop_pick_off_by_one": ("self.drops[id].list:GetSelectedIndex() + 1", "self.drops[id].list:GetSelectedIndex()"),
+    "drop_open_at_reset": ("        reveal = not same }\n    self:CloseDrops()\n", "        reveal = not same }\n"),
+    "drop_escape_ignored": ("            and self.drop_catcher:IsShown() then", "            and false then"),
+    "drop_escape_always": ("            and self.drop_catcher:IsShown() then", "            then"),
+    "drop_escape_closes_window": ("        self:CloseDrops()\n        return true\n", "        self:CloseDrops()\n"),
+    "drop_drawn_under": ("    self.cat = arsenal_data.CATEGORIES[1]\n    self.sec = nil\nend",
+                         '    xml:InitStatic("rule_top", self)\n    self.cat = arsenal_data.CATEGORIES[1]\n    self.sec = nil\nend'),
+    "drop_engine_combo": ('xml:Init3tButton("sort_box", self)', 'xml:InitComboBox("sort_box", self)'),
+    "show_box_stale": ("    view.show = s\n    self:FillShowBox()\n", "    view.show = s\n"),
+    "show_same_refills": ("    if not s or s == view.show then return end\n", "    if not s then return end\n"),
+    "sort_same_refills": ("    if not o or o.key == view.sort[sort_mode(self.cat)] then return end\n",
+                          "    if not o then return end\n"),
+    "sort_ignored": ("    local up = sort_models(list, self.sort_key, view.reverse,\n        not (self.cat and self.cat:sub(1, #FACTION) == FACTION))\n",
+                     "    local up = true\n"),
+    "sort_faction_unnamed": ('    if key == "kind" or (key == "name" and by_name) then', '    if key == "kind" or key == "name" then'),
+    "sort_name_unreversed": ("            for i = 1, math.floor(#list / 2) do list[i], list[#list + 1 - i] = list[#list + 1 - i], list[i] end\n", ""),
+    "sort_unknown_first": ("            if va ~= nil and vb == nil then return true end\n            if va == nil and vb ~= nil then return false end\n", ""),
+    "sort_leaks": ("    if not studied(e) then return nil end\n    local sec = shown_variant(e).sec", "    local sec = shown_variant(e).sec"),
+    "sort_no_reverse": ("    view.reverse = not view.reverse\n", ""),
+    "sort_arrow_fixed": ('self.sort_arrow:InitTexture(up and "ui_scroll_btn_up" or "ui_scroll_btn_down")',
+                         'self.sort_arrow:InitTexture("ui_scroll_btn_up")'),
+    "sort_forgotten": ("        if o.key == view.sort[sort_mode(self.cat)] then cur = i end", "        if false then cur = i end"),
+    "sort_one_memory": ('    return (key and key:sub(1, #FACTION) == FACTION) and "faction" or "cat"', '    return "cat"'),
+    "sort_faction_kind": ('        add("kind", T("st_arsenal_sort_kind"))\n', ""),
+    "icons_none": ("            { icon = shown_variant(e).sec })", "            nil)"),
+    "icon_untinted": ("    icon:SetTextureColor(GetARGB(255, v, v, v))\n    return icon", "    return icon"),
+    "icon_first_variant": ("{ icon = shown_variant(e).sec }", "{ icon = e.sec }"),
+    "icon_read_stays_dim": ("    item:Paint(role_of(e, false))\n", "    item.name:SetTextColor(theme.argb(role_of(e, false)))\n"),
+    "restore_none": ("    if self.restore then self:Restore() end\n", ""),
+    "restore_unrecorded": ("    view.wpn_scroll = self.wpn_list:GetCurrentScrollPos()\n", ""),
+    "restore_now": ("    self.restore = kept\n", "    self.restore = kept\n    self:Restore()\n"),
+    "restore_cat_lost": ("    self.cat = view.cat or self.cat\n", ""),
+    "restore_no_reveal": ("        if i and i >= 0 then scroll_to(self.wpn_list, math.max(0, i - 3) * MODEL_ROW_H) end\n", ""),
+    # Back, with MAC's tile or without it (the page; then arsenal_pages, PAGES_MUTANTS)
+    "back_unplaced": ("    arsenal_pages.show_back(self.back_row, self.flat)\n    self:SetCounts()", "    self:SetCounts()"),
+    "back_row_empty": ("arsenal_pages.back_row(self.btn_back, self.action_btns)", "arsenal_pages.back_row(self.btn_back, {})"),
+    "back_flat_as_pda": ("    arsenal_pages.show_back(self.back_row, self.flat)\n    self:SetCounts()",
+                         "    arsenal_pages.show_back(self.back_row, false)\n    self:SetCounts()"),
+    "pages_back_ignores_flat": ("    local back = flat or back_to_launcher()", "    local back = back_to_launcher()"),
+    "pages_back_never_hidden": ("    row.back:Show(back)\n", ""),
+    "pages_buttons_stay": ("        b:SetWndPos(vector2():set(row.xs[i] + (back and 0 or row.shift), b:GetWndPos().y))\n", ""),
+    "pages_shift_short": ("    row.shift = back:GetWndPos().x + back:GetWidth() - right", "    row.shift = back:GetWndPos().x - right"),
+    "pages_shift_inverted": ("(back and 0 or row.shift)", "(back and row.shift or 0)"),
 }
+
+PAGES_MUTANTS = {"pages_back_ignores_flat", "pages_back_never_hidden", "pages_buttons_stay", "pages_shift_short",
+                 "pages_shift_inverted"}
 
 
 def sizes():
@@ -668,12 +793,16 @@ def sizes():
 
 
 def main():
-    src = SRC
+    src, pages = SRC, PAGES
     mutant = sys.argv[1] if len(sys.argv) > 1 else None
     if mutant:
         old, new = MUTANTS[mutant]
-        assert src.count(old) == 1, old
-        src = src.replace(old, new)
+        if mutant in PAGES_MUTANTS:
+            assert pages.count(old) == 1, old
+            pages = pages.replace(old, new)
+        else:
+            assert src.count(old) == 1, old
+            src = src.replace(old, new)
     fails = []
 
     def check(cond, what):
@@ -689,6 +818,14 @@ def main():
     def texts_of(entry):
         return [c.text for c in entry.children.values() if c.text]
 
+    def show_only(u, kind):
+        """pick `kind` in the Show box, as the player does: a click on the box opens its list,
+        and a click on the option there selects it, then is heard"""
+        opts = list(u.show_opts.values())
+        u.cb.show_box()
+        u.drops.show.list.sel = opts.index(kind)
+        u.clk.show_list_box()
+
     sz = sizes()
     used = sorted(set(re.findall(r'xml:Init\w+\("([\w:]+)"', src)))
     missing = [u for u in used if u not in sz]
@@ -703,6 +840,9 @@ def main():
     cmp_src = io.open(os.path.join(GD, "scripts", "arsenal_compare.script"), encoding="latin-1").read()
     lua.eval("function(src) local env = setmetatable({}, {__index = _G}); local f = assert(loadstring(src)); "
              "setfenv(f, env); f(); arsenal_compare = env end")(cmp_src)
+    lua.eval("function(src) local env = setmetatable({}, {__index = _G}); local f = assert(loadstring(src)); "
+             "setfenv(f, env); f(); arsenal_pages = env end")(pages)
+    lua.execute("arsenal_pages.open = function(page, sec) opened_pages[#opened_pages + 1] = { page = page, sec = sec } end")
     m = lua.eval("function(src) local env = setmetatable({}, {__index = _G}); local f = assert(loadstring(src)); "
                  "setfenv(f, env); f(); return env end")(src)
     g = lua.globals()
@@ -779,13 +919,12 @@ def main():
               and "No faction carries it and no stash holds it" not in texts,
               "in stashes, though no level is named; no fighter carries it: %s" % texts[i:i + 2])
 
-    ui.found_only.checked = True
-    ui.cb.found_only()
+    show_only(ui, "found")
     rows = [r.name.text for r in ui.wpn_list["items"].values()]
     check(rows == ["Fort-17"], "found only: %s" % rows)
     fort = shown(ui)
     texts = texts_of(fort)
-    check("Found 14.05.2012 in a stash in Cordon" in texts, "when, how and where: %s" % texts[:3])
+    check("Found 14.05.2012: looted from a stash in Cordon" in texts, "when, how and where: %s" % texts[:3])
     rowboxes = [c for c in fort.children.values() if c.path in ("stats_box", "item_info:stats_box")]
     card = [(c.stat or "", [k.text for k in c.children.values() if k.text and k.path != "entry_max"])
             for c in rowboxes]
@@ -793,11 +932,11 @@ def main():
           "the card's own row where the variants agree, each value where they differ: %s" % card)
     i = texts.index("Variants:") if "Variants:" in texts else -1
     check(i >= 0 and texts[i + 1:i + 3] == ["Fort-17 (reliability 89%)",
-                                             "Fort-17 (reliability 91%), found 14.05.2012 in a stash in Cordon"],
+                                             "Fort-17 (reliability 91%), found 14.05.2012: looted from a stash in Cordon"],
           "the variants, the found one with when, how and where: %s" % texts[i:i + 3])
     lines = {c.text: c.color for c in fort.children.values() if c.text}
     check(lines.get("Fort-17 (reliability 89%)") == "dim"
-          and lines.get("Fort-17 (reliability 91%), found 14.05.2012 in a stash in Cordon") == "good",
+          and lines.get("Fort-17 (reliability 91%), found 14.05.2012: looted from a stash in Cordon") == "good",
           "unfound variants dim, found ones green")
     check("wpn_fort17" in list(g.icons.values()) and "wpn_fort" not in list(g.icons.values()),
           "the icon is the found variant's: %s" % list(g.icons.values()))
@@ -908,7 +1047,7 @@ def main():
     check(len(pos) == 4 and [x for x, _ in pos] == [0, 118, 236, 0] and pos[3][1] > pos[0][1],
           "tiles three to a row, the fourth on the next: %s" % pos)
 
-    ui.found_only.checked = False
+    show_only(ui, "all")
     ui.cat_list.sel = 1
     ui.cb.cat_list()
     check([r.key for r in ui.wpn_list["items"].values()] == ["wpn_ak74"] and ui.sec == "wpn_ak74", "switching category")
@@ -1218,10 +1357,9 @@ arsenal_intel = {
     check(ui.sec == "wpn_knife" and btns()[0].shown is False, "a page it does not apply to: hidden")
     ui.cat_list.sel = 1
     ui.cb.cat_list()
-    ui.found_only.checked = True
-    ui.OnFoundOnly(ui)
+    show_only(ui, "found")
     check(ui.sec is None and btns()[0].shown is False, "nothing shown, no button: %s" % ui.sec)
-    ui.found_only.checked = False
+    show_only(ui, "all")
     m.add_action("workbench", lua.eval('{ label = "st_wb2", run = function(sec) end }'))
     m.add_action("other", lua.eval('{ run = function(sec) error("boom") end }'))
     ui = m.get_ui()
@@ -1265,7 +1403,7 @@ arsenal_intel = {
 
     cmp = g.arsenal_compare
     cmp.clear()
-    ui.found_only.checked = False
+    show_only(ui, "all")
     ui = m.get_ui()
     n_open = len(g.opened_pages)
     knife = (show("wpn_knife"), ui.cmp_add.shown, ui.cmp_status.text)
@@ -1295,11 +1433,9 @@ arsenal_intel = {
     check(ui.cmp_add.shown is True and ui.cmp_status.text == "Starts a new comparison", "a suit: %r" % ui.cmp_status.text)
     show("wpn_ak74")
     check(ui.cmp_status.text == "Replaces Fort-17", "a third gun replaces the right: %r" % ui.cmp_status.text)
-    ui.found_only.checked = True
-    ui.cb.found_only()
+    show_only(ui, "found")
     check(ui.sec is None and ui.cmp_add.shown is False and ui.cmp_status.text == "", "nothing shown: no Compare")
-    ui.found_only.checked = False
-    ui.cb.found_only()
+    show_only(ui, "all")
     n_open = len(g.opened_pages)
     ui.cb.page_compare()
     check(len(g.opened_pages) == n_open + 1 and g.opened_pages[n_open + 1].page == "compare", "the switch opens Compare")
@@ -1329,6 +1465,10 @@ arsenal_intel = {
               "the window fills like the page")
         ret = flat.OnKeyboard(flat, g.DIK_keys.DIK_A, g.ui_events.WINDOW_KEY_PRESSED)
         check(flat.IsShown(flat) and not ret, "another key leaves it open")
+        flat.cb.sort_box()
+        ret = flat.OnKeyboard(flat, g.DIK_keys.DIK_ESCAPE, g.ui_events.WINDOW_KEY_PRESSED)
+        check(flat.IsShown(flat) and ret and flat.drops.sort.frame.shown is False,
+              "Escape with a drop-down open closes the drop-down, the window stays")
         ret = flat.OnKeyboard(flat, g.DIK_keys.DIK_ESCAPE, g.ui_events.WINDOW_KEY_PRESSED)
         check(not flat.IsShown(flat) and ret, "Escape closes it")
         m.open_flat()
@@ -1338,6 +1478,25 @@ arsenal_intel = {
         g.pda_section = None
         flat.cb.btn_back()
         check(not flat.IsShown(flat) and g.pda_section is None, "Back closes it, leaving the PDA alone")
+        # Back in the PDA goes to MAC's launcher: there while the catalog has its tile; with a PDA
+        # tab of its own instead, it goes, and the button left of it moves into its place. Flat,
+        # Back closes the window, so it stays.
+        back_x, act_x = sz["btn_back"][0], sz["action_btn"][0]
+        pda_btn = ui.action_btns[1]
+        tiled = (ui.btn_back.shown is not False, pda_btn.x)
+        g.TILE = False
+        m.get_ui()
+        m.open_flat()
+        untiled = (ui.btn_back.shown, pda_btn.x)
+        flat_row = (flat.btn_back.shown is not False, flat.action_btns[1].x)
+        flat.Close(flat)
+        g.TILE = True
+        m.get_ui()
+        again = (ui.btn_back.shown, pda_btn.x)
+        check(tiled == (True, act_x) and untiled == (False, back_x) and flat_row == (True, act_x)
+              and again == (True, act_x),
+              "Back while the catalog has MAC's tile, the button beside it in place; with a tab instead, "
+              "no Back, the button in its place; flat, Back stays: %s %s %s %s" % (tiled, untiled, flat_row, again))
 
     # the footer: Silence is MCM's "PDA notifications" seen here too, ticked while the messages
     # are off, written on a click and read afresh at every open; under the lists, the credit line
@@ -1376,9 +1535,9 @@ arsenal_intel = {
         check(lamp.shown is False and lbl.shown is False,
               "and it goes out once the jailbreak is off: %s, %s" % (lamp.shown, lbl.shown))
     # nothing on the page reaches into the footer, which keeps the content box's last rows
-    body = ["by_faction_lbl", "by_faction", "cat_list", "rule_cat", "found_only_lbl", "found_only", "wpn_list",
+    body = ["by_faction_lbl", "by_faction", "cat_list", "rule_cat", "show_box", "sort_box", "sort_dir", "wpn_list",
             "rule_wpn", "detail"]
-    foot = ["silence_lbl", "silence", "jailbreak", "jailbreak_lbl", "credit"]
+    foot = ["silence_lbl", "silence", "jailbreak", "jailbreak_lbl", "mark_read", "credit"]
     rule = sz["rule_foot"][1]
     low = [(k, sz[k][1] + sz[k][3]) for k in body if sz[k][1] + sz[k][3] > rule - 2]
     out = [k for k in foot if sz[k][1] < rule or sz[k][1] + sz[k][3] > 709]
@@ -1387,19 +1546,62 @@ arsenal_intel = {
     # Compare's row over the entry, level with the toggles over the lists; the entry level with the lists
     a, st, d, lst = sz["cmp_add"], sz["cmp_status"], sz["detail"], sz["wpn_list"]
     check(d[1] == lst[1] and d[1] + d[3] == lst[1] + lst[3] and a[1] + a[3] <= d[1] and st[1] + st[3] <= d[1]
-          and a[1] + a[3] / 2 == sz["found_only_lbl"][1] + sz["found_only_lbl"][3] / 2
+          and a[1] + a[3] / 2 == sz["by_faction_lbl"][1] + sz["by_faction_lbl"][3] / 2
           and a[0] >= sz["rule_wpn"][0] + 4 and a[0] + a[2] <= st[0] and st[0] + st[2] <= 792,
           "Compare and its line over the entry, level with the toggles; the entry level with the lists")
+    # the Show and Sort boxes and the direction button over the model list, left to right, level
+    # with "By faction", clear of the rules and of the list
+    sb, so, sd = sz["show_box"], sz["sort_box"], sz["sort_dir"]
+    mid = lambda r: r[1] + r[3] / 2
+    check(sz["rule_cat"][0] + 4 <= sb[0] and sb[0] + sb[2] <= so[0] and so[0] + so[2] <= sd[0]
+          and sd[0] + sd[2] <= sz["rule_wpn"][0] and all(r[1] + r[3] <= sz["wpn_list"][1] for r in (sb, so, sd))
+          and all(abs(mid(r) - mid(sz["by_faction_lbl"])) <= 1 for r in (sb, so, sd)),
+          "Show, Sort and the direction over the model list, side by side, level with By faction: %s %s %s"
+          % (sb, so, sd))
+    arrow = sz["sort_dir_arrow"]
+    check(arrow[0] >= 0 and arrow[1] >= 0 and arrow[0] + arrow[2] <= sd[2] and arrow[1] + arrow[3] <= sd[3],
+          "the arrow inside its button: %s in %s" % (arrow, sd))
+    # the boxes' lists, the page's own (the engine's drop-down draws its open list a second time,
+    # straight to the screen: in the 3D PDA apart from the page). Each opens right under its box,
+    # as wide, its rows as high as the script counts them, at most four for Show and ten for Sort
+    # (the options menu's own), its list box inside it; the catcher over the whole page; all three
+    # made last, so they draw over the page and take its clicks first
+    drop_h = int(re.search(r"local DROP_ROW_H = (\d+)", src).group(1))
+    bad = []
+    for box, most in (("show", 4), ("sort", 10)):
+        b, f, lb = sz[box + "_box"], sz[box + "_list"], sz[box + "_list_box"]
+        ih = int(re.search(r'<%s_list_box [^>]*item_height="(\d+)"' % box, XML).group(1))
+        if not (f[0] == b[0] and f[1] == b[1] + b[3] and f[2] == b[2] and f[3] == most * drop_h and ih == drop_h
+                and lb[0] >= 0 and lb[1] >= 0 and lb[0] + lb[2] <= f[2] and lb[3] == f[3]):
+            bad.append((box, b, f, lb, ih))
+    kids = paths(ui)
+    check(not bad and sz["drop_catcher"] == [0, 0, 1024, 768]
+          and kids[-5:] == ["drop_catcher", "drop_back", "show_list", "drop_back", "sort_list"]
+          and "InitComboBox" not in src,
+          "no engine drop-down: the lists under their boxes, as wide, %d-high rows, 4 and 10 at most; the catcher "
+          "over the page; each list over a back of its own; all made last: %s %s" % (drop_h, bad, kids[-5:]))
+    # the backs are solid, in the PDA screen's own color: the texture the layout names, as
+    # textures_descr declares it, and the file build.py writes, every pixel opaque
+    descr = io.open(os.path.join(GD, "configs", "ui", "textures_descr", "ui_arsenal.xml"), encoding="cp1251").read()
+    tex = re.search(r"<drop_back [^>]*>\s*<texture>(\w+)</texture>", XML)
+    tex = tex.group(1) if tex else None
+    m_file = re.search(r'<file name="([^"]+)">\s*<texture id="%s"' % tex, descr) if tex else None
+    dds = os.path.join(GD, "textures", m_file.group(1).replace("\\", os.sep) + ".dds") if m_file else None
+    pixels = []
+    if dds and os.path.exists(dds):
+        raw = open(dds, "rb").read()[128:]
+        pixels = sorted(set((raw[i + 2], raw[i + 1], raw[i], raw[i + 3]) for i in range(0, len(raw), 4)))
+    check(tex == "arsenal_screen" and pixels == [(22, 26, 27, 255)] and 'stretch="1"' in XML.split("<drop_back", 1)[1].split(">", 1)[0],
+          "the backs: stretched, solid, the PDA screen's color: %s %s %s" % (tex, dds, pixels))
     # left to right, nothing in the footer over the next: Silence, the lamp and its label, the credit
     row = [sz[k] for k in foot]
     over = [(foot[i], foot[i + 1]) for i in range(len(row) - 1) if row[i][0] + row[i][2] > row[i + 1][0]]
     check(not over, "the footer's parts side by side, none over the next: %s" % over)
-    # Mark all read over the model list, beside "Found only", level with it, clear of the list
+    # Mark all read in the footer, between the lamp's label and the credit, level with Silence
     mr = sz["mark_read"]
-    check(sz["found_only"][0] + sz["found_only"][2] <= mr[0] and mr[0] + mr[2] <= sz["rule_wpn"][0]
-          and mr[1] + mr[3] / 2 == sz["found_only_lbl"][1] + sz["found_only_lbl"][3] / 2
-          and mr[1] + mr[3] <= sz["wpn_list"][1],
-          "Mark all read beside Found only, over the model list, level with the toggles: %s" % mr)
+    check(sz["jailbreak_lbl"][0] + sz["jailbreak_lbl"][2] <= mr[0] and mr[0] + mr[2] <= sz["credit"][0]
+          and abs(mid(mr) - mid(sz["silence"])) <= 1 and mr[1] >= rule,
+          "Mark all read in the footer, level with Silence, before the credit: %s" % mr)
 
     # without discovery there is nothing to mark read
     check(ui.mark_read.shown is False, "with discovery off, no Mark all read")
@@ -1457,6 +1659,381 @@ arsenal_intel = {
           "after it: nothing new, nothing glows, the count line plain, the button gone: %s %s %s"
           % (glowing(), ui.mark_read.shown, ui.found_count.text))
     check(ui.sec is not None and len(texts_of(shown(ui))) > 0, "and the page shown stays shown: %s" % ui.sec)
+
+    # ---- 1.8: icons in the model rows, the Show and Sort boxes, groups that fold, the page
+    # opened where it was left ----
+    def model_names(u):
+        return [r.name.text for r in u.wpn_list["items"].values()]
+
+    def pick(u, box, key):
+        """pick `key` in a drop-down (Sort: its option's key), as the player does: the box, then
+        the option in its list"""
+        opts = [o if isinstance(o, str) else o.key for o in getattr(u, box + "_opts").values()]
+        if key not in opts:
+            return False
+        u.cb[box + "_box"]()
+        u.drops[box].list.sel = opts.index(key)
+        u.clk[box + "_list_box"]()
+        return True
+
+    def attempt(fn, what):
+        try:
+            return fn()
+        except L.LuaError as err:
+            check(False, "%s: %s" % (what, str(err).split("\n")[0][:120]))
+            return None
+
+    lua.execute("arsenal_intel = nil")
+    ui = m.get_ui()
+    show_only(ui, "all")
+    ui.cat_list.sel = 0
+    ui.cb.cat_list()
+    g.icons = lua.table_from([])
+    ui.FillWeapons(ui)
+    rows = list(ui.wpn_list["items"].values())
+    tints = [(r.name.text, r.icon.tcolor if r.icon else None) for r in rows]
+    check(list(g.icons.values())[:3] == ["wpn_pm", "wpn_fort17", "wpn_ghost"]
+          and tints == [("PM", "255,150,150,150"), ("Fort-17", "255,255,255,255"), ("Ghost", "255,90,90,90")],
+          "each row has its icon, the found variant's; grayed while not found, darker for what never turns up: %s %s"
+          % (list(g.icons.values())[:3], tints))
+    ic = rows[0].icon
+    check(ic is not None and ic.w <= sz["wpn_row_icon"][2] and ic.h <= sz["wpn_row_icon"][3]
+          and abs(ic.x - (sz["wpn_row_icon"][0] + (sz["wpn_row_icon"][2] - ic.w) / 2)) < 0.01,
+          "an icon fitted in its box, centered: %s" % (ic and (ic.x, ic.y, ic.w, ic.h),))
+    item_h = int(re.search(r'<wpn_list [^>]*item_height="(\d+)"', XML).group(1))
+    row_h = int(re.search(r"local MODEL_ROW_H = (\d+)", src).group(1))
+    inside = [k for k in ("wpn_row_icon", "wpn_row_name", "wpn_glow") if sz[k][1] + sz[k][3] > item_h]
+    check(item_h == row_h and not inside, "the model rows %d high in the layout and the script (%d), all of a "
+          "row inside it: %s" % (item_h, row_h, inside or "yes"))
+
+    # the Show box: everything, the found, the not found; and while discovery is on, what is new.
+    # Its list holds them, the one chosen marked there and named on the box, the list as tall as
+    # they are
+    tx = lambda k: g.TEXT[k]
+    shw, srt = ui.drops.show, ui.drops.sort
+    state = lambda: (shw.frame.shown, srt.frame.shown, ui.drop_catcher.shown)
+    lines = lambda d: [it.text for it in d.list["items"].values()]
+    check(list(ui.show_opts.values()) == ["all", "found", "missing"]
+          and lines(shw) == [tx("st_arsenal_show_" + s) for s in ("all", "found", "missing")]
+          and shw.list.sel == 0 and ui.show_box.text == "All" and shw.frame.h == 3 * drop_h,
+          "Show offers all, found, not found (nothing is new without discovery), all marked and named, three "
+          "rows high: %s %s %s %s" % (lines(shw), shw.list.sel, ui.show_box.text, shw.frame.h))
+    show_only(ui, "missing")
+    check(model_names(ui) == ["PM", "Ghost"] and ui.show_box.text == tx("st_arsenal_show_missing")
+          and shw.list.sel == 2 and state() == (False, False, False),
+          "not found; the list closed, the box naming it: %s %s %s" % (model_names(ui), ui.show_box.text, state()))
+    show_only(ui, "found")
+    check(model_names(ui) == ["Fort-17"], "found: %s" % model_names(ui))
+    show_only(ui, "all")
+
+    # closed until a box is clicked; then its list is open over the catcher, the other's closed; a
+    # click on the catcher (anywhere else on the page) or Escape closes it, another key not; and
+    # every open of the page starts with them closed
+    closed = state()
+    ui.cb.show_box()
+    opened = state()
+    ui.cb.sort_box()
+    other = state()
+    ui.cb.drop_catcher()
+    caught = state()
+    ui.cb.show_box()
+    ui.OnKeyboard(ui, g.DIK_keys.DIK_A, g.ui_events.WINDOW_KEY_PRESSED)
+    kept = state()
+    esc = ui.OnKeyboard(ui, g.DIK_keys.DIK_ESCAPE, g.ui_events.WINDOW_KEY_PRESSED)
+    escaped = state()
+    check(closed == (False, False, False) and opened == (True, False, True) and other == (False, True, True)
+          and caught == (False, False, False) and kept == (True, False, True) and esc is True
+          and escaped == (False, False, False),
+          "a box opens its list over the catcher, closing the other; the catcher or Escape closes it, another "
+          "key not: %s %s %s %s %s %s %s" % (closed, opened, other, caught, kept, esc, escaped))
+    # each list's back: where its frame is, as large, shown with it and only with it
+    rect = lambda w: (w.x, w.y, w.w, w.h)
+    backed = lambda: all(d.back.shown == d.frame.shown and rect(d.back) == rect(d.frame) for d in (shw, srt))
+    ui.cb.sort_box()
+    sort_open = backed() and srt.back.shown is True
+    ui.cb.show_box()
+    show_open = backed() and shw.back.shown is True and srt.back.shown is False
+    ui.cb.drop_catcher()
+    check(sort_open and show_open and backed() and shw.back.shown is False,
+          "each list's back where its frame is, as large, shown with it: %s %s" % (rect(shw.back), rect(shw.frame)))
+    ui.cb.sort_box()
+    ui = m.get_ui()
+    check(state() == (False, False, False), "a list left open is closed at the next open: %s" % (state(),))
+
+    # the Sort box: name, finds, the card's rows, weight; picked, kept for every row that offers it
+    keys = [o.key for o in ui.sort_opts.values()]
+    labels = [o.label for o in ui.sort_opts.values()]
+    check(keys == ["name", "found", "accuracy", "fire_rate", "weight"] and labels[3] == "Fire Rate"
+          and lines(srt) == labels and srt.list.sel == 0 and ui.sort_box.text == "Name" and srt.frame.h == 5 * drop_h,
+          "a gun category sorts by name, finds, its card's rows by their own names, weight; all five in its "
+          "list: %s %s %s" % (keys, lines(srt), srt.frame.h))
+    # the option already chosen, picked again, changes nothing: the model list stays as scrolled
+    ui.wpn_list.scroll = 40
+    show_only(ui, "all")
+    pick(ui, "sort", "name")
+    check(ui.wpn_list.scroll == 40 and state() == (False, False, False),
+          "the chosen option picked again: the list closes, the model list as it was: %s %s"
+          % (ui.wpn_list.scroll, state()))
+    # more options than its rows: the list as tall as its rows, and it scrolls
+    ui.FillDrop(ui, "sort", lua.table_from(["x%d" % i for i in range(14)]), 1)
+    check(srt.frame.h == 10 * drop_h and len(lines(srt)) == 14 and rect(srt.back) == rect(srt.frame),
+          "fourteen orders: ten rows shown, the list scrolls to the rest, its back as tall: %s %s %s"
+          % (srt.frame.h, len(lines(srt)), rect(srt.back)))
+    ui.FillWeapons(ui)
+    check(model_names(ui) == ["PM", "Fort-17", "Ghost"] and ui.sort_arrow.tex == "ui_scroll_btn_up",
+          "by name, the catalog's own order, the arrow up: %s %s" % (model_names(ui), ui.sort_arrow.tex))
+    pick(ui, "sort", "fire_rate")
+    check(model_names(ui) == ["Ghost", "PM", "Fort-17"] and ui.sort_arrow.tex == "ui_scroll_btn_down",
+          "by fire rate, most first, a tie by name; the arrow down: %s" % model_names(ui))
+    ui.cb.sort_dir()
+    check(model_names(ui) == ["Fort-17", "Ghost", "PM"] and ui.sort_arrow.tex == "ui_scroll_btn_up",
+          "the button turns it round, and its arrow: %s %s" % (model_names(ui), ui.sort_arrow.tex))
+    ui.cb.sort_dir()
+    pick(ui, "sort", "name")
+    ui.cb.sort_dir()
+    check(model_names(ui) == ["Ghost", "Fort-17", "PM"], "by name turned round: %s" % model_names(ui))
+    ui.cb.sort_dir()
+    pick(ui, "sort", "found")
+    check(model_names(ui) == ["Fort-17", "Ghost", "PM"], "newest finds first, the rest after by name: %s"
+          % model_names(ui))
+    check([e.name for e in m.arsenal_data.list("pistols").values()] == ["PM", "Fort-17", "Ghost"],
+          "sorting leaves arsenal_data's own list as it was")
+    pick(ui, "sort", "fire_rate")
+    keys_cat = [r.key for r in ui.cat_list["items"].values()]
+    ui.cat_list.sel = keys_cat.index("ammo")
+    ui.cb.cat_list()
+    ammo_keys = [o.key for o in ui.sort_opts.values()]
+    check(ammo_keys == ["name", "found", "damage", "ap"] and ui.sort_box.text == "Name",
+          "rounds sort by name, finds, damage, AP; a row without fire rate shows its own first: %s %s"
+          % (ammo_keys, ui.sort_box.text))
+    ui.cat_list.sel = keys_cat.index("pistols")
+    ui.cb.cat_list()
+    check(ui.sort_key == "fire_rate" and model_names(ui) == ["Ghost", "PM", "Fort-17"],
+          "back on pistols, fire rate again: %s" % ui.sort_key)
+    ui.by_faction_check.checked = True
+    ui.cb.by_faction()
+    fkeys = [r.key for r in ui.cat_list["items"].values()]
+    ui.cat_list.sel = fkeys.index("f:stalker")
+    ui.cb.cat_list()
+    fk = [o.key for o in ui.sort_opts.values()]
+    kind_order = model_names(ui)
+    pick(ui, "sort", "name")
+    check(fk == ["kind", "name", "found", "weight"] and kind_order == ["Fort-17", "AK-74 Tactical Modernized Carbine "
+          "of the Northern Expedition Special Forces Unit", "SEVA"]
+          and model_names(ui)[0].startswith("AK-74") and model_names(ui)[-1] == "SEVA",
+          "a faction's gear: by kind first, its own order; by name sorts it: %s %s" % (fk, model_names(ui)))
+    pick(ui, "sort", "kind")
+    ui.by_faction_check.checked = False
+    ui.cb.by_faction()
+    pick(ui, "sort", "name")
+
+    # what the player has not learned is not his to sort by: with discovery on, a model not yet
+    # studied goes last whichever way the list runs
+    g.arsenal_intel = intel
+    lua.execute("STUDIED = { wpn_fort = true }")
+    ui = m.get_ui()
+    ui.cat_list.sel = 0
+    ui.cb.cat_list()
+    check(list(ui.show_opts.values()) == ["all", "found", "missing", "new"], "with discovery, Show offers new too")
+    pick(ui, "sort", "fire_rate")
+    a = model_names(ui)
+    attempt(lambda: ui.cb.sort_dir(), "turned round with an unstudied model")
+    b = model_names(ui)
+    attempt(lambda: ui.cb.sort_dir(), "and back")
+    check(a == ["Fort-17", "PM"] and b == ["Fort-17", "PM"],
+          "the unstudied PM last both ways, its fire rate unknown to the player: %s %s" % (a, b))
+    pick(ui, "sort", "name")
+    lua.execute("NEW = { wpn_pm = true }")
+    ui.FillWeapons(ui)
+    show_only(ui, "new")
+    check(model_names(ui) == ["PM"], "new: only what is new: %s" % model_names(ui))
+    show_only(ui, "all")
+
+    # groups: a heading over each group of more than one category, with found/total over them;
+    # the rest as they are; a click on a heading folds it and keeps the category shown
+    lua.execute('arsenal_data.GROUPS = { { id = "ammo", cats = { "ammo" } }, '
+                '{ id = "weapons", cats = { "pistols", "smgs", "rifles", "melee" } }, { id = "armor", cats = { "medium" } } }')
+    lua.execute("arsenal_intel = nil")
+    ui = m.get_ui()
+
+    def cat_rows(u):
+        return [(r.name.text, r.count.text if r.count else None, bool(r.heading)) for r in u.cat_list["items"].values()]
+    check(cat_rows(ui) == [("Ammo", "0/1", False), ("- Weapons", "1/4", True), ("Pistols", "1/2", False),
+                           ("Rifles", "0/1", False), ("Melee", "0/1", False), ("Medium armor", "0/1", False)],
+          "Weapons under a heading counting all of them; a group of one has none: %s" % cat_rows(ui))
+    head = ui.cat_list["items"][2]
+    pist = ui.cat_list["items"][3]
+    check(head.name.color == "heading" and pist.name.x > sz["row_name"][0],
+          "the heading in the headings' color, its categories indented: %s %s" % (head.name.color, pist.name.x))
+    ui.cat_list.sel = 2
+    ui.cb.cat_list()
+    ui.cat_list.sel = 3
+    ui.cb.cat_list()
+    before = (ui.cat, model_names(ui))
+    ui.cat_list.sel = 1
+    ui.cb.cat_list()
+    check((ui.cat, model_names(ui)) == before, "choosing a heading leaves the category shown: %s" % ui.cat)
+    ui.clk.cat_list()
+    check([r[0] for r in cat_rows(ui)] == ["Ammo", "+ Weapons", "Medium armor"] and ui.cat == "rifles"
+          and ui.cat_list.sel == 1 and model_names(ui) == before[1],
+          "a click folds it; the rifles stay shown, the heading chosen: %s %s %s" % (cat_rows(ui), ui.cat, ui.cat_list.sel))
+    ui = m.get_ui()
+    check([r[0] for r in cat_rows(ui)][1] == "+ Weapons" and ui.cat == "rifles" and ui.cat_list.sel == 1,
+          "folded still at the next open, on the same category, its heading chosen: %s %s" % (ui.cat, ui.cat_list.sel))
+    ui.cat_list.sel = 1
+    ui.clk.cat_list()
+    check(len(cat_rows(ui)) == 6 and ui.cat_list.sel == 3, "a click again opens it, the rifles chosen: %s"
+          % ui.cat_list.sel)
+    # a folded group glows while something under it is new; read, it keeps its color, and the
+    # model's icon its tint as read
+    g.arsenal_intel = intel
+    lua.execute("NEW = { wpn_pm = true }; STUDIED = { wpn_fort = true }")
+    ui = m.get_ui()
+    ui.cat_list.sel = 2
+    ui.cb.cat_list()
+    ui.cat_list.sel = 1
+    ui.clk.cat_list()
+    head = ui.cat_list["items"][2]
+    check(head.glow is not None and head.name.color == "heading", "folded with something new: the heading glows")
+    pm_row = list(ui.wpn_list["items"].values())[model_names(ui).index("PM")]
+    tint_new = pm_row.icon.tcolor if pm_row.icon else None
+    ui.wpn_list.sel = model_names(ui).index("PM")
+    ui.clk.wpn_list()
+    check(head.glow is None and head.name.color == "heading",
+          "read: its glow gone, the heading's color kept: %s" % head.name.color)
+    check(tint_new == "255,255,255,255" and pm_row.icon.tcolor == "255,150,150,150",
+          "the new model's icon full, read and not found grayed: %s %s" % (tint_new, pm_row.icon.tcolor))
+    ui.cat_list.sel = 1
+    ui.clk.cat_list()
+    lua.execute("arsenal_data.GROUPS = nil")
+    lua.execute("arsenal_intel = nil")
+
+    # the page opens where it was left, in either window: the same model, each list and the entry
+    # scrolled as they were, once the lists have measured their rows (the next update)
+    ui = m.get_ui()
+    ui.Update(ui)
+    keys_cat = [r.key for r in ui.cat_list["items"].values()]
+    ui.cat_list.sel = keys_cat.index("rifles")
+    ui.cb.cat_list()
+    ui.wpn_list.sel = 0
+    ui.cb.wpn_list()
+    ui.cat_list.scroll, ui.wpn_list.scroll, ui.detail.scroll = 5, 60, 120
+    ui.Update(ui)
+    ui = m.get_ui()
+    pending = (ui.wpn_list.scroll, ui.detail.scroll)
+    ui.Update(ui)
+    check(ui.sec == "wpn_ak74" and pending == (0, 0) and (ui.cat_list.scroll, ui.wpn_list.scroll, ui.detail.scroll)
+          == (5, 60, 120),
+          "reopened on the same model, scrolled as left at the next update: %s %s %s"
+          % (ui.sec, pending, (ui.cat_list.scroll, ui.wpn_list.scroll, ui.detail.scroll)))
+    g.MAX_SCROLL = 40
+    ui = m.get_ui()
+    ui.Update(ui)
+    check(ui.wpn_list.scroll == 40, "no further than the list reaches: %s" % ui.wpn_list.scroll)
+    g.MAX_SCROLL = 1000
+    flat = m.open_flat()
+    if flat is not None:
+        flat.Update(flat)
+        check(flat.cat == "rifles" and flat.sec == "wpn_ak74" and flat.wpn_list.scroll == 40,
+              "the flat window opens where the page was left: %s %s %s" % (flat.cat, flat.sec, flat.wpn_list.scroll))
+        flat.Close(flat)
+    # another app's model (show_next) opens with its row in view, not the old scroll
+    lua.execute("""
+EXTRA = {}
+for i = 1, 8 do
+    local sec = "wpn_x" .. i
+    local e = { name = "X" .. i, sec = sec, cat = "pistols", variants = { { sec = sec, name = "X" .. i } } }
+    e.variants[1].entry = e
+    EXTRA[#EXTRA + 1] = e
+end
+BASE_LIST, BASE_GET = arsenal_data.list, arsenal_data.get
+arsenal_data.list = function(c)
+    if c ~= "pistols" then return BASE_LIST(c) end
+    local out = {}
+    for _, e in ipairs(BASE_LIST(c)) do out[#out + 1] = e end
+    for _, e in ipairs(EXTRA) do out[#out + 1] = e end
+    return out
+end
+arsenal_data.get = function(s)
+    for _, e in ipairs(EXTRA) do if e.sec == s then return e end end
+    return BASE_GET(s)
+end
+""")
+    m.show_next("wpn_x6")
+    ui = m.get_ui()
+    ui.Update(ui)
+    i = model_names(ui).index("X6") if "X6" in model_names(ui) else -1
+    check(ui.sec == "wpn_x6" and i == 8 and ui.wpn_list.scroll == (i - 3) * row_h,
+          "show_next: its row scrolled into view, a few rows below the top: %s %s %s" % (ui.sec, i, ui.wpn_list.scroll))
+    lua.execute("arsenal_data.list, arsenal_data.get = BASE_LIST, BASE_GET")
+
+    # what goes on a gun, while immersive: a category of its own; its page says what it fits (the
+    # guns the player knows of, a line per category, with a kit's gun and a mount an upgrade
+    # adds), how many more that turn up he has yet to meet, a launcher's grenades, and the
+    # fighters he has seen with it on their guns
+    lua.execute("""
+KOBRA = { name = "Kobra", sec = "kobra", cat = "scopes", variants = { { sec = "kobra", name = "Kobra" } } }
+KOBRA.variants[1].entry = KOBRA
+arsenal_data.ATTACHMENTS = { scopes = true }
+table.insert(arsenal_data.CATEGORIES, "scopes")
+BASE_LIST, BASE_GET = arsenal_data.list, arsenal_data.get
+arsenal_data.list = function(c) if c == "scopes" then return { KOBRA } end return BASE_LIST(c) end
+arsenal_data.get = function(s) if s == "kobra" then return KOBRA end return BASE_GET(s) end
+arsenal_data.fits = function(sec)
+    if sec ~= "kobra" then return {} end
+    local g = BASE_GET
+    return { { e = g("wpn_pm"), how = "scopes" }, { e = g("wpn_pm"), how = "launchers", ammo = { "VOG-25" } },
+             { e = g("wpn_fort"), how = "kits", makes = "Fort-17 Tactical" },
+             { e = g("wpn_fort"), how = "launchers", upgrade = true, ammo = { "VOG-25" } },
+             { e = g("wpn_ak74"), how = "launchers", ammo = { "M406" } }, { e = g("wpn_ghost"), how = "scopes" },
+             { e = g("wpn_knife"), how = "scopes" } }
+end
+arsenal_data.mounted_on = function(sec)
+    if sec ~= "kobra" then return {} end
+    return { { faction = "dolg", ranks = { "veteran", "expert" } }, { faction = "army", ranks = { "novice" } } }
+end
+-- an attachment has no stat card (test_data checks the real one)
+BASE_CARD = arsenal_data.has_stat_card
+arsenal_data.has_stat_card = function(s) return s ~= "kobra" and BASE_CARD(s) end
+KNOWN = { kobra = true, wpn_pm = true, wpn_fort = true }
+STUDIED = { kobra = true }
+NEW = {}
+FACTS = { kobra = { carried = { dolg = { expert = true } } } }
+""")
+    g.arsenal_intel = intel
+    ui = m.get_ui()
+    keys = [r.key for r in ui.cat_list["items"].values()]
+    rows = {r.key: r.name.text for r in ui.cat_list["items"].values()}
+    ui.cat_list.sel = keys.index("scopes") if "scopes" in keys else 0
+    ui.cb.cat_list()
+    t = texts_of(shown(ui))
+    check(rows.get("scopes") == "Scopes" and ui.sec == "kobra",
+          "an attachment's category in the list: %s %s" % (rows.get("scopes"), ui.sec))
+    check(after_in(t, "Fits:", 3) == ["Pistols: PM, Fort-17 (makes the Fort-17 Tactical), Fort-17 (after an upgrade)",
+                                      "and 2 more you have yet to come across", "Fires: VOG-25"],
+          "what it fits: the known guns by category, a kit's gun, an upgrade's mount; the unmet that turn up "
+          "counted; the grenades of the known guns only: %s" % after_in(t, "Fits:", 3))
+    check(after_in(t, "On fighters' guns:", 3)[:2] == ["Duty", "Expert"] and "Army" not in t,
+          "the fighters seen with it on their guns, as far as learned: %s" % after_in(t, "On fighters' guns:", 3))
+    check(ui.cmp_add.shown is False, "no Compare for it")
+    lua.execute("STUDIED = {}")
+    ui = m.get_ui()
+    t = texts_of(shown(ui))
+    check("Not studied yet: find one to see what it fits" in t and "Fits:" not in t,
+          "not studied: found first-hand only, and what it fits stays hidden: %s" % [x for x in t if "studied" in x])
+    lua.execute("STUDIED = { kobra = true }; KNOWN.wpn_ak74 = true")
+    ui = m.get_ui()
+    t = texts_of(shown(ui))
+    check(after_in(t, "Fits:", 4) == ["Pistols: PM, Fort-17 (makes the Fort-17 Tactical), Fort-17 (after an upgrade)",
+                                      "Rifles: AK-74 Tactical Modernized Carbine of the Northern Expedition Special "
+                                      "Forces Unit", "and 1 more you have yet to come across", "Fires: VOG-25, M406"],
+          "a gun he comes to know joins the list, its grenades too: %s" % after_in(t, "Fits:", 4))
+    g.arsenal_intel = None
+    lua.execute("""
+arsenal_data.list, arsenal_data.get, arsenal_data.has_stat_card = BASE_LIST, BASE_GET, BASE_CARD
+table.remove(arsenal_data.CATEGORIES)
+arsenal_data.ATTACHMENTS, arsenal_data.fits, arsenal_data.mounted_on = nil, nil, nil
+""")
     print("\n%d failed" % len(fails))
     return 1 if fails else 0
 

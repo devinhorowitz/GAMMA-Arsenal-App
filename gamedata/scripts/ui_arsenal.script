@@ -21,6 +21,9 @@ local SINGLETON, FLAT
 local PDA_X, PDA_Y = 112, 34
 
 local ROW_H = 22
+local MODEL_ROW_H = 30  -- a model's row: its icon beside its name (ui_arsenal.xml wpn_row_*)
+local DROP_ROW_H = 18   -- a drop-down's row, the options menu's (ui_arsenal.xml *_list_box)
+local SUB_INDENT = 10   -- a category under its group's heading
 local NAME_H = 20       -- one line of the entry's name
 local GAP = 6
 -- what fits a gun, as tiles (ui_arsenal.xml tile_*): three to a row across the entry's 344
@@ -34,23 +37,68 @@ local GLOW_MIN, GLOW_MAX, GLOW_PERIOD = 40, 110, 2000
 local MAX_ACTIONS = 1
 local actions = {}      -- { { id, label, show, run }, ... }, in the order added
 
+-- an icon's brightness in a model's row, by the row's role: full once found, grayed while not,
+-- darker for what never turns up
+local ICON_TINT = { body = 255, bright = 255, dim = 150, never = 90 }
+
+-- a model's inventory icon in its row's icon box (wpn_row_icon), fitted inside it at most at its
+-- own size and centered, as the entry's icon is; nil when the item has none
+local function row_icon(xml, row, sec, role)
+    local tex, a = arsenal_data.icon(sec)
+    if not (tex and a and a.w > 0 and a.h > 0) then return nil end
+    local icon = xml:InitStatic("wpn_row_icon", row)
+    local p, bw, bh = icon:GetWndPos(), icon:GetWidth(), icon:GetHeight()
+    local wide = utils_xml.is_widescreen() and 0.8 or 1
+    local k = math.min(bw / (a.w * wide), bh / a.h, 1)
+    local w, h = a.w * wide * k, a.h * k
+    icon:InitTexture(tex)
+    icon:SetTextureRect(Frect():set(a.x1, a.y1, a.x1 + a.w, a.y1 + a.h))
+    icon:SetStretchTexture(true)
+    icon:SetWndSize(vector2():set(w, h))
+    icon:SetWndPos(vector2():set(p.x + (bw - w) / 2, p.y + (bh - h) / 2))
+    local v = ICON_TINT[role] or 255
+    icon:SetTextureColor(GetARGB(255, v, v, v))
+    return icon
+end
+
 ---------------------------------------------------------------------------------------------
 -- a list row: a name, and for a category a count on the right. A new one glows behind its
--- name (`glow`: the glow's XML) until it is read.
+-- name (`glow`: the glow's XML) until it is read. Options (`opt`): `icon`, a section whose icon
+-- goes left of the name (a model's row, MODEL_ROW_H tall); `indent`, the name moved right (a
+-- category under its group's heading); `heading`, the row is a group's heading.
 ---------------------------------------------------------------------------------------------
 class "ArsenalRow" (CUIListBoxItem)
 
-function ArsenalRow:__init(xml, key, text, role, count, glow) super(ROW_H)
+function ArsenalRow:__init(xml, key, text, role, count, glow, opt) super(opt and opt.icon and MODEL_ROW_H or ROW_H)
+    opt = opt or {}
     self.key = key
+    self.heading = opt.heading
     if glow then
         self.glow = xml:InitStatic(glow, self)
     end
-    self.name = xml:InitTextWnd("row_name", self)
+    if opt.icon then
+        self.icon = row_icon(xml, self, opt.icon, role)
+    end
+    self.name = xml:InitTextWnd(opt.icon and "wpn_row_name" or "row_name", self)
+    if opt.indent then
+        local p = self.name:GetWndPos()
+        self.name:SetWndPos(vector2():set(p.x + opt.indent, p.y))
+        self.name:SetWndSize(vector2():set(self.name:GetWidth() - opt.indent, self.name:GetHeight()))
+    end
     self.name:SetText(text)
     self.name:SetTextColor(theme.argb(role))
     if count then
         self.count = xml:InitTextWnd("row_count", self)
         self.count:SetText(count)
+    end
+end
+
+-- a row's look as what it stands for changes (read, say): its name's color and its icon's tint
+function ArsenalRow:Paint(role)
+    self.name:SetTextColor(theme.argb(role))
+    if self.icon then
+        local v = ICON_TINT[role] or 255
+        self.icon:SetTextureColor(GetARGB(255, v, v, v))
     end
 end
 
@@ -87,11 +135,20 @@ function ArsenalPDA:__init(flat) super()
     self:AddCallback("page_compare", ui_events.BUTTON_CLICKED, self.OnComparePage, self)
 
     self.found_count = xml:InitTextWnd("found_count", self)
-    xml:InitTextWnd("found_only_lbl", self)
-    self.found_only = xml:InitCheck("found_only", self)
-    self:Register(self.found_only, "found_only")
-    self:AddCallback("found_only", ui_events.BUTTON_CLICKED, self.OnFoundOnly, self)
-    -- beside "Found only": every new model read at once, shown while anything is new
+    -- over the model list: what it shows and its order, each a box in the options menu's look
+    -- whose list opens under it (OpenDrop; the lists are made last, below), and the order's
+    -- direction on the button beside them, its arrow drawn on it
+    self.show_box = xml:Init3tButton("show_box", self)
+    self:Register(self.show_box, "show_box")
+    self:AddCallback("show_box", ui_events.BUTTON_CLICKED, function() self:OpenDrop("show") end, self)
+    self.sort_box = xml:Init3tButton("sort_box", self)
+    self:Register(self.sort_box, "sort_box")
+    self:AddCallback("sort_box", ui_events.BUTTON_CLICKED, function() self:OpenDrop("sort") end, self)
+    self.sort_dir = xml:Init3tButton("sort_dir", self)
+    self.sort_arrow = xml:InitStatic("sort_dir_arrow", self.sort_dir)
+    self:Register(self.sort_dir, "sort_dir")
+    self:AddCallback("sort_dir", ui_events.BUTTON_CLICKED, self.OnSortDir, self)
+    -- in the footer: every new model read at once, shown while anything is new
     self.mark_read = xml:Init3tButton("mark_read", self)
     self.mark_read:Show(false)
     self:Register(self.mark_read, "mark_read")
@@ -108,6 +165,8 @@ function ArsenalPDA:__init(flat) super()
     self.cat_list = xml:InitListBox("cat_list", self)
     self:Register(self.cat_list, "cat_list")
     self:AddCallback("cat_list", ui_events.LIST_ITEM_SELECT, self.OnCategory, self)
+    -- a click on a group's heading folds it or opens it; the shown one too
+    self:AddCallback("cat_list", ui_events.LIST_ITEM_CLICKED, self.OnCategoryClicked, self)
     xml:InitStatic("rule_cat", self)
     self.wpn_list = xml:InitListBox("wpn_list", self)
     self:Register(self.wpn_list, "wpn_list")
@@ -143,10 +202,42 @@ function ArsenalPDA:__init(flat) super()
         self:AddCallback("action_" .. i, ui_events.BUTTON_CLICKED, function() self:OnAction(i) end, self)
         self.action_btns[i] = b
     end
+    self.back_row = arsenal_pages.back_row(self.btn_back, self.action_btns)
+
+    -- the Show and Sort boxes' lists, made last so they draw over the page and take a click
+    -- first, each hidden until its box is clicked; under an open one a catcher the size of the
+    -- page, drawing nothing, closes it at a click anywhere else. The engine's own drop-down
+    -- draws its open list a second time straight to the screen, which the 3D PDA shows apart.
+    self.drop_catcher = xml:Init3tButton("drop_catcher", self)
+    self.drop_catcher:Show(false)
+    self:Register(self.drop_catcher, "drop_catcher")
+    self:AddCallback("drop_catcher", ui_events.BUTTON_CLICKED, self.CloseDrops, self)
+    self.drops = {}
+    for _, id in ipairs({ "show", "sort" }) do
+        -- the frame is the options menu's, half see-through: under it a solid back in the PDA
+        -- screen's own color, made first so it draws first, so the model list does not show through
+        local back = xml:InitStatic("drop_back", self)
+        local frame = xml:InitFrame(id .. "_list", self)
+        back:SetWndPos(frame:GetWndPos())
+        local list = xml:InitListBox(id .. "_list_box", frame)
+        back:Show(false)
+        frame:Show(false)
+        self:Register(list, id .. "_list_box")
+        self:AddCallback(id .. "_list_box", ui_events.LIST_ITEM_CLICKED, function() self:OnDropPick(id) end, self)
+        -- how many rows show at most, past which the list scrolls
+        self.drops[id] = { box = self[id .. "_box"], back = back, frame = frame, list = list,
+            rows = math.floor(list:GetHeight() / DROP_ROW_H + 0.5) }
+    end
 
     self.cat = arsenal_data.CATEGORIES[1]
     self.sec = nil
 end
+
+-- where the player was, shared by the PDA's page and the flat window while the game runs: the
+-- category and model, what the list shows and its order, the groups folded, and how far each
+-- list and the entry were scrolled (Update keeps these as he scrolls). The categories and the
+-- factions each keep their own order: a faction's gear starts by kind.
+local view = { show = "all", sort = { cat = "name", faction = "kind" }, reverse = false, folded = {} }
 
 function ArsenalPDA:__finalize()
     if self.flat then
@@ -175,16 +266,50 @@ local function is_new(e)
     return arsenal_intel ~= nil and arsenal_intel.is_new(e)
 end
 
--- the left list's keys: a category ("rifles"), or with the toggle a faction's gear (FACTION ..
--- "dolg"). Which it shows, and the row chosen last in each, last while the game runs, the PDA's
--- page and the flat window alike.
+-- a call into arsenal_data that leaves its part of the page out instead of failing it
+local function safe(fn, ...)
+    local ok, r = pcall(fn, ...)
+    return ok and r or nil
+end
+
+-- the left list's keys: a category ("rifles"), a group's heading (GROUP .. "weapons"), or with
+-- the toggle a faction's gear (FACTION .. "dolg"). Which it shows, and the row chosen last in
+-- each, last while the game runs, the PDA's page and the flat window alike.
 local FACTION = "f:"
+local GROUP = "g:"
 local by_faction = false
 local last_key = {}
 
--- the models a row of the left list stands for: a category's, by name; a faction's gear, the
--- guns its fighters carry and the suits and helmets they wear, in the categories' order
+-- the left list's groups (arsenal_data.GROUPS): a heading over each of more than one category;
+-- an arsenal_data without groups lists its categories flat
+local function groups()
+    return arsenal_data.GROUPS or { { id = "", cats = arsenal_data.CATEGORIES, flat = true } }
+end
+
+-- the group a category is in, or nil
+local function group_of(cat)
+    for _, g in ipairs(groups()) do
+        for _, c in ipairs(g.cats) do
+            if c == cat then return g end
+        end
+    end
+end
+
+-- the models a row of the left list stands for: a category's, by name; a group's, its
+-- categories' in their order; a faction's gear, the guns its fighters carry and the suits and
+-- helmets they wear, in the categories' order
 local function models_of(key)
+    if key and key:sub(1, #GROUP) == GROUP then
+        local out = {}
+        for _, g in ipairs(groups()) do
+            if GROUP .. g.id == key then
+                for _, c in ipairs(g.cats) do
+                    for _, e in ipairs(arsenal_data.list(c)) do out[#out + 1] = e end
+                end
+            end
+        end
+        return out
+    end
     local f = key and key:sub(1, #FACTION) == FACTION and key:sub(#FACTION + 1)
     if not f then return arsenal_data.list(key) end
     local order = {}
@@ -210,8 +335,20 @@ end
 -- the model the catalog shows at its next open (show_next, arsenal_api.open), or nil
 local next_sec
 
--- every time the page is opened: what is found and known may have changed
+-- a list or scroll view back where it was scrolled, as far as it still reaches
+local function scroll_to(ctrl, pos)
+    if not (ctrl and pos) then return end
+    local ok, top = pcall(function() return ctrl:GetMaxScrollPos() end)
+    ctrl:SetScrollPos(math.max(0, math.min(pos, ok and tonumber(top) or pos)))
+end
+
+-- every time the page is opened: what is found and known may have changed. It opens where the
+-- player left it, in either window: the same model, each list and the entry scrolled as they
+-- were; or on the model another app asked for (show_next), its row scrolled into view.
 function ArsenalPDA:Reset()
+    self.cat = view.cat or self.cat
+    self.sec = view.sec
+    local same = true
     if next_sec then
         local e = arsenal_data.entry_for(next_sec) or arsenal_data.get(next_sec)
         next_sec = nil
@@ -219,12 +356,35 @@ function ArsenalPDA:Reset()
             last_key[by_faction] = self.cat
             by_faction = false
             self.cat, self.sec = e.cat, e.sec
+            same = false
         end
     end
+    local kept = { cat = view.cat_scroll, wpn = view.wpn_scroll, detail = view.detail_scroll, sec = self.sec,
+        reveal = not same }
+    self:CloseDrops()
     self:PaintFooter()
+    arsenal_pages.show_back(self.back_row, self.flat)
     self:SetCounts()
+    self:FillShowBox()
     self:FillCategories()
     self:FillWeapons()
+    -- the lists measure what was just added at their next update: the scrolling waits for it
+    self.restore = kept
+end
+
+-- the scrolling an open asked for (Reset), once the lists have measured their rows
+function ArsenalPDA:Restore()
+    local kept = self.restore
+    self.restore = nil
+    scroll_to(self.cat_list, kept.cat)
+    if kept.reveal then
+        -- the model shown, its row in view: the list's top a few rows above it
+        local i = self.wpn_list:GetSelectedIndex()
+        if i and i >= 0 then scroll_to(self.wpn_list, math.max(0, i - 3) * MODEL_ROW_H) end
+    else
+        scroll_to(self.wpn_list, kept.wpn)
+        if self.sec and self.sec == kept.sec then scroll_to(self.detail, kept.detail) end
+    end
 end
 
 -- Silence is MCM's "PDA notifications" seen here too, ticked while Arsenal's messages are off. It
@@ -281,9 +441,14 @@ function ArsenalPDA:OnMarkRead()
     self:FillWeapons()
 end
 
--- new rows glow in the headings' amber, slowly brightening and fading
+-- new rows glow in the headings' amber, slowly brightening and fading; and how far each list and
+-- the entry are scrolled is kept for the next open (view)
 function ArsenalPDA:Update()
     CUIScriptWnd.Update(self)
+    if self.restore then self:Restore() end
+    view.cat_scroll = self.cat_list:GetCurrentScrollPos()
+    view.wpn_scroll = self.wpn_list:GetCurrentScrollPos()
+    view.detail_scroll = self.detail:GetCurrentScrollPos()
     local wave = 0.5 + 0.5 * math.sin(time_global() * 2 * math.pi / GLOW_PERIOD)
     local color = theme.argb("heading", math.floor(GLOW_MIN + (GLOW_MAX - GLOW_MIN) * wave))
     for _, rows in ipairs({ self.cat_rows or {}, self.wpn_rows or {} }) do
@@ -318,9 +483,15 @@ function ArsenalPDA:OnComparePage()
     arsenal_pages.open("compare")
 end
 
--- flat: Escape or the MCM key closes the window; the PDA handles its own keys
+-- Escape closes an open drop-down list first; flat, then Escape or the MCM key closes the
+-- window. The PDA handles its own keys.
 function ArsenalPDA:OnKeyboard(dik, action)
     local res = CUIScriptWnd.OnKeyboard(self, dik, action)
+    if not res and action == ui_events.WINDOW_KEY_PRESSED and dik == DIK_keys.DIK_ESCAPE
+            and self.drop_catcher:IsShown() then
+        self:CloseDrops()
+        return true
+    end
     if self.flat and not res and action == ui_events.WINDOW_KEY_PRESSED then
         if dik == DIK_keys.DIK_ESCAPE or dik == arsenal_mcm.flat_key() then
             self:Close()
@@ -330,19 +501,17 @@ function ArsenalPDA:OnKeyboard(dik, action)
     return res
 end
 
-function ArsenalPDA:OnFoundOnly()
-    self:FillWeapons()
-end
-
--- the categories with something that turns up (with the jailbreak, anything), or with the
--- toggle every faction with gear; each row with how many of what turns up are found, glowing
--- while something listed under it is new
+-- the categories with something that turns up (with the jailbreak, anything), under their
+-- groups' headings, or with the toggle every faction with gear; each row with how many of what
+-- turns up are found, glowing while something listed under it is new. A folded group's
+-- categories are there still: the one shown stays shown, its heading chosen in the list.
 function ArsenalPDA:FillCategories()
     self.cat_list:RemoveAll()
     self.cat_rows, self.cat_index = {}, {}
     self.by_faction_check:SetCheck(by_faction)
-    local first
-    local function add(key, name, list)
+    local first, present = nil, {}
+    -- how many of a list turn up, and how many of those are found
+    local function tally(list)
         local n, f = 0, 0
         for _, e in ipairs(list) do
             if arsenal_data.obtainable(e.sec) then
@@ -350,13 +519,24 @@ function ArsenalPDA:FillCategories()
                 if arsenal_collection.entry_found(e) then f = f + 1 end
             end
         end
-        if n > 0 or (#list > 0 and not immersive()) then
+        return n, f
+    end
+    local function shows(list, n)
+        return n > 0 or (#list > 0 and not immersive())
+    end
+    local function row(key, name, role, count, glow, opt)
+        local r = ArsenalRow(self.xml, key, name, role, count, glow, opt)
+        self.cat_list:AddExistingItem(r)
+        self.cat_rows[key] = r
+        self.cat_index[key] = self.cat_list:GetSize() - 1
+    end
+    local function add(key, name, list, indent)
+        local n, f = tally(list)
+        if shows(list, n) then
             local fresh = fresh_in(key)
-            local row = ArsenalRow(self.xml, key, name, fresh and "bright" or "body", string.format("%d/%d", f, n),
-                fresh and "cat_glow" or nil)
-            self.cat_list:AddExistingItem(row)
-            self.cat_rows[key] = row
-            self.cat_index[key] = self.cat_list:GetSize() - 1
+            row(key, name, fresh and "bright" or "body", string.format("%d/%d", f, n), fresh and "cat_glow" or nil,
+                indent and { indent = indent } or nil)
+            present[key] = true
             first = first or key
         end
     end
@@ -365,24 +545,69 @@ function ArsenalPDA:FillCategories()
             add(FACTION .. f, game.translate_string("st_faction_" .. f), models_of(FACTION .. f))
         end
     else
-        for _, c in ipairs(arsenal_data.CATEGORIES) do
-            add(c, game.translate_string("st_arsenal_cat_" .. c), arsenal_data.list(c))
+        for _, g in ipairs(groups()) do
+            if g.flat or #g.cats < 2 then
+                for _, c in ipairs(g.cats) do
+                    add(c, game.translate_string("st_arsenal_cat_" .. c), arsenal_data.list(c))
+                end
+            else
+                -- the heading, while any of its categories shows: found/total over them all, and
+                -- folded, a glow while something under it is new
+                local n, f, fresh, shown_cats = 0, 0, false, {}
+                for _, c in ipairs(g.cats) do
+                    local list = arsenal_data.list(c)
+                    local cn, cf = tally(list)
+                    n, f = n + cn, f + cf
+                    if shows(list, cn) then
+                        shown_cats[#shown_cats + 1] = c
+                        fresh = fresh or fresh_in(c)
+                    end
+                end
+                if #shown_cats > 0 then
+                    local folded = view.folded[g.id] == true
+                    row(GROUP .. g.id, (folded and "+ " or "- ") .. game.translate_string("st_arsenal_group_" .. g.id),
+                        "heading", string.format("%d/%d", f, n), (folded and fresh) and "cat_glow" or nil, { heading = true })
+                    for _, c in ipairs(shown_cats) do
+                        if folded then
+                            present[c] = true
+                            first = first or c
+                        else
+                            add(c, game.translate_string("st_arsenal_cat_" .. c), arsenal_data.list(c), SUB_INDENT)
+                        end
+                    end
+                end
+            end
         end
     end
-    if not self.cat_index[self.cat] then
+    if not present[self.cat] then
         self.cat = first or ((not by_faction) and arsenal_data.CATEGORIES[1]) or nil
         self.sec = nil
     end
-    self.cat_list:SetSelectedIndex(self.cat_index[self.cat] or 0)
+    local idx = self.cat_index[self.cat]
+    if not idx then
+        local g = group_of(self.cat)
+        idx = g and self.cat_index[GROUP .. g.id]
+    end
+    self.cat_list:SetSelectedIndex(idx or 0)
 end
 
 function ArsenalPDA:OnCategory()
     local item = self.cat_list:GetSelectedItem()
-    if item and item.key ~= self.cat then
+    if item and not item.heading and item.key ~= self.cat then
         self.cat = item.key
         self.sec = nil
+        view.cat, view.sec = self.cat, nil
         self:FillWeapons()
     end
+end
+
+-- a click on a group's heading folds the group or opens it; the model list stays as it is
+function ArsenalPDA:OnCategoryClicked()
+    local item = self.cat_list:GetSelectedItem()
+    if not (item and item.heading) then return end
+    local id = item.key:sub(#GROUP + 1)
+    view.folded[id] = (not view.folded[id]) or nil
+    self:FillCategories()
 end
 
 -- the toggle: categories or factions, each view back on the row chosen last in it
@@ -391,6 +616,7 @@ function ArsenalPDA:OnByFaction()
     by_faction = self.by_faction_check:GetCheck() == true
     self.cat = last_key[by_faction]
     self.sec = nil
+    view.cat, view.sec = self.cat, nil
     self:FillCategories()
     self:FillWeapons()
 end
@@ -403,24 +629,281 @@ local function role_of(e, new)
     return arsenal_collection.entry_found(e) and "body" or "dim"
 end
 
--- the models of the chosen category or faction the player knows of (with the jailbreak, all); a
--- model is found once any of its variants is; a new one glows until it is clicked
+-- the variant a model's page and row show: the first found, else the first
+local function shown_variant(e)
+    for _, v in ipairs(e.variants) do
+        if arsenal_collection.is_found(v.sec) then return v end
+    end
+    return e.variants[1]
+end
+
+---------------------------------------------------------------------------------------------
+-- What the model list shows (the Show box): every model the player knows of, the found, the
+-- not found, and while discovery is on, what is new.
+---------------------------------------------------------------------------------------------
+local SHOWS = { "all", "found", "missing", "new" }
+
+local function show_options()
+    local out = {}
+    for _, s in ipairs(SHOWS) do
+        if s ~= "new" or immersive() then out[#out + 1] = s end
+    end
+    return out
+end
+
+local function passes(show, found, new)
+    if show == "found" then return found end
+    if show == "missing" then return not found end
+    if show == "new" then return new end
+    return true
+end
+
+---------------------------------------------------------------------------------------------
+-- The model list's order (the Sort box): by name; the finds, newest first; a stat of the card,
+-- most first; the weight, lightest first; for rounds, damage and armor piercing; with the
+-- toggle, a faction's gear first in the categories' order, its own. The button beside the box
+-- turns any of them round. A value the player has not learned (a model not yet studied, while
+-- discovery is on; one never found, for its find) is none of his to sort by: those models go
+-- last, by name, whichever way the list runs.
+---------------------------------------------------------------------------------------------
+-- the gun card's rows offered, in the card's order (the ones with a max: MAXED)
+local GUN_SORTS = { "accuracy", "handling", "fire_rate", "ammo_mag_size", "speed", "reliability", "recoil" }
+-- the keys whose list runs from the least (A to Z, lightest) first; the rest, the most first
+local RUNS_UP = { name = true, kind = true, weight = true }
+
+-- a card row's own name, without its color codes or colon, as the card shows it
+local function card_label(r)
+    local s = game.translate_string(r.gr and r.gr.name or r.stat)
+    return (s:gsub("%%c%[[^%]]*%]", "")):match("^%s*(.-)[%s:]*$")
+end
+
+-- the orders a row of the left list offers, { key, label } each, the first its default
+local function sorts_for(key)
+    local T = game.translate_string
+    local out = {}
+    local function add(k, label) out[#out + 1] = { key = k, label = label } end
+    if key and key:sub(1, #FACTION) == FACTION then
+        add("kind", T("st_arsenal_sort_kind"))
+        add("name", T("st_arsenal_sort_name"))
+        add("found", T("st_arsenal_sort_found"))
+        add("weight", T("st_arsenal_sort_weight"))
+        return out
+    end
+    add("name", T("st_arsenal_sort_name"))
+    add("found", T("st_arsenal_sort_found"))
+    if key == "ammo" then
+        add("damage", T("st_arsenal_sort_damage"))
+        add("ap", T("st_arsenal_sort_ap"))
+        return out
+    end
+    local sample = arsenal_data.list(key)[1]
+    if sample and arsenal_data.has_stat_card(sample.sec) then
+        local rows = safe(arsenal_data.stat_rows, false, sample.sec) or {}
+        if arsenal_data.ARMOR[key] then
+            for _, r in ipairs(rows) do add(r.stat, card_label(r)) end
+        else
+            local by = {}
+            for _, r in ipairs(rows) do by[r.stat] = r end
+            for _, s in ipairs(GUN_SORTS) do
+                if by[s] then add(s, card_label(by[s])) end
+            end
+        end
+    end
+    add("weight", T("st_arsenal_sort_weight"))
+    return out
+end
+
+-- the card's values, by stat and section, read once: a number, or false where it shows none
+local card_values = {}
+
+-- a model's value for an order, as the player knows it; nil when he does not
+local function sort_value(e, key)
+    if key == "found" then
+        local at = arsenal_collection.entry_found(e)
+        if not at then return nil end
+        return ((((at.y or 0) * 13 + (at.mo or 0)) * 32 + (at.d or 0)) * 24 + (at.h or 0)) * 60 + (at.mi or 0)
+    end
+    if not studied(e) then return nil end
+    local sec = shown_variant(e).sec
+    if key == "weight" then return safe(arsenal_data.weight, sec) end
+    if key == "damage" or key == "ap" then
+        local rs = safe(arsenal_data.round_stats, sec)
+        return rs and tonumber(rs[key]) or nil
+    end
+    local cache = card_values[key] or {}
+    card_values[key] = cache
+    if cache[sec] == nil then
+        cache[sec] = false
+        for _, r in ipairs(safe(arsenal_data.stat_rows, false, sec) or {}) do
+            if r.stat == key then
+                local ok, s = pcall(utils_ui.get_stats_string_value, nil, sec, r.gr, r.stat)
+                local n = ok and type(s) == "string" and tonumber((s:gsub("%%c%[[^%]]*%]", "")):match("[-+]?%d+%.?%d*"))
+                if n then cache[sec] = n end
+                break
+            end
+        end
+    end
+    return cache[sec] or nil
+end
+
+-- the models in an order, in place; returns whether the list now runs up (least first).
+-- `by_name`: the list is a category's, which arsenal_data keeps by name already.
+local function sort_models(list, key, reverse, by_name)
+    local up = RUNS_UP[key] == true
+    if reverse then up = not up end
+    if key == "kind" or (key == "name" and by_name) then
+        -- in that order already (a faction's gear by kind, models_of's): turned round, or as it is
+        if reverse then
+            for i = 1, math.floor(#list / 2) do list[i], list[#list + 1 - i] = list[#list + 1 - i], list[i] end
+        end
+        return up
+    end
+    local vals = {}
+    if key ~= "name" then
+        for _, e in ipairs(list) do vals[e] = sort_value(e, key) end
+    end
+    table.sort(list, function(a, b)
+        if key ~= "name" then
+            local va, vb = vals[a], vals[b]
+            if va ~= nil and vb == nil then return true end
+            if va == nil and vb ~= nil then return false end
+            if va ~= nil and va ~= vb then
+                if up then return va < vb end
+                return va > vb
+            end
+        end
+        if a.name ~= b.name then
+            if key == "name" and not up then return a.name > b.name end
+            return a.name < b.name
+        end
+        return a.sec < b.sec
+    end)
+    return up
+end
+
+-- a drop-down's options (labels) and the one chosen (cur): its list filled, that one marked in
+-- it and named on the box; the list as tall as its options, up to its rows, past which it scrolls
+function ArsenalPDA:FillDrop(id, labels, cur)
+    local d = self.drops[id]
+    d.list:RemoveAll()
+    for _, s in ipairs(labels) do d.list:AddTextItem(s) end
+    if labels[cur] then
+        d.list:SetSelectedIndex(cur - 1)
+        d.box:TextControl():SetText(labels[cur])
+    end
+    local size = vector2():set(d.frame:GetWidth(), math.min(#labels, d.rows) * DROP_ROW_H)
+    d.frame:SetWndSize(size)
+    d.back:SetWndSize(size)
+end
+
+-- a click on a drop-down's box: its list opens under it, the other's closes
+function ArsenalPDA:OpenDrop(id)
+    self:CloseDrops()
+    local d = self.drops[id]
+    d.back:Show(true)
+    d.frame:Show(true)
+    self.drop_catcher:Show(true)
+end
+
+function ArsenalPDA:CloseDrops()
+    for _, d in pairs(self.drops) do
+        d.back:Show(false)
+        d.frame:Show(false)
+    end
+    self.drop_catcher:Show(false)
+end
+
+-- an option clicked in an open list: the list closes and the model list follows it
+function ArsenalPDA:OnDropPick(id)
+    local i = self.drops[id].list:GetSelectedIndex() + 1
+    self:CloseDrops()
+    if id == "show" then self:OnShow(i) else self:OnSort(i) end
+end
+
+-- the Show box: its options, the one chosen marked and named
+function ArsenalPDA:FillShowBox()
+    local opts = show_options()
+    self.show_opts = opts
+    local labels, cur = {}, 1
+    for i, s in ipairs(opts) do
+        labels[i] = game.translate_string("st_arsenal_show_" .. s)
+        if s == view.show then cur = i end
+    end
+    self:FillDrop("show", labels, cur)
+end
+
+-- which order the row chosen on the left keeps: the categories', or the factions'
+local function sort_mode(key)
+    return (key and key:sub(1, #FACTION) == FACTION) and "faction" or "cat"
+end
+
+-- the Sort box for the row chosen on the left: its orders, the one chosen last in its view if it
+-- has it, else its first; the one in force is self.sort_key
+function ArsenalPDA:FillSortBox()
+    local opts = sorts_for(self.cat)
+    self.sort_opts = opts
+    local labels, cur = {}, 1
+    for i, o in ipairs(opts) do
+        labels[i] = o.label
+        if o.key == view.sort[sort_mode(self.cat)] then cur = i end
+    end
+    self.sort_key = opts[cur] and opts[cur].key or "name"
+    self:FillDrop("sort", labels, cur)
+end
+
+-- the i-th option picked; the one already chosen changes nothing, so the list and the entry
+-- stay where they were scrolled
+function ArsenalPDA:OnShow(i)
+    local s = self.show_opts and self.show_opts[i]
+    if not s or s == view.show then return end
+    view.show = s
+    self:FillShowBox()
+    self:FillWeapons()
+end
+
+-- an order chosen is kept for every row of its view that offers it; one that does not uses its
+-- own first
+function ArsenalPDA:OnSort(i)
+    local o = self.sort_opts and self.sort_opts[i]
+    if not o or o.key == view.sort[sort_mode(self.cat)] then return end
+    view.sort[sort_mode(self.cat)] = o.key
+    self:FillWeapons()
+end
+
+function ArsenalPDA:OnSortDir()
+    view.reverse = not view.reverse
+    self:FillWeapons()
+end
+
+-- the models of the chosen category or faction the player knows of (with the jailbreak, all), as
+-- the Show box picks and in the Sort box's order; a model is found once any of its variants is;
+-- each row has its icon, a new one glows until it is clicked
 function ArsenalPDA:FillWeapons()
     self.wpn_list:RemoveAll()
     self.wpn_rows = {}
-    local only = self.found_only:GetCheck()
-    local keep, first
+    self:FillSortBox()
+    local show = view.show
+    if show == "new" and not immersive() then show = "all" end
+    local list = {}
     for _, e in ipairs(models_of(self.cat)) do
-        local found = arsenal_collection.entry_found(e) ~= nil
-        if listed(e) and (found or not only) then
-            local new = is_new(e)
-            local row = ArsenalRow(self.xml, e.sec, e.name, role_of(e, new), nil, new and "wpn_glow" or nil)
-            self.wpn_list:AddExistingItem(row)
-            self.wpn_rows[e.sec] = row
-            local idx = self.wpn_list:GetSize() - 1
-            if e.sec == self.sec then keep = idx end
-            first = first or e.sec
+        if listed(e) then
+            local found = arsenal_collection.entry_found(e) ~= nil
+            if passes(show, found, is_new(e)) then list[#list + 1] = e end
         end
+    end
+    local up = sort_models(list, self.sort_key, view.reverse,
+        not (self.cat and self.cat:sub(1, #FACTION) == FACTION))
+    self.sort_arrow:InitTexture(up and "ui_scroll_btn_up" or "ui_scroll_btn_down")
+    local keep, first
+    for _, e in ipairs(list) do
+        local new = is_new(e)
+        local row = ArsenalRow(self.xml, e.sec, e.name, role_of(e, new), nil, new and "wpn_glow" or nil,
+            { icon = shown_variant(e).sec })
+        self.wpn_list:AddExistingItem(row)
+        self.wpn_rows[e.sec] = row
+        local idx = self.wpn_list:GetSize() - 1
+        if e.sec == self.sec then keep = idx end
+        first = first or e.sec
     end
     if keep then
         self.wpn_list:SetSelectedIndex(keep)
@@ -451,13 +934,14 @@ function ArsenalPDA:OnWeaponClicked()
         item.glow:Show(false)
         item.glow = nil
     end
-    item.name:SetTextColor(theme.argb(role_of(e, false)))
-    -- its category and its factions stop glowing once nothing new is left under them
+    item:Paint(role_of(e, false))
+    -- its category, its group and its factions stop glowing once nothing new is left under them;
+    -- a heading keeps its color
     for key, row in pairs(self.cat_rows or {}) do
         if row.glow and not fresh_in(key) then
             row.glow:Show(false)
             row.glow = nil
-            row.name:SetTextColor(theme.argb("body"))
+            row.name:SetTextColor(theme.argb(row.heading and "heading" or "body"))
         end
     end
     self:SetCounts()
@@ -615,12 +1099,6 @@ local function factions_text(list)
     return table.concat(out, ", ")
 end
 
--- a call into arsenal_data that leaves its part of the page out instead of failing it
-local function safe(fn, ...)
-    local ok, r = pcall(fn, ...)
-    return ok and r or nil
-end
-
 -- a share as a percentage: one decimal below 10%, none from there, "<0.1%" for a sliver
 local function percent(x)
     local p = (x or 0) * 100
@@ -748,6 +1226,7 @@ end
 
 function ArsenalPDA:ShowEntry(sec)
     self.sec = sec
+    view.cat, view.sec = self.cat, sec
     self.detail:Clear()
     self:UpdateActions(nil)
     self:UpdateCompare(nil)
@@ -838,9 +1317,12 @@ function ArsenalPDA:ShowEntry(sec)
     -- the game's own stat card, row by row, where the inventory shows one (a knife has none);
     -- a suit or helmet has the outfit card and no fire modes
     local armor = arsenal_data.ARMOR[e.cat] == true
+    local addon = (arsenal_data.ATTACHMENTS or {})[e.cat] == true
     rule()
     if not know then
-        text("entry_line", game.translate_string("st_arsenal_not_studied"), "dim")
+        -- what goes on a gun is studied only first-hand: nobody's specs tell of it
+        text("entry_line", game.translate_string(addon and "st_arsenal_not_studied_addon" or "st_arsenal_not_studied"),
+            "dim")
     end
     if know and arsenal_data.has_stat_card(shown.sec) then
         for _, row in ipairs(arsenal_data.stat_rows(false, shown.sec)) do
@@ -918,6 +1400,46 @@ function ArsenalPDA:ShowEntry(sec)
             text("entry_heading", game.translate_string("st_arsenal_fired_by"))
             rule()
             text("entry_line", table.concat(guns, ", "))
+        end
+    end
+
+    -- what goes on a gun: the guns it fits, the player's known ones, a line per category (a
+    -- kit's gun, a mount an upgrade adds); how many more turn up that he has yet to meet; a
+    -- launcher's grenades
+    if know and addon then
+        local T = game.translate_string
+        local cats, names, unmet, fires = {}, {}, {}, {}
+        for _, f in ipairs(safe(arsenal_data.fits, shown.sec) or {}) do
+            if listed(f.e) then
+                local n = f.e.name
+                if f.makes then n = string.format("%s (%s)", n, string.format(T("st_arsenal_makes"), f.makes)) end
+                if f.upgrade then n = string.format("%s (%s)", n, T("st_arsenal_after_upgrade")) end
+                if not names[f.e.cat] then
+                    names[f.e.cat] = {}
+                    cats[#cats + 1] = f.e.cat
+                end
+                table.insert(names[f.e.cat], n)
+                for _, a in ipairs(f.ammo or {}) do fires[#fires + 1] = a end
+            elseif arsenal_data.obtainable(f.e.sec) then
+                unmet[f.e] = true
+            end
+        end
+        local more = 0
+        for _ in pairs(unmet) do more = more + 1 end
+        if #cats > 0 or more > 0 then
+            y = y + GAP
+            text("entry_heading", T("st_arsenal_fits"))
+            rule()
+            for _, c in ipairs(cats) do
+                text("entry_line", string.format("%s: %s", T("st_arsenal_cat_" .. c), table.concat(distinct(names[c]), ", ")))
+            end
+            if more > 0 then
+                text("entry_line", string.format(T("st_arsenal_fits_more"), tostring(more)), "dim")
+            end
+            fires = distinct(fires)
+            if #fires > 0 then
+                text("entry_line", string.format(T("st_arsenal_fires"), table.concat(fires, ", ")))
+            end
         end
     end
 
@@ -1072,6 +1594,12 @@ function ArsenalPDA:ShowEntry(sec)
     if #carriers > 0 then
         line(game.translate_string("st_arsenal_carried_by"), "dim")
         faction_rows(carriers)
+    end
+    -- what goes on a gun: the fighters whose guns may come with it on
+    local mounted = known_rows(addon and safe(arsenal_data.mounted_on, shown.sec) or {}, fx.carried)
+    if #mounted > 0 then
+        line(game.translate_string("st_arsenal_mounted_by"), "dim")
+        faction_rows(mounted)
     end
     -- a suit or helmet: who wears it, then how it drops (GAMMA's chance, and the player's
     -- rank it needs with progressive drops)

@@ -1,9 +1,9 @@
 """Check Arsenal and install it as the MO2 mod "Arsenal".
 
-Writes the generated files (the 1 px rule texture, the Russian string table), then checks:
+Writes the generated files (the rule and screen textures, the Russian string table), then checks:
 every XML parses (string tables as windows-1251), every script compiles under LuaJIT, and the
-tests pass (test_data, test_collection, test_ui, test_mcm, test_intel, test_mac, test_workbench,
-test_workbench_ui, test_compare, test_where, test_api). Only then mirrors gamedata/ into
+tests pass (test_data, test_collection, test_ui, test_mcm, test_intel, test_mac, test_tab,
+test_workbench, test_workbench_ui, test_compare, test_where, test_api). Only then mirrors gamedata/ into
 D:\\GAMMA\\mods\\Arsenal\\gamedata (files that are no longer in the source are removed there)
 and writes its meta.ini.
 
@@ -49,11 +49,18 @@ def rule_dds(color=(90, 90, 90, 255), size=4):
     return head + bytes([b, g, r, a]) * (size * size)
 
 
+#: the PDA screen behind Arsenal's pages (GAMMA UI's ui_actor_pda.dds, where the lists sit): solid
+#: under the drop-down lists, whose frame (the options menu's) is half see-through
+SCREEN = (22, 26, 27, 255)
+
+
 def generate():
-    p = os.path.join(GD, "textures", "ui", "arsenal", "ui_rule.dds")
-    os.makedirs(os.path.dirname(p), exist_ok=True)
-    with open(p, "wb") as f:
+    d = os.path.join(GD, "textures", "ui", "arsenal")
+    os.makedirs(d, exist_ok=True)
+    with open(os.path.join(d, "ui_rule.dds"), "wb") as f:
         f.write(rule_dds())
+    with open(os.path.join(d, "ui_screen.dds"), "wb") as f:
+        f.write(rule_dds(SCREEN))
     subprocess.run([sys.executable, os.path.join(HERE, "rus_strings.py")], check=True)
 
 
@@ -88,7 +95,7 @@ def check():
         bad.append("arsenal_mcm.script's VERSION is %s, this build's is %s" % (shown, VERSION))
     print("version: %s, on the pages %s" % (VERSION, shown))
     for t in ("test_data.py", "test_collection.py", "test_ui.py", "test_mcm.py", "test_intel.py", "test_mac.py",
-              "test_workbench.py", "test_workbench_ui.py", "test_compare.py", "test_where.py", "test_api.py"):
+              "test_tab.py", "test_workbench.py", "test_workbench_ui.py", "test_compare.py", "test_where.py", "test_api.py"):
         r = subprocess.run([sys.executable, os.path.join(HERE, t)], capture_output=True, text=True)
         last = r.stdout.strip().splitlines()[-1] if r.stdout.strip() else r.stderr.strip()[-200:]
         print("%-20s %s" % (t, last))

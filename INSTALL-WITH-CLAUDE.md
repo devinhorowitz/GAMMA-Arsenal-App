@@ -78,16 +78,17 @@ current: say so and stop. Installed and older: this is an update.
 
 - **MCM** comes with GAMMA.
 - **Mod App Creator (MAC)** gives Arsenal its PDA tile. It is present if an enabled mod (`+` in
-  `modlist.txt`) has `gamedata\scripts\mac_mcm.script`. Without it Arsenal still works: the
-  player binds a key in **MCM > Arsenal**. MAC is at
+  `modlist.txt`) has `gamedata\scripts\mac_mcm.script`. Without it Arsenal still works: it has a
+  tab of its own in the PDA's tab bar, and the player can bind a key in **MCM > Arsenal**. With
+  MAC, **MCM > Arsenal > Arsenal tab in the PDA** swaps the tile for that tab. MAC is at
   https://www.moddb.com/mods/stalker-anomaly/addons/mod-app-creator-mac (the player downloads
   it; don't download it yourself unless they ask).
 
 ## 7. First launch
 
 Tell the player: start the game as usual (with Seasons of the Zone installed, that is
-`play.bat`), load a save, open the PDA and the Arsenal tile (or the MCM key), then quit and tell
-you. Then read `<gamePath>\appdata\logs\xray_<Windows user name>.log` and report:
+`play.bat`), load a save, open the PDA and Arsenal's tile or tab (or the MCM key), then quit and
+tell you. Then read `<gamePath>\appdata\logs\xray_<Windows user name>.log` and report:
 
 - lines containing `STACK TRACEBACK` or `FATAL` (search without case);
 - lines starting `[arsenal]` or `Arsenal:`, Arsenal's own error reports. Three kinds are not
@@ -111,7 +112,10 @@ nothing else is needed.
 ## If something's wrong
 
 - **No Arsenal tile:** MAC isn't installed or enabled (the log says `[arsenal] Mod App Creator
-  not found; no tile`); use the MCM key. If the log says `[arsenal] no tile in Mod App Creator:`
-  instead, MAC refused the tile: treat that line as an error report.
+  not found; no tile`), so Arsenal has its own PDA tab instead; or **MCM > Arsenal > Arsenal tab
+  in the PDA** is on. If the log says `[arsenal] no tile in Mod App Creator:` instead, MAC refused
+  the tile: treat that line as an error report.
+- **No Arsenal tab either:** the game's Modded Exes predate PDA tabs (July 2026); use the MCM key,
+  or update GAMMA. A log line `[arsenal] no PDA tab of its own:` is an error report.
 - **Errors in the log:** show the player the lines, then open an issue at
   https://github.com/devinhorowitz/GAMMA-Arsenal-App/issues with the log attached.

@@ -31,13 +31,46 @@
 		<text>Found %s of %s</text>
 	</string>
 	<string id="st_arsenal_found_on">
-		<text>Found %s in %s</text>
+		<text>Found %s: %s</text>
 	</string>
 	<string id="st_arsenal_not_found">
 		<text>Not found yet</text>
 	</string>
-	<string id="st_arsenal_found_only">
-		<text>Found only</text>
+	<string id="st_arsenal_group_weapons">
+		<text>Weapons</text>
+	</string>
+	<string id="st_arsenal_group_armor">
+		<text>Armor</text>
+	</string>
+	<string id="st_arsenal_show_all">
+		<text>All</text>
+	</string>
+	<string id="st_arsenal_show_found">
+		<text>Found</text>
+	</string>
+	<string id="st_arsenal_show_missing">
+		<text>Not found</text>
+	</string>
+	<string id="st_arsenal_show_new">
+		<text>New</text>
+	</string>
+	<string id="st_arsenal_sort_name">
+		<text>Name</text>
+	</string>
+	<string id="st_arsenal_sort_found">
+		<text>Newest finds</text>
+	</string>
+	<string id="st_arsenal_sort_weight">
+		<text>Weight</text>
+	</string>
+	<string id="st_arsenal_sort_kind">
+		<text>Kind</text>
+	</string>
+	<string id="st_arsenal_sort_damage">
+		<text>Damage</text>
+	</string>
+	<string id="st_arsenal_sort_ap">
+		<text>Armor piercing</text>
 	</string>
 	<string id="st_arsenal_new_entry">
 		<text>New in Arsenal: %s</text>
@@ -49,7 +82,7 @@
 		<text>Variants:</text>
 	</string>
 	<string id="st_arsenal_variant_found">
-		<text>%s, found %s in %s</text>
+		<text>%s, found %s: %s</text>
 	</string>
 	<string id="st_arsenal_max">
 		<text>max %s</text>
@@ -854,5 +887,38 @@
 	</string>
 	<string id="ui_mcm_arsenal_sources_desc">
 		<text>Each model's page ends with where the game read it from: the config files that wrote its lines, most first (a mod_ file is a DLTX patch), its section, its model and its icon. For modders, and for finding which mod a gun comes from: look the file up in MO2's Data tab.</text>
+	</string>
+	<string id="st_arsenal_cat_scopes">
+		<text>Scopes</text>
+	</string>
+	<string id="st_arsenal_cat_suppressors">
+		<text>Suppressors</text>
+	</string>
+	<string id="st_arsenal_cat_accessories">
+		<text>Accessories</text>
+	</string>
+	<string id="st_arsenal_group_attachments">
+		<text>Attachments</text>
+	</string>
+	<string id="st_arsenal_fits">
+		<text>Fits:</text>
+	</string>
+	<string id="st_arsenal_fits_more">
+		<text>and %s more you have yet to come across</text>
+	</string>
+	<string id="st_arsenal_fires">
+		<text>Fires: %s</text>
+	</string>
+	<string id="st_arsenal_mounted_by">
+		<text>On fighters' guns:</text>
+	</string>
+	<string id="st_arsenal_not_studied_addon">
+		<text>Not studied yet: find one to see what it fits</text>
+	</string>
+	<string id="ui_mcm_arsenal_pda_tab">
+		<text>Arsenal tab in the PDA</text>
+	</string>
+	<string id="ui_mcm_arsenal_pda_tab_desc">
+		<text>Gives Arsenal a tab of its own in the PDA's tab bar, after the others, in place of its tile in the Launcher. Takes effect when you are back in the game.</text>
 	</string>
 </string_table>

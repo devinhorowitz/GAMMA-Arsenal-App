@@ -120,10 +120,26 @@ ui_inventory = { GUI = { mode = "loot", npc_is_box = true, partner = box,
     IsShown = function() asked = asked + 1; return shown end,
     GetPartner = function(self) return self.partner end } }
 function show(name) if callbacks.GUI_on_show then callbacks.GUI_on_show(name) end end
+-- what goes on the guns: the Kobra, the PSO-1 and the PBS, each a model; the combinations that
+-- carry one; a gun whose attachments cannot be read; a box with a scoped gun
+for _, a in ipairs({ { "kobra", "Kobra" }, { "pso", "PSO-1" }, { "sil", "PBS" } }) do
+    local v = { sec = a[1], name = a[2] }
+    model(a[2], { v })
+    by_var[a[1]] = v
+end
+parent.wpn_ak74_kobra, parent.wpn_b_sil, parent.wpn_e_pso = "wpn_ak74", "wpn_b", "wpn_e"
+local on = { wpn_ak74_kobra = { "kobra" }, wpn_b_sil = { "sil" }, wpn_e_pso = { "pso" } }
+arsenal_data.mounted_addons = function(obj)
+    local s = obj:section()
+    if s == "wpn_c" then error("cannot read it") end
+    return on[s] or {}
+end
+box2 = holding({ "wpn_e_pso" }, true)
+function carry(list) inventory = {} for _, s in ipairs(list) do inventory[#inventory + 1] = item(s) end end
 """
 
 MUTANTS = {
-    "quiet_scan": ("            mark(obj:section(), true, carried)", "            mark(obj:section(), false, carried)"),
+    "quiet_scan": ("            mark_with(obj, true, carried)", "            mark_with(obj, false, carried)"),
     "twice": ("if not v or found[v.sec] then return nil end", "if not v then return nil end"),
     "intel": ("    if arsenal_intel and arsenal_intel.found then arsenal_intel.found(sec, scanned) end\n", ""),
     "intel_all_live": ("arsenal_intel.found(sec, scanned)", "arsenal_intel.found(sec, true)"),
@@ -141,18 +157,28 @@ MUTANTS = {
     "seen_mode": ('if not (gui and (gui.mode == "loot" or gui.mode == "trade")) then return end', "if not gui then return end"),
     "seen_box": ("    if gui.npc_is_box then\n", "    if false then\n"),
     "seen_more": ("    if #list > 3 then\n", "    if false then\n"),
-    "seen_quiet": ("local v = obj and mark(obj:section(), true, how)", "local v = obj and mark(obj:section(), false, how)"),
+    "seen_quiet": ("for _, v in ipairs(obj and mark_with(obj, true, how) or {}) do",
+                   "for _, v in ipairs(obj and mark_with(obj, false, how) or {}) do"),
     "seen_register": ('    RegisterScriptCallback("GUI_on_show", GUI_on_show)\n', ""),
     "how_kept": ("    at.how = how\n", ""),
-    "eager": ("mark(obj:section(), not scanned, scanned and take_source or carried)",
-              "mark(obj:section(), not scanned, scanned and take_source() or carried())"),
+    "eager": ("mark_with(obj, not scanned, scanned and take_source or carried)",
+              "mark_with(obj, not scanned, scanned and take_source() or carried())"),
     "shown": ('    if gui and gui:IsShown() and (gui.mode == "loot" or gui.mode == "trade") then',
               '    if gui and (gui.mode == "loot" or gui.mode == "trade") then'),
     "trade": ('    if gui.mode == "trade" then\n        return { kind = pre .. "trade"', '    if false then\n        return { kind = pre .. "trade"'),
     "box": ('    elseif gui.npc_is_box then\n        return { kind = pre .. "stash"', '    elseif false then\n        return { kind = pre .. "stash"'),
     "workshop": ("    if ws and ws:IsShown() then", "    if false then"),
     "talk": ("    if db.actor:is_talking() then", "    if false then"),
-    "scan_carried": ("            mark(obj:section(), true, carried)", "            mark(obj:section(), true)"),
+    "scan_carried": ("            mark_with(obj, true, carried)", "            mark_with(obj, true)"),
+    # what is on a gun
+    "mounted_none": ("local ok, on = pcall(arsenal_data.mounted_addons, obj)", "local ok, on = false, nil"),
+    "mounted_loud": ("        local a = mark(s, true, once)", "        local a = mark(s, false, once)"),
+    "mounted_how_each": ("        local a = mark(s, true, once)", "        local a = mark(s, true, how)"),
+    "mounted_quiet": ("    if not quiet then notify(new) end", "    notify(new)"),
+    "mounted_pcall": ("local ok, on = pcall(arsenal_data.mounted_addons, obj)",
+                      "local ok, on = true, arsenal_data.mounted_addons(obj)"),
+    "mounted_once": ("        if made == nil then made = (type(how) == \"function\") and how() or how end",
+                     "        made = (type(how) == \"function\") and how() or how"),
     "seen_prefix": ('    local pre = seen and "seen_" or ""', '    local pre = ""'),
     "who": ("        s = string.format(s, arsenal_where.who_text(how))", "        s = string.format(s, how.who)"),
     "old_level": ('    if not way then return at.lvl and game.translate_string(at.lvl) or "" end', '    if not way then return "" end'),
@@ -296,6 +322,59 @@ def main():
           "a trader's stock counts too; three names, then how many more: %s" % news()[-1])
     check(m4.describe(m4.found_at("wpn_e")) == "seen in Sidorovich's stock" + place,
           "seen in his stock: %s" % m4.describe(m4.found_at("wpn_e")))
+
+    # what is on a gun is found with it, the same way: a scoped AK-74 brings the Kobra; a new gun
+    # and what is on it are one news line, how they came asked once; a gun whose attachments
+    # cannot be read is still found
+    m5 = load(src)
+    m5.on_game_start()
+    g.seen_on, g.shown = False, False
+    g.callbacks.load_state(lua.table())
+    g.callbacks.actor_on_first_update(None)
+    w5 = lambda sec: m5.describe(m5.found_at(sec))
+    before = len(news())
+    g.take("wpn_ak74")
+    g.take("wpn_ak74_kobra")
+    check(m5.is_found("kobra") and news()[before:] == ["New in Arsenal: AK-74", "New in Arsenal: Kobra"]
+          and w5("kobra") == "picked up" + place,
+          "an attachment on a gun already found is found with it: %s %s" % (news()[before:], w5("kobra")))
+    before = len(news())
+    g.asked, g.shown = 0, True
+    gui.mode, gui.npc_is_box, gui.partner = "trade", False, g.trader
+    g.take("wpn_b_sil")
+    check(news()[before:] == ["New in Arsenal: B, PBS"] and g.asked == 1
+          and w5("sil") == "bought from Sidorovich" + place == w5("wpn_b"),
+          "a new gun and what is on it: one news line, how they came asked once: %s, asked %d, %s"
+          % (news()[before:], g.asked, w5("sil")))
+    g.shown = False
+    try:
+        g.take("wpn_c")
+        took = True
+    except Exception:
+        took = False
+    check(took and m5.is_found("wpn_c"), "a gun whose attachments cannot be read is still found")
+    # carried when a save loads: quietly, with the gun
+    m6 = load(src)
+    m6.on_game_start()
+    g.carry(lua.table_from(["wpn_e_pso"]))
+    g.callbacks.load_state(lua.table())
+    before = len(news())
+    g.callbacks.actor_on_first_update(None)
+    check(m6.is_found("pso") and m6.is_found("wpn_e") and len(news()) == before
+          and m6.describe(m6.found_at("pso")).startswith("already in your pack"),
+          "what is on a gun carried when a save loads is found quietly: %s" % m6.describe(m6.found_at("pso")))
+    # seen on a gun in a window, with the option on
+    m7 = load(src)
+    m7.on_game_start()
+    g.carry(lua.table_from([]))
+    g.callbacks.load_state(lua.table())
+    g.callbacks.actor_on_first_update(None)
+    g.seen_on = True
+    gui.mode, gui.npc_is_box, gui.partner = "loot", True, g.box2
+    g.show("UIInventory")
+    check(m7.is_found("pso") and news()[-1] == "New in Arsenal: E, PSO-1"
+          and m7.describe(m7.found_at("pso")) == "seen in a stash" + place,
+          "an attachment seen on a gun in a window counts with it: %s" % news()[-1])
     print("\n%d failed" % len(fails))
     return 1 if fails else 0
 

@@ -4,8 +4,12 @@
     has (Arsenal otherwise lists what the player has learned of: arsenal_intel). With the 3D PDA
     on, the PDA's pages are drawn onto the in-hand screen, which softens them; the flat window is
     drawn straight to the screen, as sharp as the inventory. The key is unbound (-1) until the
-    player picks one; the PDA tile works either way. With Fatal Error, the key opens Arsenal only
-    while its PDA works (arsenal_pages.pda_works). Seen guns and the jailbreak are off until the
+    player picks one; the PDA tile works either way. A modifier (MCM's own Shift, Ctrl or Alt
+    picker) can be asked for with it; with none, the key opens Arsenal whatever else is held, as a
+    sprinting player's Shift. With Fatal Error, the key opens Arsenal only
+    while its PDA works (arsenal_pages.pda_works). With Mod App Creator and Modded Exes' tab
+    registry, "Arsenal tab in the PDA" gives the catalog a tab of its own instead of its tile; off
+    until the player turns it on. Seen guns and the jailbreak are off until the
     player turns them on. PDA notifications are on until the player silences them, here or with
     the Silence box at the foot of Arsenal's pages, which writes the same option. "Show where
     items are defined" ends each model's page with the files the game read it from
@@ -17,14 +21,26 @@
 VERSION = "1.7.1"
 AUTHOR = "Windwalker"
 
+-- whether there is a PDA tab of Arsenal's own to choose over MAC's tile: MAC is installed, and
+-- the engine has the tab registry (arsenal_pages.tab_supported). Without MAC the tab is there
+-- anyway, and without the registry the tile.
+local function tab_choice()
+    local ok, v = pcall(function() return mac_mcm ~= nil and mac_mcm.add_app ~= nil and arsenal_pages.tab_supported() end)
+    return ok and v == true
+end
+
 function on_mcm_load()
-    return {
+    local page = {
         id = "arsenal",
         sh = true,
         gr = {
             { id = "title", type = "slide", link = "ui_options_slider_player", text = "ui_mcm_menu_arsenal",
               size = { 512, 50 }, spacing = 20 },
             { id = "flat_key", type = "key_bind", val = 2, def = -1 },
+            -- MCM's template for a key's modifier, with MCM's own strings
+            { id = "flat_mod", type = (ui_mcm and ui_mcm.kb_mod_radio) or "radio_h", val = 2, def = 0,
+              hint = "mcm_kb_modifier", content = { { 0, "mcm_kb_mod_none" }, { 1, "mcm_kb_mod_shift" },
+                  { 2, "mcm_kb_mod_ctrl" }, { 3, "mcm_kb_mod_alt" } } },
             { id = "count_seen", type = "check", val = 1, def = false },
             { id = "jailbreak", type = "check", val = 1, def = false },
             { id = "news", type = "check", val = 1, def = true },
@@ -32,6 +48,11 @@ function on_mcm_load()
             { id = "about", type = "desc", text = "ui_mcm_arsenal_about" },
         },
     }
+    -- after the key and its modifier, the other way into Arsenal
+    if tab_choice() then
+        table.insert(page.gr, 4, { id = "pda_tab", type = "check", val = 1, def = false })
+    end
+    return page
 end
 
 -- the key that opens Arsenal flat, or nil while it is unbound or MCM is missing
@@ -39,6 +60,31 @@ function flat_key()
     local ok, k = pcall(function() return ui_mcm and ui_mcm.get("arsenal/flat_key") end)
     k = ok and tonumber(k)
     return (k and k >= 0) and k or nil
+end
+
+-- the modifier asked for with the key: 0 none, 1 Shift, 2 Ctrl, 3 Alt; none while unset or
+-- MCM is missing
+function flat_mod()
+    local ok, m = pcall(function() return ui_mcm and ui_mcm.get("arsenal/flat_mod") end)
+    m = ok and tonumber(m)
+    return (m and m >= 1 and m <= 3) and m or 0
+end
+
+-- whether the modifier asked for is held (MCM tracks Shift, Ctrl and Alt). With none asked for,
+-- any is fine; an MCM without the helper asks for none.
+local function mod_held()
+    local m = flat_mod()
+    if m == 0 then return true end
+    local ok, held = pcall(function() return ui_mcm.get_mod_key(m) end)
+    return not ok or held == true
+end
+
+-- whether the catalog has a tab of its own in the PDA's tab bar instead of its tile in MAC's
+-- launcher; false while the option is off, or not offered (no MAC), or MCM is missing.
+-- arsenal_pages.wants_tab decides what the PDA gets.
+function pda_tab()
+    local ok, v = pcall(function() return ui_mcm and ui_mcm.get("arsenal/pda_tab") end)
+    return (ok and v == true) or false
 end
 
 -- whether the guns in a body, stash or trader's stock count when their window opens; false
@@ -100,6 +146,7 @@ end
 local function on_key_press(key)
     local k = flat_key()
     if not (k and key == k) then return end
+    if not mod_held() then return end
     if ui_arsenal.flat_window() or ui_arsenal_workbench.flat_window() or ui_arsenal_compare.flat_window() then return end
     if not arsenal_pages.pda_works() then
         actor_menu.set_msg(1, game.translate_string("st_arsenal_pda_down"), 3)

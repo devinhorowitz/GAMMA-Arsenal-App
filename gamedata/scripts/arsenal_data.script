@@ -19,13 +19,29 @@
     sets it up: the same rows, order, icons, names and units as the inventory tooltip. A row
     whose function needs a live weapon (Momopate's bullet speed, reliability, recoil) gets a
     stand-in here that reads the same values from the section alone.
+
+    What goes on the guns is listed too, once the guns are: every item a listed gun takes
+    (attachments), under scopes, suppressors or accessories (underbarrel launchers, laser
+    modules, conversion kits), as a gun's page sorts them, by what it is on most guns. GAMMA
+    gives its scopes the class II_FOOD, so an attachment is known by the guns that take it, not
+    by its class.
 --]]
 
--- categories in display order: weapons by kind, the rounds they fire, then armor by GAMMA's
--- armor class (its repair type, which also picks the repair kits) and helmets
+-- categories in display order: weapons by kind, the rounds they fire, what goes on the guns,
+-- then armor by GAMMA's armor class (its repair type, which also picks the repair kits) and
+-- helmets
 CATEGORIES = { "pistols", "smgs", "shotguns", "rifles", "snipers", "launchers", "melee", "ammo",
-    "light", "medium", "heavy", "exo", "helmets" }
+    "scopes", "suppressors", "accessories", "light", "medium", "heavy", "exo", "helmets" }
 ARMOR = { light = true, medium = true, heavy = true, exo = true, helmets = true }
+ATTACHMENTS = { scopes = true, suppressors = true, accessories = true }
+-- the catalog's left list in groups, every category in one: a heading over each group of more
+-- than one, which the page folds and opens (ui_arsenal)
+GROUPS = {
+    { id = "weapons", cats = { "pistols", "smgs", "shotguns", "rifles", "snipers", "launchers", "melee" } },
+    { id = "ammo", cats = { "ammo" } },
+    { id = "attachments", cats = { "scopes", "suppressors", "accessories" } },
+    { id = "armor", cats = { "light", "medium", "heavy", "exo", "helmets" } },
+}
 local KIND = {
     w_pistol = "pistols", w_smg = "smgs", w_shotgun = "shotguns", w_rifle = "rifles",
     w_sniper = "snipers", w_explosive = "launchers", w_melee = "melee",
@@ -40,6 +56,8 @@ local ARMOR_REPAIR = { outfit_novice = "light", outfit_light = "light", outfit_m
 local SKIP = { wpn_addon_silencer = true, wpn_addon_scope = true }
 
 local by_var, by_cat, total = nil, nil, 0
+local addon_cat     -- attachment section -> its category, for every item a listed gun takes
+local fits_of       -- attachment section -> the guns that take it (fits)
 
 local function translated(key)
     if not key or key == "" then return nil end
@@ -716,6 +734,63 @@ end
 -- and a variant is the sections of that name that play the same, named by the shortest:
 --     { sec, name = the name with its tags ("SKS (350 RPM)"), members = { section, ... }, entry }
 -- A model's variants are sorted by name; a model of one variant has the plain name.
+-- the kinds a gun's attachments come in (attachments), and the category each goes under
+local ADDON_KINDS = { "scopes", "lasers", "kits", "suppressors", "launchers" }
+local ADDON_CAT = { scopes = "scopes", suppressors = "suppressors", lasers = "accessories", kits = "accessories",
+    launchers = "accessories" }
+-- an item's category is the one it goes under on the most gun models, a tie to the first here:
+-- GAMMA's PU is a scope on five guns and a kit on one, its LAM a laser module on fourteen and a
+-- scope on two that have their own laser
+local CAT_ORDER = { "accessories", "scopes", "suppressors" }
+
+-- What goes on the guns listed so far: every item one of their sections takes, the category it
+-- goes under (addon_cat) and the guns that take it (fits_of). Returns those to list, by section:
+-- an item with a name and an icon that is not listed already.
+local function gather_addons()
+    addon_cat, fits_of = {}, {}
+    local on = {}       -- item section -> category -> { gun model = true }
+    for _, c in ipairs(CATEGORIES) do
+        if not (ARMOR[c] or ATTACHMENTS[c] or c == "ammo") then
+            for _, e in ipairs(by_cat[c]) do
+                for _, v in ipairs(e.variants) do
+                    for _, s in ipairs(v.members) do
+                        local ok, a = pcall(attachments, s)
+                        for _, kind in ipairs((ok and a) and ADDON_KINDS or {}) do
+                            for _, it in ipairs(a[kind] or {}) do
+                                local cat = ADDON_CAT[kind]
+                                on[it.sec] = on[it.sec] or {}
+                                on[it.sec][cat] = on[it.sec][cat] or {}
+                                on[it.sec][cat][e] = true
+                                fits_of[it.sec] = fits_of[it.sec] or {}
+                                table.insert(fits_of[it.sec], { e = e, how = kind, makes = it.makes,
+                                    upgrade = it.upgrade, ammo = it.ammo })
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    for s, by in pairs(on) do
+        local most = -1
+        for _, cat in ipairs(CAT_ORDER) do
+            local n = 0
+            for _ in pairs(by[cat] or {}) do n = n + 1 end
+            if n > most then
+                addon_cat[s], most = cat, n
+            end
+        end
+    end
+    local out = {}
+    for s in pairs(addon_cat) do
+        if not by_var[s] and translated(ini_sys:r_string_ex(s, "inv_name")) and ini_sys:r_float_ex(s, "inv_grid_x") then
+            out[#out + 1] = s
+        end
+    end
+    table.sort(out)
+    return out
+end
+
 function build()
     if by_var then return end
     by_var, by_cat, total = {}, {}, 0
@@ -724,51 +799,67 @@ function build()
     end
     build_fired()
     local groups, order = {}, {}
+    -- a section into its model's group (its name in its category), in its variant's bucket
+    local function gather(sec, cat)
+        local name = translated(ini_sys:r_string_ex(sec, "inv_name"))
+        local key = cat .. "|" .. name
+        local g = groups[key]
+        if not g then
+            g = { cat = cat, name = name, buckets = {}, sigs = {} }
+            groups[key] = g
+            order[#order + 1] = key
+        end
+        local okS, sg = pcall(signature, sec, cat)
+        sg = okS and sg or sec
+        if not g.buckets[sg] then
+            g.buckets[sg] = {}
+            g.sigs[#g.sigs + 1] = sg
+        end
+        table.insert(g.buckets[sg], sec)
+    end
+    -- the groups gathered so far, made models
+    local function settle()
+        for _, key in ipairs(order) do
+            local g, vars = groups[key], {}
+            for _, sg in ipairs(g.sigs) do
+                local secs = g.buckets[sg]
+                table.sort(secs, shorter)
+                vars[#vars + 1] = { sec = secs[1], name = g.name, members = secs }
+            end
+            if #vars > 1 then
+                table.sort(vars, function(a, b) return a.sec < b.sec end)
+                label(g.name, vars, ARMOR[g.cat] and ARMOR_TAGGERS or (g.cat == "ammo" and AMMO_TAGGERS) or TAGGERS)
+                table.sort(vars, by_name)
+            end
+            local e = { sec = vars[1].sec, cat = g.cat, name = g.name, variants = vars }
+            for _, v in ipairs(vars) do
+                v.entry = e
+                for _, s in ipairs(v.members) do
+                    by_var[s] = v
+                end
+            end
+            table.insert(by_cat[g.cat], e)
+            total = total + 1
+        end
+        groups, order = {}, {}
+    end
+    local function sort_all()
+        for _, c in ipairs(CATEGORIES) do
+            table.sort(by_cat[c], by_name)
+        end
+    end
     ini_sys:section_for_each(function(sec)
         local ok, cat = pcall(category_of, sec)
-        if ok and cat then
-            local name = translated(ini_sys:r_string_ex(sec, "inv_name"))
-            local key = cat .. "|" .. name
-            local g = groups[key]
-            if not g then
-                g = { cat = cat, name = name, buckets = {}, sigs = {} }
-                groups[key] = g
-                order[#order + 1] = key
-            end
-            local okS, sg = pcall(signature, sec, cat)
-            sg = okS and sg or sec
-            if not g.buckets[sg] then
-                g.buckets[sg] = {}
-                g.sigs[#g.sigs + 1] = sg
-            end
-            table.insert(g.buckets[sg], sec)
-        end
+        if ok and cat then gather(sec, cat) end
     end)
-    for _, key in ipairs(order) do
-        local g, vars = groups[key], {}
-        for _, sg in ipairs(g.sigs) do
-            local secs = g.buckets[sg]
-            table.sort(secs, shorter)
-            vars[#vars + 1] = { sec = secs[1], name = g.name, members = secs }
-        end
-        if #vars > 1 then
-            table.sort(vars, function(a, b) return a.sec < b.sec end)
-            label(g.name, vars, ARMOR[g.cat] and ARMOR_TAGGERS or (g.cat == "ammo" and AMMO_TAGGERS) or TAGGERS)
-            table.sort(vars, by_name)
-        end
-        local e = { sec = vars[1].sec, cat = g.cat, name = g.name, variants = vars }
-        for _, v in ipairs(vars) do
-            v.entry = e
-            for _, s in ipairs(v.members) do
-                by_var[s] = v
-            end
-        end
-        table.insert(by_cat[g.cat], e)
-        total = total + 1
+    settle()
+    sort_all()
+    -- then what goes on them, which the guns' own sections name
+    for _, s in ipairs(gather_addons()) do
+        gather(s, addon_cat[s])
     end
-    for _, c in ipairs(CATEGORIES) do
-        table.sort(by_cat[c], by_name)
-    end
+    settle()
+    sort_all()
 end
 
 -- the gun models of a category, by name
@@ -1210,6 +1301,65 @@ function mags(sec)
     return out
 end
 
+-- The guns an attachment goes on, any section of its model: { { e = the gun's model, how = the
+-- kind it is on that gun ("scopes", "lasers", "kits", "suppressors", "launchers"), makes = the
+-- gun a kit makes, upgrade = true when an upgrade adds the mount, ammo = { the grenades a
+-- launcher fires } }, ... }, in the categories' order, then by name
+function fits(sec)
+    local e = entry_for(sec)
+    if not (e and ATTACHMENTS[e.cat]) then return {} end
+    local out, seen = {}, {}
+    for _, v in ipairs(e.variants) do
+        for _, s in ipairs(v.members) do
+            for _, f in ipairs(fits_of[s] or {}) do
+                local k = f.e.sec .. "|" .. f.how
+                if not seen[k] then
+                    seen[k] = true
+                    out[#out + 1] = f
+                end
+            end
+        end
+    end
+    local at = {}
+    for i, c in ipairs(CATEGORIES) do at[c] = i end
+    table.sort(out, function(a, b)
+        if a.e.cat ~= b.e.cat then return (at[a.e.cat] or 99) < (at[b.e.cat] or 99) end
+        if a.e.name ~= b.e.name then return a.e.name < b.e.name end
+        return a.how < b.how
+    end)
+    return out
+end
+
+-- The attachments a weapon in the world has on: the scope its section is a combination with
+-- (wpn_ak74_kobra is the AK-74 with the Kobra on it), and the suppressor, launcher or scope its
+-- flags say are attached, where its section takes one. Sections, each once. A flag is asked
+-- only of a section that takes the mount: the engine logs an error when it is asked of what is
+-- no weapon, and this runs on every item the player takes.
+function mounted_addons(obj)
+    local out, seen = {}, {}
+    local sec = obj and obj:section()
+    if not sec then return out end
+    local function add(s)
+        if s and not seen[s] and ini_sys:section_exist(s) then
+            seen[s] = true
+            out[#out + 1] = s
+        end
+    end
+    local parent = ini_sys:r_string_ex(sec, "parent_section")
+    if parent and parent ~= sec then
+        add(sec:sub(#parent + 2))
+    end
+    for _, m in ipairs({ { "weapon_is_silencer", "silencer_status", "silencer_name" },
+        { "weapon_is_grenadelauncher", "grenade_launcher_status", "grenade_launcher_name" },
+        { "weapon_is_scope", "scope_status", "scope_name" } }) do
+        if status(sec, m[2]) == 2 then
+            local ok, on = pcall(function() return obj[m[1]](obj) end)
+            if ok and on then add(ini_sys:r_string_ex(sec, m[3])) end
+        end
+    end
+    return out
+end
+
 -- Nimble's trade-ins (Darkasleif's Nimble Upgrades Guns): he gives a gun for one of several
 -- others plus money. His script keeps them in its dialog functions (NimbleTrade.script), so
 -- they are listed here; the prices are his own variables, read while his script runs. His
@@ -1359,9 +1509,54 @@ local carried     -- gun model -> faction -> rank (or "special") -> the chance o
 -- scope mount), 2 launcher, 4 suppressor, rolled against the loadout's chances; "r" any the
 -- gun can take (xrs_rnd_npc_loadout.resolve_random_attachment)
 local npc_attach  -- gun section -> the attachment bits some loadout line asks for
+local mounted     -- attachment section -> faction -> rank (or "special") -> 1: a fighter's gun may come with it
 
+-- the scopes no fighter's gun gets, and per gun those it never gets (npc_loadouts.ltx)
+local function scope_blacklists(npc)
+    local black, per_gun = {}, {}
+    for _, x in ipairs(npc and lines(npc, "scope_blacklist") or {}) do
+        black[x.k] = true
+    end
+    for _, x in ipairs(npc and lines(npc, "weapon_scope_blacklist") or {}) do
+        per_gun[x.k] = per_gun[x.k] or {}
+        for _, s in ipairs(fields(x.v, ",")) do per_gun[x.k][s] = true end
+    end
+    return black, per_gun
+end
+
+-- the mounts a gun section's attachment bits allow (1 scope, 2 launcher, 4 suppressor)
+local MOUNTS = { { 1, "scope_status", "scope_name" }, { 2, "grenade_launcher_status", "grenade_launcher_name" },
+    { 4, "silencer_status", "silencer_name" } }
+
+-- What a fighter's gun of section s may come with, for a loadout line's attachment bits: the
+-- attachments (a scope of its list, not blacklisted, that makes a combination of the gun, and
+-- the mounts it takes), and the guns a kit makes of it (a scope whose combination is a gun of
+-- its own: the fighter carries that gun)
+local function npc_rolls(s, bits, black, per_gun)
+    local addons, kitted = {}, {}
+    if bit.band(bits, 1) ~= 0 then
+        for k in each_of(s, "scopes") do
+            local combo = s .. "_" .. k
+            if not black[k] and not (per_gun[s] and per_gun[s][k]) and ini_sys:section_exist(combo) then
+                local p = ini_sys:r_string_ex(combo, "parent_section")
+                if p and p ~= combo then
+                    addons[#addons + 1] = k
+                else
+                    kitted[#kitted + 1] = combo
+                end
+            end
+        end
+    end
+    for _, m in ipairs(MOUNTS) do
+        local n = bit.band(bits, m[1]) ~= 0 and status(s, m[2]) == 2 and ini_sys:r_string_ex(s, m[3])
+        if n then addons[#addons + 1] = n end
+    end
+    return addons, kitted
+end
+
+-- a slot's chances per model, and its lines that ask for attachments ({ section, bits })
 local function slot_chances(ini, slot)
-    local weights, total = {}, 0
+    local weights, total, armed = {}, 0, {}
     for _, l in ipairs(lines(ini, slot)) do
         local f = fields(l.k, ":")
         if f[1] ~= "" and ini_sys:section_exist(f[1]) then
@@ -1371,6 +1566,7 @@ local function slot_chances(ini, slot)
             if w > 0 then
                 local bits = (f[2] == "r") and 7 or tonumber(f[2]) or 0
                 npc_attach[f[1]] = bit.bor(npc_attach[f[1]] or 0, bits)
+                if bits ~= 0 then armed[#armed + 1] = { f[1], bits } end
             end
         end
     end
@@ -1379,22 +1575,31 @@ local function slot_chances(ini, slot)
         local e = entry_for(sec)
         if e then out[e] = (out[e] or 0) + w / total end
     end
-    return out
+    return out, armed
 end
 
 local function build_carried()
-    carried, npc_attach = {}, {}
+    carried, npc_attach, mounted = {}, {}, {}
     local ok, ini = pcall(ini_file, "items\\settings\\npc_loadouts\\npc_loadouts.ltx")
     if not (ok and ini and ini:section_exist("default")) then return end
+    local black, per_gun = scope_blacklists(ini)
     local slots = {}
     local function add(loadout, faction, rank)
         local sum = {}
         for _, k in ipairs({ "primary", "secondary", "extra" }) do
             local slot = ini:r_string_ex(loadout, k)
             if slot and ini:section_exist(slot) then
-                slots[slot] = slots[slot] or slot_chances(ini, slot)
-                for e, c in pairs(slots[slot]) do
+                slots[slot] = slots[slot] or { slot_chances(ini, slot) }
+                for e, c in pairs(slots[slot][1]) do
                     sum[e] = (sum[e] or 0) + c
+                end
+                for _, a in ipairs(slots[slot][2]) do
+                    for _, k in ipairs((npc_rolls(a[1], a[2], black, per_gun))) do
+                        mounted[k] = mounted[k] or {}
+                        local by = mounted[k][faction] or {}
+                        mounted[k][faction] = by
+                        by[rank] = 1
+                    end
                 end
             end
         end
@@ -1454,6 +1659,24 @@ function carriers(sec)
     if not e then return {} end
     if not carried then build_carried() end
     return faction_rows(carried[e])
+end
+
+-- The factions whose fighters' guns may come with an attachment, any section of its model, as
+-- faction_rows gives them: the loadout lines that ask for one on a gun that takes it
+function mounted_on(sec)
+    local e = entry_for(sec)
+    if not e then return {} end
+    if not carried then build_carried() end
+    local t = {}
+    for _, v in ipairs(e.variants) do
+        for _, s in ipairs(v.members) do
+            for f, by in pairs(mounted and mounted[s] or {}) do
+                t[f] = t[f] or {}
+                for r, c in pairs(by) do t[f][r] = math.max(t[f][r] or 0, c) end
+            end
+        end
+    end
+    return faction_rows(t)
 end
 
 -- Who wears a suit or helmet. A fighter's suit and helmet drop by his visual (death_manager's
@@ -2919,45 +3142,24 @@ local function build_addons()
         end
     end
     local okn, npc = pcall(ini_file, "items\\settings\\npc_loadouts\\npc_loadouts.ltx")
-    local black, per_gun = {}, {}
-    if okn and npc then
-        for _, x in ipairs(lines(npc, "scope_blacklist")) do
-            black[x.k] = true
-        end
-        for _, x in ipairs(lines(npc, "weapon_scope_blacklist")) do
-            per_gun[x.k] = per_gun[x.k] or {}
-            for _, s in ipairs(fields(x.v, ",")) do per_gun[x.k][s] = true end
-        end
-    end
+    local black, per_gun = scope_blacklists(okn and npc or nil)
     if not carried then build_carried() end
     stash_ready()
-    -- the mounts of a gun section whose attachment bits allow them (1 scope, 2 launcher, 4 suppressor)
-    local MOUNTS = { { 1, "scope_status", "scope_name" }, { 2, "grenade_launcher_status", "grenade_launcher_name" },
-        { 4, "silencer_status", "silencer_name" } }
-    local function mounts(s, bits)
+    for s, bits in pairs(npc_attach) do
+        local addons, kitted = npc_rolls(s, bits, black, per_gun)
+        for _, k in ipairs(addons) do
+            addon_ok[k] = true
+        end
+        for _, combo in ipairs(kitted) do
+            rolled[combo] = s
+        end
+    end
+    -- a stash's gun comes with what its mounts take
+    for s in pairs(stashed_secs) do
         for _, m in ipairs(MOUNTS) do
-            local n = bit.band(bits, m[1]) ~= 0 and status(s, m[2]) == 2 and ini_sys:r_string_ex(s, m[3])
+            local n = status(s, m[2]) == 2 and ini_sys:r_string_ex(s, m[3])
             if n then addon_ok[n] = true end
         end
-    end
-    for s, bits in pairs(npc_attach) do
-        if bit.band(bits, 1) ~= 0 then
-            for k in each_of(s, "scopes") do
-                local combo = s .. "_" .. k
-                if not black[k] and not (per_gun[s] and per_gun[s][k]) and ini_sys:section_exist(combo) then
-                    local p = ini_sys:r_string_ex(combo, "parent_section")
-                    if p and p ~= combo then
-                        addon_ok[k] = true
-                    else
-                        rolled[combo] = s
-                    end
-                end
-            end
-        end
-        mounts(s, bits)
-    end
-    for s in pairs(stashed_secs) do
-        mounts(s, 7)
     end
 end
 
@@ -3008,11 +3210,20 @@ local function build_reach()
     reach = {}
     build()
     if not addon_ok then build_addons() end
+    -- an attachment also turns up on what turns up with it: a fighter's gun, a stash's
+    local function addon_up(e)
+        for _, v in ipairs(e.variants) do
+            for _, s in ipairs(v.members) do
+                if addon_ok[s] then return true end
+            end
+        end
+        return false
+    end
     for _, c in ipairs(CATEGORIES) do
         for _, e in ipairs(by_cat[c]) do
             local worn_drops = ARMOR[c] and #worn_by(e.sec) > 0 and not (armor_drop(e.sec) or {}).off
             if #carriers(e.sec) > 0 or stashable(e.sec) or #starting_kits(e.sec) > 0 or worn_drops
-                or next(turns_up_model(e.sec)) then
+                or next(turns_up_model(e.sec)) or (ATTACHMENTS[c] and addon_up(e)) then
                 reach[e] = true
             end
         end
@@ -3090,7 +3301,9 @@ function faction_gear(f)
     for _, src in ipairs({ { carried, false }, { worn, true } }) do
         for e, by in pairs(src[1]) do
             local r = by[f]
-            if r and next(r) and obtainable(e.sec) and not (src[2] and (armor_drop(e.sec) or {}).off) then
+            -- what goes on a gun is never word of mouth: the player learns of it first-hand
+            if r and next(r) and not ATTACHMENTS[e.cat] and obtainable(e.sec)
+                and not (src[2] and (armor_drop(e.sec) or {}).off) then
                 local best = 0
                 for _, c in pairs(r) do best = math.max(best, c) end
                 out[#out + 1] = { e = e, ranks = r, armor = src[2] or nil, best = best }
@@ -3121,10 +3334,11 @@ end
 
 -- Whether a model is special: it turns up, but no ordinary fighter carries or wears it and no
 -- stash holds it (a kit, a trade-in, a special squad, a story character, a task or gift does):
--- a gunsmith's word of mouth. Ammo never is: the guns that fire it tell of it.
+-- a gunsmith's word of mouth. Ammo never is: the guns that fire it tell of it. Nor is what goes
+-- on a gun: the player learns of that first-hand.
 function special(sec)
     local e = entry_for(sec)
-    if not (e and e.cat ~= "ammo" and obtainable(e.sec)) then return false end
+    if not (e and e.cat ~= "ammo" and not ATTACHMENTS[e.cat] and obtainable(e.sec)) then return false end
     for _, c in ipairs(carriers(e.sec)) do
         if #c.ranks > 0 then return false end
     end
@@ -3141,4 +3355,5 @@ function reset()
     carried, stashed, stashed_eco, made, kits, worn = nil, nil, nil, nil, nil, nil
     speeds, turns_up, addon_ok, rolled, reach, model_up = nil, nil, nil, nil, nil, nil
     sold, trade_names, fired_by_index = nil, nil, nil
+    addon_cat, fits_of, mounted = nil, nil, nil
 end

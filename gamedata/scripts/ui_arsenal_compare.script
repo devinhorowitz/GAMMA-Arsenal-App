@@ -82,6 +82,7 @@ function ComparePDA:__init(flat) super()
     self.btn_back = xml:Init3tButton("btn_back", self)
     self:Register(self.btn_back, "btn_back")
     self:AddCallback("btn_back", ui_events.BUTTON_CLICKED, self.OnBack, self)
+    self.back_row = arsenal_pages.back_row(self.btn_back, { self.btn_swap, self.btn_clear })
     xml:InitStatic("rule_top", self)
 
     -- the panels, the left one's widgets at x 28, the right one's at 418
@@ -156,6 +157,7 @@ end
 -- every time the page opens: what can be compared may have changed (the jailbreak)
 function ComparePDA:Reset()
     self:PaintFooter()
+    arsenal_pages.show_back(self.back_row, self.flat)
     arsenal_compare.validate()
     self:Fill()
 end

@@ -1,7 +1,9 @@
 --[[
     Arsenal's tile in Mod App Creator's launcher (PDA > Launcher). MAC returns the app's page
     from func() without a guard, so a page that failed to build would raise inside the PDA's
-    own call; here it logs and comes back empty instead.
+    own call; here it logs and comes back empty instead. With a PDA tab of its own
+    (arsenal_pages.wants_tab) the catalog has no tile: none is added as the game starts, and
+    arsenal_pages adds or takes it away in play as the tab goes or comes (add_tile, remove_tile).
 
     The tile carries a badge with how many models are new, 1 to 999, and none when nothing is.
     MAC has no badges: its launcher page comes from mac_mcm.get_ui(), which every way into the
@@ -77,7 +79,9 @@ local function wrap_launcher()
     end
 end
 
-local function add_tile()
+local tiled = false
+
+local function put_tile()
     mac_mcm.add_app("arsenal", {
         name = "st_arsenal_title",     -- the tile's label
         texture = "arsenal_app",       -- _e, _h, _t, _d in textures_descr/ui_arsenal.xml
@@ -89,13 +93,41 @@ local function add_tile()
     end
 end
 
+-- the tile in MAC's launcher, once, and none without MAC. MAC asserts on what it is given, and
+-- the game starts every script in one pass that catches nothing: an error here would keep every
+-- script after this one from starting, so it is caught and logged
+function add_tile()
+    if tiled or not (mac_mcm and mac_mcm.add_app) then return end
+    local ok, err = pcall(put_tile)
+    if ok then
+        tiled = true
+    else
+        printf("[arsenal] no tile in Mod App Creator: %s", tostring(err))
+    end
+end
+
+-- the tile out of the launcher; one MAC cannot take away stays, and says so
+function remove_tile()
+    if not tiled then return end
+    local ok, err = pcall(function() mac_mcm.remove_app("arsenal") end)
+    if ok then
+        tiled = false
+    else
+        printf("[arsenal] the tile stays in Mod App Creator: %s", tostring(err))
+    end
+end
+
+-- whether the launcher has Arsenal's tile
+function has_tile()
+    return tiled
+end
+
 function on_game_start()
     if not (mac_mcm and mac_mcm.add_app) then
         printf("[arsenal] Mod App Creator not found; no tile")
         return
     end
-    -- MAC asserts on what it is given, and the game starts every script in one pass that catches
-    -- nothing: an error here would keep every script after this one from starting
-    local ok, err = pcall(add_tile)
-    if not ok then printf("[arsenal] no tile in Mod App Creator: %s", tostring(err)) end
+    local ok, tab = pcall(function() return arsenal_pages.wants_tab() end)
+    if ok and tab then return end
+    add_tile()
 end

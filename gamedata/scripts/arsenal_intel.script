@@ -5,12 +5,14 @@
 
     From the start he knows his own faction's gear: what its fighters carry and wear, and what
     its new-game kit offers. He learns the rest as he plays:
-      - a fighter he kills: the gun and suit he had, and who carries them (faction and rank);
-        every TALLY kills of a faction bring word of more of its gear, and at STUDY kills the
-        gear he knows it by is studied
+      - a fighter he kills: the gun and suit he had, what was on the gun, and who carries them
+        (faction and rank); every TALLY kills of a faction bring word of more of its gear, and
+        at STUDY kills the gear he knows it by is studied
       - a fighter he identifies with Immersive Identification, who lives: the gun he holds (in
         plain sight, whatever the tag's lines show), and who carries it
-      - a body, stash or trader's stock he opens: what is in it, and where
+      - a body, stash or trader's stock he opens: what is in it, what is on its guns, and where
+    What goes on a gun (an attachment) is learned only first-hand, from what he finds, kills
+    and opens: a PDA's package and a talk tell of guns and suits (arsenal_data.faction_gear).
       - a PDA he picks up: a data package, its owner's word on his own faction's gear or that of
         a faction his is allied with or at war with (the game's relations as they stand), up to
         the owner's rank; an encrypted one keeps it until a technician decrypts it, a rare one
@@ -393,14 +395,23 @@ function found(sec, live)
     if e and arsenal_data.obtainable(e.sec) then st.new[e.sec] = true end
 end
 
--- the gear on a fighter or in a box: known, with who carries it or where it lies
+-- the gear on a fighter or in a box, and what is on its guns (arsenal_data.mounted_addons):
+-- known, with who carries it or where it lies
 local function learn_items(owner, how, fact_of)
     local seen = {}
-    local function one(_, item)
-        local e = item and arsenal_data.entry_for(item:section())
+    local function learn(sec)
+        local e = arsenal_data.entry_for(sec)
         if e and not seen[e] then
             seen[e] = true
             reveal(e, how, fact_of(e))
+        end
+    end
+    local function one(_, item)
+        if not item then return end
+        learn(item:section())
+        local ok, on = pcall(arsenal_data.mounted_addons, item)
+        for _, s in ipairs(ok and on or {}) do
+            learn(s)
         end
     end
     if how.kind == "stash" then

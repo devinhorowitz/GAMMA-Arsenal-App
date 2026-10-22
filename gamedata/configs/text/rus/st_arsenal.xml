@@ -36,8 +36,41 @@
 	<string id="st_arsenal_not_found">
 		<text>Ещё не найдено</text>
 	</string>
-	<string id="st_arsenal_found_only">
-		<text>Только найденные</text>
+	<string id="st_arsenal_group_weapons">
+		<text>Оружие</text>
+	</string>
+	<string id="st_arsenal_group_armor">
+		<text>Броня</text>
+	</string>
+	<string id="st_arsenal_show_all">
+		<text>Все</text>
+	</string>
+	<string id="st_arsenal_show_found">
+		<text>Найденные</text>
+	</string>
+	<string id="st_arsenal_show_missing">
+		<text>Не найденные</text>
+	</string>
+	<string id="st_arsenal_show_new">
+		<text>Новые</text>
+	</string>
+	<string id="st_arsenal_sort_name">
+		<text>Название</text>
+	</string>
+	<string id="st_arsenal_sort_found">
+		<text>Новые находки</text>
+	</string>
+	<string id="st_arsenal_sort_weight">
+		<text>Вес</text>
+	</string>
+	<string id="st_arsenal_sort_kind">
+		<text>Тип</text>
+	</string>
+	<string id="st_arsenal_sort_damage">
+		<text>Урон</text>
+	</string>
+	<string id="st_arsenal_sort_ap">
+		<text>Пробитие</text>
 	</string>
 	<string id="st_arsenal_new_entry">
 		<text>Новое в Арсенале: %s</text>
@@ -854,5 +887,38 @@
 	</string>
 	<string id="ui_mcm_arsenal_sources_desc">
 		<text>В конце страницы каждой модели — откуда игра её прочитала: файлы конфигов, задавшие её строки, по убыванию (файл mod_ — это правка DLTX), её секция, модель и иконка. Для модостроителей и чтобы узнать, из какого мода оружие: найдите файл во вкладке «Данные» MO2.</text>
+	</string>
+	<string id="st_arsenal_cat_scopes">
+		<text>Прицелы</text>
+	</string>
+	<string id="st_arsenal_cat_suppressors">
+		<text>Глушители</text>
+	</string>
+	<string id="st_arsenal_cat_accessories">
+		<text>Аксессуары</text>
+	</string>
+	<string id="st_arsenal_group_attachments">
+		<text>Обвесы</text>
+	</string>
+	<string id="st_arsenal_fits">
+		<text>Подходит к:</text>
+	</string>
+	<string id="st_arsenal_fits_more">
+		<text>и ещё %s, которые вам пока не встречались</text>
+	</string>
+	<string id="st_arsenal_fires">
+		<text>Стреляет: %s</text>
+	</string>
+	<string id="st_arsenal_mounted_by">
+		<text>Стоит на оружии у:</text>
+	</string>
+	<string id="st_arsenal_not_studied_addon">
+		<text>Ещё не изучено: найдите экземпляр, чтобы увидеть совместимость</text>
+	</string>
+	<string id="ui_mcm_arsenal_pda_tab">
+		<text>Вкладка Арсенала в КПК</text>
+	</string>
+	<string id="ui_mcm_arsenal_pda_tab_desc">
+		<text>Своя вкладка Арсенала в панели КПК, после остальных, вместо плитки в Лаунчере. Вступает в силу, когда вы вернётесь в игру.</text>
 	</string>
 </string_table>
