@@ -2,12 +2,12 @@
 
 # Arsenal
 
-**Every gun, round, suit and helmet in your GAMMA game, in the PDA: its stats, where to find
-it, what fits it, and which ones you have found. You learn of them as you play. Its
+**Every gun, round, attachment, suit and helmet in your GAMMA game, in the PDA: its stats,
+where to find it, what fits it, and which ones you have found. You learn of them as you play. Its
 Workbench page plans upgrades on GAMMA's own upgrade trees and hands them to your toolkit, and
 its Compare page sets two guns, suits or helmets side by side.**
 
-![Arsenal's page for the 9A-91: the stat card with each stat fully upgraded, hit power and jams, where to find it, and its ammo](media/arsenal_screenshot.png)
+![Arsenal's catalog on the Brugger & Thomet MP9: the categories under Weapons, Attachments and Armor, the SMGs with their icons, Show and Sort, the stat card with each stat fully upgraded, and who carries it](media/arsenal_screenshot.png)
 
 Arsenal is a PDA app for the S.T.A.L.K.E.R. Anomaly modpack GAMMA. It reads the running
 game's own configs, so the catalog is whatever your mod list has, with the numbers your
@@ -15,17 +15,27 @@ inventory shows. What never turns up in your game, short of console commands, is
 Browse it by category, or tick **By faction** to see what each faction's fighters carry and
 wear.
 
+The categories sit under **Weapons**, **Attachments** and **Armor**; a click on a heading folds
+its group away. Each model shows its icon, grayed until you find one. Over the list, **Show**
+keeps to what you have found, what you haven't, or what is new. **Sort** orders it by name,
+newest finds, any row of the stat card, or weight (rounds by damage and armor piercing), and the
+arrow beside it turns the order round. What you haven't studied yet goes last, so sorting gives
+nothing away. Arsenal opens where you left it.
+
+![The Sort list open over the pistols: name, newest finds, each row of the gun card, and weight](media/sort_screenshot.png)
+
 ## You learn as you play
 
 Arsenal starts out knowing what your faction knows: the gear its fighters carry and wear,
 and what its new-game kit offers. The rest you learn in the Zone:
 
-- **Fights.** A fighter you kill shows you his gun and suit, and who carries them. Every ten
-  kills of a faction bring word of more of its gear; after twenty-five, you know its gear
-  inside out.
+- **Fights.** A fighter you kill shows you his gun, what is on it, and his suit, and who
+  carries them. Every ten kills of a faction bring word of more of its gear; after
+  twenty-five, you know its gear inside out.
 - **Identifying.** With Immersive Identification, a fighter you identify shows you the gun he
   holds, and who carries it, without a fight, whether or not his tag names the weapon.
-- **Looking.** A body, a stash or a trader's stock teaches you what is in it, and where.
+- **Looking.** A body, a stash or a trader's stock teaches you what is in it, what is on its
+  guns, and where.
 - **PDAs.** A PDA you pick up is a data package: its owner's word on his own faction's gear,
   or on a faction his is allied with or at war with, as the game's relations stand, up to his
   rank. Neutral factions know little of each other. An encrypted PDA keeps its secrets until
@@ -35,11 +45,15 @@ and what its new-game kit offers. The rest you learn in the Zone:
   Technicians and traders know of special guns, the ones no ordinary fighter carries, and
   will tell you what one is and how to get it, for a price.
 
+Attachments you learn of only first-hand, from what you find, kill and open: PDAs and talks
+keep to guns and suits.
+
 A gun or suit shows its stats and what fits it once you have studied it: found one, or had
-its specs from someone who knows. A round is known once you know a gun that fires it. New entries come with a PDA message and glow in the list
+its specs from someone who knows. An attachment shows what it fits once you have found one. A
+round is known once you know a gun that fires it. New entries come with a PDA message and glow in the list
 until you click them, like unread mail, and so does anything you find for the first time.
-Arsenal's tile in MAC's launcher shows how many are waiting, and **Mark all read**, beside
-*Found only*, reads them all at once.
+Arsenal's tile in MAC's launcher shows how many are waiting, and so does the count line at the
+top of the page. **Mark all read**, at the foot of the page, reads them all at once.
 
 Each entry remembers how you came by it, and where: *Found 14.05.2012: looted from a stash in
 Cordon, near the rookie village*, or *taken from the body of Duty fighter Ivan Petrenko*, *bought
@@ -74,6 +88,10 @@ lit padlock in the footer of every page says so, screenshots included.
 - **Magazines,** when Mags Redux is on.
 - **Scopes, suppressors and accessories:** launchers with their grenades, laser modules,
   kits, and mounts an upgrade adds.
+- **Attachments** have pages of their own, under Scopes, Suppressors and Accessories (each
+  item where it goes on most guns): the guns it fits that you know of, by category, with the
+  gun a kit makes and the mounts an upgrade adds; how many more turn up that you have yet to
+  come across; a launcher's grenades; and the fighters whose guns come with it on.
 - **Camos** from 3DSS's camo system: the ones you have discovered, and which factions' guns
   carry the rest.
 - **Parts,** and the **repair kits** that fit it.
@@ -95,7 +113,7 @@ In English and Russian.
 Arsenal's second page; the switch at the top left of every page moves between the pages, and
 **Customize** on a gun, suit or helmet opens Workbench on it.
 
-![Workbench planning an MP5A3: the card now and planned, GAMMA's upgrade tree, the kits](media/workbench_screenshot.png)
+![Workbench planning a Brugger & Thomet MP9: GAMMA's upgrade tree with the plan in yellow, the card now and planned, its scope and suppressor, and the kits it takes](media/workbench_screenshot.png)
 
 - **GAMMA's upgrade tree,** drawn as the toolkit's Upgrade tab draws it, with the kit each
   upgrade takes and how many of that kit you have. Click an upgrade to plan it: what it needs
@@ -124,6 +142,8 @@ gun's, suit's or helmet's page in the catalog, puts it in: the first waits on th
 second opens the page. After that, a new one replaces the right, or the side whose **Change**
 you pressed. A model of another kind starts a new comparison.
 
+![Compare with the Brugger & Thomet MP9 beside the FN P90: each stat stock and fully upgraded, the better one green](media/compare_screenshot.png)
+
 - **The stat card for both,** mirrored around each row's name: each value as the inventory
   card shows it and, on the outside, fully upgraded where Arsenal can work it out. The better
   value is green, and so is the better upgraded one.
@@ -137,8 +157,8 @@ Only models whose stats you have studied can be compared, unless the jailbreak i
 ## Collecting
 
 An item counts as found the first time it enters your inventory: picked up, looted, bought,
-crafted or given as a reward. Whatever you carry when a save loads counts too, so a
-playthrough already underway starts with credit. The PDA counts found models by category
+crafted or given as a reward. An attachment counts loose, or on a gun you take. Whatever you
+carry when a save loads counts too, so a playthrough already underway starts with credit. The PDA counts found models by category
 out of what turns up in your game, and a filter shows only those.
 
 Items you only see do not count as found, unless you turn on **MCM > Arsenal > Count guns you
@@ -164,7 +184,8 @@ turning up, and left out of the counts.
 - GAMMA. Arsenal reads GAMMA's loadouts, stashes, traders, drop tables, repair kits and camos
   where a mod list has them, and leaves out what it lacks.
 - [Mod App Creator (MAC)](https://www.moddb.com/mods/stalker-anomaly/addons/mod-app-creator-mac)
-  for the PDA tile. Without it, open Arsenal with the key below.
+  for the PDA tile. Without it, Arsenal has a tab of its own in the PDA (below), and the key
+  below opens it too.
 - MCM, which GAMMA includes; Modded Exes' DXML, which GAMMA includes, for the talks.
 
 ## Install
@@ -191,12 +212,22 @@ moves rather than deletes. [INSTALL-WITH-CLAUDE.md](INSTALL-WITH-CLAUDE.md) is t
   join, as its toolkit does, wherever the mod rewrote the gun's tree, and fully upgraded
   values count every upgrade once.
 
+## A tab of its own
+
+With MAC installed, **MCM > Arsenal > Arsenal tab in the PDA** takes Arsenal out of MAC's
+Launcher and gives it a tab of its own, at the end of the PDA's tab bar. The change shows as soon
+as you're back in the game. Without MAC, Arsenal has the tab anyway. The tab comes from Modded
+Exes' PDA tabs (July 2026 or later, which GAMMA has); with older exes, Arsenal keeps the tile.
+
+![Arsenal opened from its own tab at the end of the PDA's tab bar](media/tab_screenshot.png)
+
 ## Sharper pages with the 3D PDA
 
 With the 3D PDA on, the game draws PDA pages onto the screen of the PDA in your hands, which
 softens small text and icons. **MCM > Arsenal > Open Arsenal on its own** takes a key that
 opens Arsenal straight on the screen, as sharp as the inventory; the switch takes it to
-Workbench and Compare there too.
+Workbench and Compare there too. The key can ask for Shift, Ctrl or Alt with it; with none
+picked, it works whatever else you hold.
 
 ## Credits
 
