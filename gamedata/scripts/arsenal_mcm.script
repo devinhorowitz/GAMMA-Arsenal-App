@@ -18,7 +18,7 @@
 
 -- The release and its author, on the line at the foot of every page, so a screenshot says which
 -- Arsenal it shows. build.py refuses to build while VERSION is not its own.
-VERSION = "1.8.0"
+VERSION = "1.8.1"
 AUTHOR = "Windwalker"
 
 -- whether there is a PDA tab of Arsenal's own to choose over MAC's tile: MAC is installed, and
