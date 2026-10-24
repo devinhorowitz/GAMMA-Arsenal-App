@@ -2,7 +2,8 @@
     Arsenal collection: which guns the player has found. A gun counts as found the first time
     one of its kind enters the player's inventory, however it got there (picked up, looted,
     bought, crafted, a reward). With the MCM option "Count guns you see" on, the guns in a
-    body, stash or trader's stock count too, when its window opens. A scoped or silenced
+    body, stash or trader's stock count too, as its window shows them when it opens (a stash's
+    a moment later too, as it fills; never a box of the player's own). A scoped or silenced
     combination counts as the gun it was made from (arsenal_data.variant_for), and what is on
     a gun counts as found with it: an attachment counts loose or mounted. The set only grows:
     dropping, selling or taking a gun apart changes nothing, so there is nothing to track
@@ -13,9 +14,9 @@
     were found. A model counts as found once any of its variants is.
 
     A find keeps when, where and how: looted from a stash or a body (whose), bought (from
-    whom), given in a talk (by whom), crafted, picked up, seen in a window (with the option
-    on), or already carried when a save loaded; the place is put into words when shown
-    (arsenal_where). Finds from before Arsenal kept how show their level alone.
+    whom), given in a talk or from a companion's pack (by whom), crafted, picked up, seen in a
+    window (with the option on), or already carried when a save loaded; the place is put into
+    words when shown (arsenal_where). Finds from before Arsenal kept how show their level alone.
 
     Saved with the game (m_data.arsenal, plain values only). The engine does not send
     actor_on_item_take for what the player already carries when a save loads, so the
@@ -161,7 +162,14 @@ function describe(at)
     return arsenal_where.at_place(s, how.place, at.lvl)
 end
 
--- a window's partner as a source: a trader, a box (a stash), a body (whose) or other loot;
+-- whether a window's partner is a fighter alive, not a body: a companion, whose pack it shows
+-- (ui_inventory's npc_is_companion)
+local function living(gui, partner)
+    return gui.npc_is_companion == true or (partner.alive ~= nil and partner:alive() == true)
+end
+
+-- a window's partner as a source: a trader, a box (a stash), a live fighter (what is taken from
+-- his pack he hands over: a companion's holds what he was given), a body (whose) or other loot;
 -- `seen` when its guns count only by being seen there
 local function partner_source(gui, partner, seen)
     local pre = seen and "seen_" or ""
@@ -170,6 +178,8 @@ local function partner_source(gui, partner, seen)
         return { kind = pre .. "trade", who = partner:character_name(), place = place }
     elseif gui.npc_is_box then
         return { kind = pre .. "stash", place = place }
+    elseif IsStalker(partner) and living(gui, partner) then
+        return { kind = "gift", who = partner:character_name(), place = place }
     elseif IsStalker(partner) then
         return { kind = pre .. "body", who = partner:character_name(), faction = partner:character_community(),
             place = place }
@@ -236,15 +246,53 @@ local function actor_on_item_take(obj)
     end
 end
 
--- With the option on, the guns in a body, stash or trader's stock count when its window opens
--- (ui_inventory's partner, iterated as the window iterates it); one news line for the new ones
-local function GUI_on_show(name)
-    if name ~= "UIInventory" or not scanned then return end
-    if not (arsenal_mcm and arsenal_mcm.count_seen()) then return end
-    local gui = ui_inventory and ui_inventory.GUI
-    if not (gui and (gui.mode == "loot" or gui.mode == "trade")) then return end
-    local ok, partner = pcall(gui.GetPartner, gui)
-    if not (ok and partner) then return end
+-- A trader's stock as the trade window lists it, in cells of its own (ui_inventory's CC: the ids
+-- each bag holds), each item to fn(nil, item): his ruck, less what his trade keeps off the counter
+-- (status 3 of utils_item.get_item_trade_status: GAMMA's sell lists hide every gun, suit and
+-- helmet), so not the guns in his slots either, which the window leaves out and his restocks keep
+-- (sell_useless_items). A window without such cells: the ruck.
+local function stock_of(gui, partner)
+    local lists = {}
+    for _, bag in ipairs({ "npc_trade_bag", "npc_trade" }) do
+        local cc = type(gui.CC) == "table" and gui.CC[bag]
+        local ids = cc and cc.indx_id
+        if type(ids) == "table" then lists[#lists + 1] = ids end
+    end
+    return function(fn)
+        if #lists == 0 then
+            partner:iterate_ruck(fn, partner)
+            return
+        end
+        for _, ids in ipairs(lists) do
+            for id in pairs(ids) do
+                local obj = level.object_by_id(id)
+                if obj then fn(nil, obj) end
+            end
+        end
+    end
+end
+
+-- Whether a box is one of the Zone's stashes: one treasure_manager keeps (its caches, every
+-- inventory box of the Zone as a new game starts, and the outposts Homestead stocks), not one the
+-- player set up himself, later (a dropped backpack, a furniture stash or workbench). Without
+-- treasure_manager's list, any box but those item_backpack and Hideout Furniture record as his.
+local function zone_stash(box)
+    local id = box:id()
+    local caches = treasure_manager and treasure_manager.caches
+    if type(caches) == "table" then return caches[id] ~= nil end
+    local m = alife_storage_manager and alife_storage_manager.get_state and alife_storage_manager.get_state()
+    if type(m) ~= "table" then return true end
+    if type(m.player_created_stashes) == "table" and m.player_created_stashes[id] ~= nil then return false end
+    for _, sid in pairs(type(m.workshop_stashes) == "table" and m.workshop_stashes or {}) do
+        if sid == id then return false end
+    end
+    return true
+end
+
+-- the guns of an open window that count by being seen there, as the window shows them: a box's
+-- contents, a trader's stock as it lists it (stock_of), a body's whole inventory; one news line
+-- for the new ones
+local function see(gui, partner)
     local new = {}
     local how = partner_source(gui, partner, true)
     local function take(_, obj)
@@ -254,10 +302,43 @@ local function GUI_on_show(name)
     end
     if gui.npc_is_box then
         partner:iterate_inventory_box(take, partner)
+    elseif gui.mode == "trade" then
+        stock_of(gui, partner)(take)
     else
         partner:iterate_inventory(take, partner)
     end
     notify(new)
+end
+
+-- A stash looked into again a moment after its window opened, while that window is still open on
+-- it: treasure_manager fills a stash as it is opened (try_spawn_treasure), and the loot is in the
+-- box only a frame or so after the window says it is open (ui_inventory lists a box on its next
+-- update for that). What counted the first time is found already.
+local function look_again(id)
+    CreateTimeEvent("arsenal_collection", "stash_" .. id, 0.3, function()
+        local gui = ui_inventory and ui_inventory.GUI
+        local ok, box = false, nil
+        if gui and gui.npc_is_box and gui:IsShown() then ok, box = pcall(gui.GetPartner, gui) end
+        if ok and box and box:id() == id then see(gui, box) end
+        return true
+    end)
+end
+
+-- With the option on, the guns in a body, stash or trader's stock count when its window opens
+-- (ui_inventory's partner, as see() reads it); a stash's again a moment later (look_again). A box
+-- of the player's own holds what he put there, and a live fighter's pack is none of those.
+local function GUI_on_show(name)
+    if name ~= "UIInventory" or not scanned then return end
+    if not (arsenal_mcm and arsenal_mcm.count_seen()) then return end
+    local gui = ui_inventory and ui_inventory.GUI
+    if not (gui and (gui.mode == "loot" or gui.mode == "trade")) then return end
+    local ok, partner = pcall(gui.GetPartner, gui)
+    if not (ok and partner) then return end
+    local box = gui.npc_is_box
+    if box and not zone_stash(partner) then return end
+    if not box and gui.mode == "loot" and IsStalker(partner) and living(gui, partner) then return end
+    see(gui, partner)
+    if box then look_again(partner:id()) end
 end
 
 local function save_state(m_data)

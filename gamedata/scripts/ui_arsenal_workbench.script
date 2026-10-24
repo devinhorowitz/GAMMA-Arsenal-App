@@ -351,13 +351,14 @@ function WorkbenchPDA:Select(e)
     if count(self.plan) ~= count(plan) then
         W.set_plan(e.id, e.sec, self.plan, self.att)
     end
-    -- what is attached now: a carried gun's suppressor and launcher
+    -- what is attached now: a carried gun's suppressor and launcher, as the engine says
+    -- (game_object's weapon_is_silencer and weapon_is_grenadelauncher: whether one is on)
     self.att_now = {}
     if e.obj and e.kind == "gun" then
         local m = W.mounts(e.sec, self.inst_list)
-        local ok, sil = pcall(e.obj.weapon_is_silencer_attached, e.obj)
+        local ok, sil = pcall(e.obj.weapon_is_silencer, e.obj)
         if ok and sil and m.silencer then self.att_now.silencer = m.silencer.sec end
-        local ok2, gl = pcall(e.obj.weapon_is_grenadelauncher_attached, e.obj)
+        local ok2, gl = pcall(e.obj.weapon_is_grenadelauncher, e.obj)
         if ok2 and gl and m.launcher then self.att_now.launcher = m.launcher.sec end
     end
     self:Refresh()

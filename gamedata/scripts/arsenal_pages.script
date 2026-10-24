@@ -55,9 +55,11 @@ function tab_supported()
         and CUITabControl ~= nil and CUITabControl.AddTab ~= nil
 end
 
--- whether the catalog has a tab of its own: asked for in MCM, or MAC is not there for a tile
+-- whether the catalog has a tab of its own: MAC is not there for a tile, or MCM asks for it.
+-- MAC is asked about first: MCM defines the option only with MAC, and logs a read of one no page
+-- defines ("!MCM given bad path").
 function wants_tab()
-    return tab_supported() and (arsenal_mcm.pda_tab() or not (mac_mcm and mac_mcm.add_app)) or false
+    return tab_supported() and (not (mac_mcm and mac_mcm.add_app) or arsenal_mcm.pda_tab()) or false
 end
 
 -- the section the catalog opens in: its tab's while it has one
@@ -92,13 +94,35 @@ function show_back(row, flat)
     end
 end
 
+-- the section the PDA shows, or nil while it cannot be read
+local function pda_section()
+    local ok, s = pcall(function()
+        local pda_menu = ActorMenu.get_pda_menu()
+        return pda_menu and pda_menu:GetActiveSection()
+    end)
+    return ok and s or nil
+end
+
+-- The registry rebuilds the live tab bar as a tab comes or goes, and the engine then selects the
+-- bar's pushed tab again when it is one of the registry's (CUIPdaWnd::RebuildExtraTabs), which
+-- takes the PDA to that tab's own page: Seasons of the Zone's Forecast, reached from its tab,
+-- gave way to its Year as the catalog's tab came, and Workbench to the catalog as Seasons' did.
+-- So the section the PDA was on before, `was`, is put back, unless it was the tab taken away.
+local function keep_section(was, gone)
+    local pda_menu = ActorMenu.get_pda_menu()
+    if pda_menu and was and was ~= "" and was ~= gone and pda_menu:GetActiveSection() ~= was then
+        pda_menu:SetActiveSubdialog(was)
+    end
+end
+
 -- The catalog's tab there or gone, as wants_tab() says, and MAC's tile the other way round; a
 -- tab the registry refuses leaves the tile. With a tab taken away while it was the PDA's last
 -- section, the PDA would reopen on a section nothing answers, its tab bar hidden; it goes to
--- Tasks, the PDA's own first page, instead.
+-- Tasks, the PDA's own first page, instead. Any other section the PDA was on stays.
 local function sync()
     local want = wants_tab()
     if want and not tab_section then
+        local was = pda_section()
         local ok, id = pcall(pda_dynamic_tabs.register, TAB_CAPTION, function() return page_ui("catalog") end)
         if ok and type(id) == "string" then
             tab_section = id
@@ -107,7 +131,9 @@ local function sync()
             say("no PDA tab of its own: " .. tostring(id))
             z_arsenal_mac.add_tile()
         end
+        keep_section(was)
     elseif not want and tab_section then
+        local was = pda_section()
         local id = tab_section
         tab_section = nil
         local ok, err = pcall(pda_dynamic_tabs.unregister, id)
@@ -115,6 +141,7 @@ local function sync()
         z_arsenal_mac.add_tile()
         local pda_menu = ActorMenu.get_pda_menu()
         if pda_menu and pda_menu:GetActiveSection() == id then pda_menu:SetActiveSubdialog("eptTasks") end
+        keep_section(was, id)
     end
 end
 

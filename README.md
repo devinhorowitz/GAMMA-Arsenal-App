@@ -35,7 +35,9 @@ and what its new-game kit offers. The rest you learn in the Zone:
 - **Identifying.** With Immersive Identification, a fighter you identify shows you the gun he
   holds, and who carries it, without a fight, whether or not his tag names the weapon.
 - **Looking.** A body, a stash or a trader's stock teaches you what is in it, what is on its
-  guns, and where.
+  guns, and where, as the window shows it: a trader's own guns and what he won't sell stay
+  hidden. Stashes you set up yourself teach nothing, and a companion's pack doesn't say who
+  carries its gear.
 - **PDAs.** A PDA you pick up is a data package: its owner's word on his own faction's gear,
   or on a faction his is allied with or at war with, as the game's relations stand, up to his
   rank. Neutral factions know little of each other. An encrypted PDA keeps its secrets until
@@ -162,7 +164,7 @@ carry when a save loads counts too, so a playthrough already underway starts wit
 out of what turns up in your game, and a filter shows only those.
 
 Items you only see do not count as found, unless you turn on **MCM > Arsenal > Count guns you
-see**.
+see**: then a gun counts once a body, a stash or a trader's window shows it.
 
 ## PDA messages
 

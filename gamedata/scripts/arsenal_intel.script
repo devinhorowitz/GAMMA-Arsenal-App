@@ -10,7 +10,9 @@
         at STUDY kills the gear he knows it by is studied
       - a fighter he identifies with Immersive Identification, who lives: the gun he holds (in
         plain sight, whatever the tag's lines show), and who carries it
-      - a body, stash or trader's stock he opens: what is in it, what is on its guns, and where
+      - a body, stash or trader's stock he opens: what its window shows of it, what is on its
+        guns, and where; a box of his own teaches nothing, and a companion's pack nothing of
+        who carries what
     What goes on a gun (an attachment) is learned only first-hand, from what he finds, kills
     and opens: a PDA's package and a talk tell of guns and suits (arsenal_data.faction_gear).
       - a PDA he picks up: a data package, its owner's word on his own faction's gear or that of
@@ -28,10 +30,10 @@
     faction) and where (arsenal_where), for its page.
 
     Saved with the game (m_data.arsenal_intel), keyed by model (its first variant's section);
-    a save from another catalog moves its keys to the models that hold them now, on load. A PDA
-    read and a fighter talked to today are marks on those objects instead (se vars), which the
-    game drops when it releases one, so a new object given the same id starts unmarked; a PDA's
-    mark also names its owner (owner_of).
+    a save from another catalog moves its keys to the models that hold them now, on load (keys
+    that are one model now come together). A PDA read and a fighter talked to today are marks
+    on those objects instead (se vars), which the game drops when it releases one, so a new
+    object given the same id starts unmarked; a PDA's mark also names its owner (owner_of).
 --]]
 
 local VERSION = 1
@@ -261,8 +263,8 @@ local function faction_name(f)
 end
 
 -- a source in words, for news and a page: "killing Duty fighter Ivan Petrenko", "the PDA of
--- a Duty fighter", "Sidorovich", ...; given `at` (when it was learned), where it was too:
--- "... in Cordon, near the rookie village"
+-- a Duty fighter", "Sidorovich", a companion by his name (his pack), ...; given `at` (when it
+-- was learned), where it was too: "... in Cordon, near the rookie village"
 function describe(how, at)
     local k = how and how.kind
     local s
@@ -272,7 +274,7 @@ function describe(how, at)
         return string.format(game.translate_string("st_arsenal_from_pda"), arsenal_where.who_text(how))
     elseif k == "tally" then
         return string.format(game.translate_string("st_arsenal_by_tally"), faction_name(how.faction))
-    elseif k == "talk" or k == "gunsmith" or k == "trade" then
+    elseif k == "talk" or k == "gunsmith" or k == "trade" or k == "pack" then
         s = how.who or game.translate_string("st_arsenal_by_someone")
     elseif k == "stash" then
         s = game.translate_string("st_arsenal_by_stash")
@@ -396,14 +398,15 @@ function found(sec, live)
 end
 
 -- the gear on a fighter or in a box, and what is on its guns (arsenal_data.mounted_addons):
--- known, with who carries it or where it lies
-local function learn_items(owner, how, fact_of)
+-- known, with who carries it or where it lies (fact_of; none without it). `each`, when given,
+-- walks the items in place of the owner's inventory: what a window shows of him (shown_of).
+local function learn_items(owner, how, fact_of, each)
     local seen = {}
     local function learn(sec)
         local e = arsenal_data.entry_for(sec)
         if e and not seen[e] then
             seen[e] = true
-            reveal(e, how, fact_of(e))
+            reveal(e, how, fact_of and fact_of(e))
         end
     end
     local function one(_, item)
@@ -414,7 +417,9 @@ local function learn_items(owner, how, fact_of)
             learn(s)
         end
     end
-    if how.kind == "stash" then
+    if each then
+        each(one)
+    elseif how.kind == "stash" then
         owner:iterate_inventory_box(one, owner)
     else
         owner:iterate_inventory(one, owner)
@@ -515,7 +520,83 @@ local function actor_on_item_take(obj)
     if obj and PDA_SIZE[obj:section()] then on_pda(obj) end
 end
 
--- a body, stash or trader's stock, when its window opens (ui_inventory's partner)
+-- What the inventory window shows of a partner it lists through cells of its own (ui_inventory's
+-- CC: the ids each bag holds), each item to fn(nil, item). A trader's stock as the trade window
+-- lists it: his ruck, less what his trade keeps off the counter (status 3 of
+-- utils_item.get_item_trade_status: GAMMA's sell lists hide every gun, suit and helmet), so not
+-- the guns in his slots either, which the window leaves out and his restocks keep
+-- (sell_useless_items). A live fighter's pack as the window shows it: a companion's, the items he
+-- was given. A window without such cells: the ruck.
+local function shown_of(gui, partner, bags)
+    local lists = {}
+    for _, bag in ipairs(bags) do
+        local cc = type(gui.CC) == "table" and gui.CC[bag]
+        local ids = cc and cc.indx_id
+        if type(ids) == "table" then lists[#lists + 1] = ids end
+    end
+    return function(fn)
+        if #lists == 0 then
+            partner:iterate_ruck(fn, partner)
+            return
+        end
+        for _, ids in ipairs(lists) do
+            for id in pairs(ids) do
+                local item = level.object_by_id(id)
+                if item then fn(nil, item) end
+            end
+        end
+    end
+end
+
+-- whether a window's partner is a fighter alive, not a body: a companion, whose pack it shows
+-- (ui_inventory's npc_is_companion)
+local function living(gui, partner)
+    return gui.npc_is_companion == true or (partner.alive ~= nil and partner:alive() == true)
+end
+
+-- Whether a box is one of the Zone's stashes: one treasure_manager keeps (its caches, every
+-- inventory box of the Zone as a new game starts, and the outposts Homestead stocks), not one the
+-- player set up himself, later (a dropped backpack, a furniture stash or workbench). Without
+-- treasure_manager's list, any box but those item_backpack and Hideout Furniture record as his.
+local function zone_stash(box)
+    local id = box:id()
+    local caches = treasure_manager and treasure_manager.caches
+    if type(caches) == "table" then return caches[id] ~= nil end
+    local m = alife_storage_manager and alife_storage_manager.get_state and alife_storage_manager.get_state()
+    if type(m) ~= "table" then return true end
+    if type(m.player_created_stashes) == "table" and m.player_created_stashes[id] ~= nil then return false end
+    for _, sid in pairs(type(m.workshop_stashes) == "table" and m.workshop_stashes or {}) do
+        if sid == id then return false end
+    end
+    return true
+end
+
+-- a stash's contents, where it lies
+local function learn_stash(box, place)
+    local lvl = level.name()
+    learn_items(box, { kind = "stash", level = lvl, place = place }, function() return { stash = lvl } end)
+end
+
+-- A stash looked into again a moment after its window opened, while that window is still open on
+-- it: treasure_manager fills a stash as it is opened (try_spawn_treasure), and the loot is in the
+-- box only a frame or so after the window says it is open (ui_inventory lists a box on its next
+-- update for that). What the first look taught is taught again, which changes nothing.
+local function look_again(id, place)
+    CreateTimeEvent("arsenal_intel", "stash_" .. id, 0.3, function()
+        local gui = ui_inventory and ui_inventory.GUI
+        local ok, box = false, nil
+        if gui and gui.npc_is_box and gui:IsShown() then ok, box = pcall(gui.GetPartner, gui) end
+        if ok and box and box:id() == id then learn_stash(box, place) end
+        return true
+    end)
+end
+
+-- A body, stash or trader's stock, when its window opens (ui_inventory's partner): what the
+-- window shows of it. A trader's stock as the window lists it (shown_of). A box only if it is one
+-- of the Zone's stashes (zone_stash), looked into again a moment later (look_again). A live
+-- fighter's pack as the window shows it, which tells nothing of who carries what (a companion
+-- holds what he was given): known, from him, with no fact. A body's whole inventory, as its
+-- window shows it.
 local function GUI_on_show(name)
     if name ~= "UIInventory" then return end
     local gui = ui_inventory and ui_inventory.GUI
@@ -525,10 +606,16 @@ local function GUI_on_show(name)
     local place = arsenal_where.place_of(partner)
     if gui.mode == "trade" then
         local who = partner:character_name()
-        learn_items(partner, { kind = "trade", who = who, place = place }, function() return { sold = who } end)
+        local stock = shown_of(gui, partner, { "npc_trade_bag", "npc_trade" })
+        learn_items(partner, { kind = "trade", who = who, place = place }, function() return { sold = who } end, stock)
     elseif gui.npc_is_box then
-        local lvl = level.name()
-        learn_items(partner, { kind = "stash", level = lvl, place = place }, function() return { stash = lvl } end)
+        if zone_stash(partner) then
+            learn_stash(partner, place)
+            look_again(partner:id(), place)
+        end
+    elseif IsStalker(partner) and living(gui, partner) then
+        local who = partner:character_name()
+        learn_items(partner, { kind = "pack", who = who, place = place }, nil, shown_of(gui, partner, { "npc_bag" }))
     elseif IsStalker(partner) then
         local f = partner:character_community()
         if is_faction(f) then
@@ -684,8 +771,31 @@ end
 -- saving, and the game's callbacks
 ---------------------------------------------------------------------------------------------
 
--- move what is kept under a section to the model that holds it now (a save from another
--- catalog, mod list or language)
+-- whether a stamp is earlier than another, one that is no stamp the later
+local function sooner(a, b)
+    if type(a) ~= "table" then return false end
+    if type(b) ~= "table" then return true end
+    for _, k in ipairs({ "y", "mo", "d", "h", "mi" }) do
+        local x, y = tonumber(a[k]) or 0, tonumber(b[k]) or 0
+        if x ~= y then return x < y end
+    end
+    return false
+end
+
+-- two models' facts as one, in place: the sets add_fact keeps, and each faction's ranks
+local function merge_facts(into, from)
+    for kind, v in pairs(from) do
+        if type(v) == "table" and type(into[kind]) == "table" then
+            merge_facts(into[kind], v)
+        elseif into[kind] == nil then
+            into[kind] = v
+        end
+    end
+end
+
+-- Move what is kept under a section to the model that holds it now (a save from another
+-- catalog, mod list or language). Sections that are one model now come together: it was learned
+-- when the first of them was, and everything known of each is known of it.
 function regroup()
     local function key(k)
         local e = arsenal_data.get(k) or arsenal_data.entry_for(k)
@@ -695,7 +805,14 @@ function regroup()
         local out = {}
         for k, v in pairs(st[field]) do
             local nk = key(k)
-            if out[nk] == nil or field ~= "known" then out[nk] = out[nk] or v end
+            local was = out[nk]
+            if was == nil then
+                out[nk] = v
+            elseif field == "known" then
+                if sooner(type(v) == "table" and v.at, type(was) == "table" and was.at) then out[nk] = v end
+            elseif field == "facts" and type(was) == "table" and type(v) == "table" then
+                merge_facts(was, v)
+            end
         end
         st[field] = out
     end

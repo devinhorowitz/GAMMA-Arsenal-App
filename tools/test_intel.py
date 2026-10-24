@@ -1,8 +1,10 @@
 """Run arsenal_intel.script under LuaJIT against stubs of the engine and of arsenal_data, and check
 what the player comes to know: his faction's gear from the start, kills and their tallies, PDAs
 (their owner's faction or one it is allied with or at war with, up to his rank; encrypted ones
-when decrypted; rare ones with specs), bodies, stashes and traders' stock, talks, a technician's
-special guns, the news, the jailbreak, saving and regrouping.
+when decrypted; rare ones with specs), bodies, stashes and traders' stock as their windows show
+them (a trader's as the window lists it, a stash looked into again as it fills, never a box of
+the player's own, a companion's pack), talks, a technician's special guns, the news, the
+jailbreak, saving and regrouping (keys that are one model now, together).
 
     python test_intel.py            the real script
     python test_intel.py MUTANT     a broken copy (see MUTANTS); the run must fail
@@ -201,6 +203,8 @@ function person(id, comm, rank, items, extra)
     function o:position() return { x = id, y = 0, z = 0 } end
     function o:iterate_inventory(fn, owner) for _, s in ipairs(self.items) do fn(owner, item(s)) end end
     function o:iterate_inventory_box(fn, owner) for _, s in ipairs(self.items) do fn(owner, item(s)) end end
+    -- his ruck: what is not in his slots (extra.ruck), else all he has
+    function o:iterate_ruck(fn, owner) for _, s in ipairs(extra and extra.ruck or self.items) do fn(owner, item(s)) end end
     function o:name() return "npc" .. id end
     function o:spawn_ini() return extra and extra.spawn_ini or nil end
     return o
@@ -216,6 +220,22 @@ function spawn_ini(...)
     for _, s in ipairs({ ... }) do has[s] = true end
     return { section_exist = function(self, s) return has[s] == true end }
 end
+-- the inventory window's own cells (ui_inventory's CC), by bag: the ids it shows, each an item
+-- in the world (level.object_by_id)
+function cells(bags)
+    local cc = {}
+    for bag, list in pairs(bags) do
+        local ids = {}
+        for _, x in ipairs(list) do
+            OBJS[x[1]] = item(x[2], x[1])
+            ids[x[1]] = 1
+        end
+        cc[bag] = { indx_id = ids }
+    end
+    return cc
+end
+-- whether the inventory window is open (ui_inventory.GUI:IsShown)
+SHOWN = false
 """
 
 MUTANTS = {
@@ -260,8 +280,41 @@ MUTANTS = {
                    "        if x ~= f then"),
     "pda_rank": ("    local top = rank_at(rank) or #arsenal_data.RANKS", "    local top = #arsenal_data.RANKS"),
     "decrypt": ("        scan_pdas()\n        return r", "        return r"),
-    "trade_fact": ('function() return { sold = who } end)', 'function() return nil end)'),
+    "trade_fact": ('function() return { sold = who } end, stock)', 'function() return nil end, stock)'),
     "stash_fact": ('function() return { stash = lvl } end', 'function() return nil end'),
+    # a window teaches what it shows: a trader's stock as it lists it, his ruck without it
+    "trade_all": ('function() return { sold = who } end, stock)', 'function() return { sold = who } end)'),
+    "cells_unread": ("        if #lists == 0 then\n            partner:iterate_ruck(fn, partner)",
+                     "        if true then\n            partner:iterate_ruck(fn, partner)"),
+    "ruck_all": ("            partner:iterate_ruck(fn, partner)", "            partner:iterate_inventory(fn, partner)"),
+    # a stash looked into again a moment after it opens, while its window is still open on it
+    "stash_once": ("            look_again(partner:id(), place)\n", ""),
+    "stash_again_closed": ("        if gui and gui.npc_is_box and gui:IsShown() then ok, box = pcall(gui.GetPartner, gui) end",
+                           "        if gui then ok, box = pcall(gui.GetPartner, gui) end"),
+    "stash_again_other": ("        if ok and box and box:id() == id then learn_stash(box, place) end",
+                          "        if ok and box then learn_stash(box, place) end"),
+    # the player's own boxes
+    "own_stash": ("        if zone_stash(partner) then\n", "        if true then\n"),
+    "own_stash_list": ("    if type(caches) == \"table\" then return caches[id] ~= nil end", "    if type(caches) == \"table\" then return true end"),
+    "own_backpack": ("    if type(m.player_created_stashes) == \"table\" and m.player_created_stashes[id] ~= nil then return false end\n",
+                     ""),
+    "own_workbench": ("        if sid == id then return false end\n", ""),
+    # a live companion's pack
+    "pack_as_body": ("    elseif IsStalker(partner) and living(gui, partner) then", "    elseif false then"),
+    "pack_unshown": ('learn_items(partner, { kind = "pack", who = who, place = place }, nil, shown_of(gui, partner, { "npc_bag" }))',
+                     'learn_items(partner, { kind = "pack", who = who, place = place }, nil)'),
+    "pack_fact": ('learn_items(partner, { kind = "pack", who = who, place = place }, nil,',
+                  'learn_items(partner, { kind = "pack", who = who, place = place }, function() return { carried = '
+                  '{ faction = "stalker" } } end,'),
+    "pack_words": ('    elseif k == "talk" or k == "gunsmith" or k == "trade" or k == "pack" then',
+                   '    elseif k == "talk" or k == "gunsmith" or k == "trade" then'),
+    "pack_alive_only_companions": ("    return gui.npc_is_companion == true or (partner.alive ~= nil and partner:alive() == true)",
+                                   "    return gui.npc_is_companion == true"),
+    # keys that are one model now
+    "regroup_first_known": ("                if sooner(type(v) == \"table\" and v.at, type(was) == \"table\" and was.at) then "
+                            "out[nk] = v end\n", ""),
+    "regroup_facts_dropped": ("                merge_facts(was, v)\n", ""),
+    "regroup_facts_shallow": ("            merge_facts(into[kind], v)", "            into[kind] = into[kind]"),
     "talk_daily": ("    if not willing(npc) or se_load_var(npc:id(), npc:name(), TALKED) == day() then return false end",
                    "    if not willing(npc) then return false end"),
     "talk_enemy": ("        and not (npc.relation and npc:relation(db.actor) == game_object.enemy)", ""),
@@ -593,9 +646,11 @@ def main():
     run(lambda: cb.actor_on_item_take(g.item("itm_pda_common", 350)))
     check(known() == [], "a PDA marked by the test build stays read: %s" % known())
 
-    # windows: a trader's stock (who sells it), a stash (where), a body (who carried it)
+    # windows: a trader's stock (who sells it), a stash (where), a body (who carried it); a window
+    # without cells of its own, its partner's ruck (a trader's) or all a body or box holds
     m.reset()
     gui = lua.table_from({"mode": "trade", "npc_is_box": False})
+    gui.IsShown = lua.eval("function(self) return SHOWN end")
     trader = g.person(400, "stalker", "novice", lua.table_from(["wpn_trade"]), lua.table_from({"name": "Sidorovich"}))
     gui.GetPartner = lua.eval("function(p) return function() return p end end")(trader)
     g.ui_inventory = lua.table_from({"GUI": gui})
@@ -612,7 +667,8 @@ def main():
     page = rec and run(lambda: m.describe(rec.how, rec.at))
     check(page == "a stash in Garbage, at the Depot", "and on its page, the spot: %s" % page)
     gui.npc_is_box = False
-    gui.GetPartner = lua.eval("function(p) return function() return p end end")(g.person(402, "freedom", "novice", lua.table_from(["wpn_free"])))
+    gui.GetPartner = lua.eval("function(p) return function() return p end end")(
+        g.person(402, "freedom", "novice", lua.table_from(["wpn_free"]), lua.table_from({"dead": True})))
     run(lambda: cb.GUI_on_show("UIInventory"))
     check(facts("wpn_free", "carried") == {"freedom": ["novice"]}, "a body: who carried it: %s" % facts("wpn_free", "carried"))
     rec = st().known["wpn_free"]
@@ -626,6 +682,111 @@ def main():
     run(lambda: cb.GUI_on_show("UIInventory"))
     check(facts("kobra", "stash") == {"l02_garbage": True} and "wpn_mono" in known() and "wpn_box" in known(),
           "a stash's gun and the scope on it, where they lay: %s %s" % (facts("kobra", "stash"), known()))
+    partner_of = lua.eval("function(p) return function() return p end end")
+
+    # a trader's stock as the trade window lists it, in its own cells: not the gun in his slot, nor
+    # what his trade keeps off the counter, which the window leaves out; without those cells, his
+    # ruck, never his slots
+    m.reset()
+    g.NEWS = lua.table_from({})
+    owl = g.person(410, "stalker", "novice", lua.table_from(["wpn_mono", "wpn_trade"]), lua.table_from({"name": "Owl"}))
+    gui.mode, gui.npc_is_box = "trade", False
+    gui.GetPartner = partner_of(owl)
+    gui.CC = g.cells(lua.eval('{ npc_trade_bag = { { 4101, "wpn_trade" } }, npc_trade = {} }'))
+    run(lambda: cb.GUI_on_show("UIInventory"))
+    run(lambda: g.run_timers())
+    check(known() == ["wpn_trade"] and facts("wpn_trade", "sold") == {"Owl": True} and st().facts["wpn_mono"] is None
+          and list(g.NEWS.values()) == ["Learned from Owl: Trade Knife"],
+          "a trader's stock as the window lists it, not the gun in his slot: %s %s" % (known(), list(g.NEWS.values())))
+    m.reset()
+    gui.CC = None
+    beard = g.person(411, "stalker", "novice", lua.table_from(["wpn_mono", "wpn_trade"]),
+                     lua.table_from({"name": "Beard", "ruck": lua.table_from(["wpn_trade"])}))
+    gui.GetPartner = partner_of(beard)
+    run(lambda: cb.GUI_on_show("UIInventory"))
+    check(known() == ["wpn_trade"], "a trade window without cells of its own: his ruck, not his slots: %s" % known())
+
+    # a stash fills as it opens (treasure_manager spawns its loot), after its window says it is open:
+    # looked into again a moment later, while the window is still open on it, it teaches what came,
+    # and what the first look taught changes nothing; a window closed by then, or open on another
+    # box, teaches nothing more
+    m.reset()
+    g.NEWS, g.TIMERS, g.SHOWN = lua.table_from({}), lua.table_from({}), True
+    lua.execute("treasure_manager = { caches = { [420] = true, [421] = true, [422] = false, [423] = 'x' } }")
+    fresh = g.person(420, "x", "novice", lua.table_from(["wpn_box"]))
+    gui.mode, gui.npc_is_box = "loot", True
+    gui.GetPartner = partner_of(fresh)
+    run(lambda: cb.GUI_on_show("UIInventory"))
+    first = known()
+    fresh["items"][2] = "wpn_army"
+    run(lambda: g.run_timers())
+    run(lambda: g.run_timers())
+    check(first == ["wpn_box"] and known() == ["wpn_army", "wpn_box"] and facts("wpn_army", "stash") == {"l02_garbage": True},
+          "a stash looked into again a moment later: what spawned after it opened is known, where: %s %s"
+          % (first, known()))
+    check(list(g.NEWS.values()) == ["Learned from a stash: Box Gun", "Learned from a stash: Army Rifle"],
+          "news once for each look's new gear: %s" % list(g.NEWS.values()))
+    shut = g.person(421, "x", "novice", lua.table_from([]))
+    gui.GetPartner = partner_of(shut)
+    run(lambda: cb.GUI_on_show("UIInventory"))
+    shut["items"][1] = "wpn_eco"
+    g.SHOWN = False
+    run(lambda: g.run_timers())
+    closed = "wpn_eco" in known()
+    g.SHOWN = True
+    left = g.person(422, "x", "novice", lua.table_from([]))
+    gui.GetPartner = partner_of(left)
+    run(lambda: cb.GUI_on_show("UIInventory"))
+    left["items"][1] = "wpn_eco"
+    gui.GetPartner = partner_of(g.person(423, "x", "novice", lua.table_from(["wpn_free"])))
+    run(lambda: g.run_timers())
+    check(not closed and "wpn_eco" not in known() and "wpn_free" not in known(),
+          "a window closed by then, or open on another box, teaches nothing more: %s %s" % (closed, known()))
+
+    # a box of the player's own (a dropped backpack, a furniture stash: none of treasure_manager's
+    # stashes) teaches nothing, then or later; without treasure_manager's list, the boxes
+    # item_backpack and Hideout Furniture record as his (player_created_stashes, workshop_stashes)
+    m.reset()
+    g.TIMERS = lua.table_from({})
+    gui.GetPartner = partner_of(g.person(430, "x", "novice", lua.table_from(["wpn_army"])))
+    run(lambda: cb.GUI_on_show("UIInventory"))
+    check(known() == [] and len(g.TIMERS) == 0, "a box of the player's own teaches nothing, then or later: %s" % known())
+    lua.execute('treasure_manager = nil\n'
+                'alife_storage_manager = { get_state = function() return {\n'
+                '    player_created_stashes = { [430] = "inv_backpack" }, workshop_stashes = { [77] = 432 } } end }')
+    got = []
+    for box_id in (430, 432, 431):
+        gui.GetPartner = partner_of(g.person(box_id, "x", "novice", lua.table_from(["wpn_army"])))
+        run(lambda: cb.GUI_on_show("UIInventory"))
+        got.append(known())
+    check(got == [[], [], ["wpn_army"]],
+          "without treasure_manager's list: not a backpack or furniture stash of his, a box else: %s" % got)
+    lua.execute("alife_storage_manager = nil")
+
+    # a live companion's pack, as the window shows it (what he was given): known, from him, with no
+    # word of who carries it; not the gun in his hands, which the window leaves out; a fighter alive
+    # the window does not call a companion, the same
+    m.reset()
+    g.NEWS, g.TIMERS = lua.table_from({}), lua.table_from({})
+    wolf = g.person(440, "stalker", "veteran", lua.table_from(["wpn_free", "wpn_eco"]), lua.table_from({"name": "Wolf"}))
+    gui.mode, gui.npc_is_box, gui.npc_is_companion = "loot", False, True
+    gui.GetPartner = partner_of(wolf)
+    gui.CC = g.cells(lua.eval('{ npc_bag = { { 4401, "wpn_eco" } } }'))
+    run(lambda: cb.GUI_on_show("UIInventory"))
+    run(lambda: g.run_timers())
+    rec = st().known["wpn_eco"]
+    page = rec and run(lambda: m.describe(rec.how, rec.at))
+    check(known() == ["wpn_eco"] and st().facts["wpn_eco"] is None and page == "Wolf in Garbage, at the Depot"
+          and list(g.NEWS.values()) == ["Learned from Wolf: Eco Rifle"],
+          "a companion's pack: known, from him, no word of who carries it, not the gun he holds: %s %s %s %s"
+          % (known(), st().facts["wpn_eco"], page, list(g.NEWS.values())))
+    m.reset()
+    gui.npc_is_companion = False
+    run(lambda: cb.GUI_on_show("UIInventory"))
+    rec = st().known["wpn_eco"]
+    check(known() == ["wpn_eco"] and rec is not None and rec.how.kind == "pack",
+          "a fighter alive the window does not call a companion: the same: %s" % known())
+    gui.npc_is_companion, gui.CC, g.SHOWN = None, None, False
 
     # talks: one thing a day per person; an expert's with specs; an enemy will not talk
     m.reset()
@@ -805,6 +966,25 @@ def main():
     st().known["wpn_mono_kobra"] = lua.table_from({})
     m.regroup()
     check(known() == ["wpn_mono"], "a key under another section moves to its model: %s" % known())
+    # keys that are one model now come together: learned when the first of them was, and every fact
+    # of each kept, whichever of the two comes first
+    merged = []
+    for early, late in (("wpn_mono", "wpn_mono_kobra"), ("wpn_mono_kobra", "wpn_mono")):
+        m.reset()
+        lua.execute("""
+local st, early, late = arsenal_intel.state(), ...
+st.known[early] = { at = { y = 2012, mo = 5, d = 1, h = 8, mi = 0, lvl = "l01_escape" }, how = { kind = "kill" } }
+st.known[late] = { at = { y = 2012, mo = 6, d = 2, h = 9, mi = 0, lvl = "l02_garbage" }, how = { kind = "talk" } }
+st.facts[early] = { carried = { monolith = { novice = true } }, ways = { kit = true } }
+st.facts[late] = { carried = { monolith = { veteran = true }, dolg = { legend = true } }, stash = { l01_escape = true } }
+""", early, late)
+        m.regroup()
+        rec = st().known["wpn_mono"]
+        merged.append((known(), rec and rec.at.mo, rec and rec.how.kind, facts("wpn_mono", "carried"),
+                       facts("wpn_mono", "stash"), facts("wpn_mono", "ways")))
+    want = (["wpn_mono"], 5, "kill", {"monolith": ["novice", "veteran"], "dolg": ["legend"]}, {"l01_escape": True},
+            {"kit": True})
+    check(merged == [want, want], "keys that are one model now: the first learned kept, every fact of each: %s" % merged)
     # that record (a later Arsenal's) is saved back as it was, never over, and logged; what this
     # one learns meanwhile is kept beside it, and read back on the next load
     same = lua.eval("function(a, b) return rawequal(a, b) end")

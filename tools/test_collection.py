@@ -3,9 +3,10 @@ check the collector: a variant is found once, a combination counts as its gun, t
 scan is quiet, later finds send news (a model's second variant too), a model counts as found
 once, from its earliest variant, the set survives a save and a load, and finds kept under
 sections that now share a variant move to it, the earliest kept. A find keeps how it came, from
-what is open as it is taken (a stash's, a body's or a trader's window, the workshop, a talk),
-else picked up; already carried when a save loads; seen in a window; a find kept before that
-shows its level alone.
+what is open as it is taken (a stash's, a body's or a trader's window, a companion's pack, the
+workshop, a talk), else picked up; already carried when a save loads; seen in a window, as the
+window shows it (a trader's stock as it lists it, a stash looked into again as it fills, never a
+box of the player's own or a companion's pack); a find kept before that shows its level alone.
 
     python test_collection.py            the real script
     python test_collection.py MUTANT     a broken copy (see MUTANTS); the run must fail
@@ -36,7 +37,12 @@ game = {
     translate_string = function(k) return T[k] or k end,
     get_game_time = function() return { get = function() return unpack(clock) end } end,
 }
-level = { name = function() return "l01_escape" end }
+-- objects in the world by id (level.object_by_id), and time events as _g.script keeps them
+OBJS = {}
+level = { name = function() return "l01_escape" end, object_by_id = function(id) return OBJS[id] end }
+TIMERS = {}
+function CreateTimeEvent(a, b, delay, fn) TIMERS[#TIMERS + 1] = fn end
+function run_timers() local t = TIMERS; TIMERS = {}; for _, fn in ipairs(t) do fn() end end
 -- gun models and their variants, as arsenal_data builds them
 local function model(name, variants)
     local e = { name = name, variants = variants, sec = variants[1].sec }
@@ -97,13 +103,35 @@ for _, s in ipairs({ "a", "b", "c", "d", "e" }) do
     model(s:upper(), { v })
     by_var[v.sec] = v
 end
-local function holding(list, box)
-    local p = at_spot({})
-    local function each(self, fn, arg) for _, s in ipairs(list) do fn(arg, item(s)) end end
+-- a box or a fighter holding a list of sections, under an id of its own; a fighter's ruck (what is
+-- not in his slots) the list given, else all he holds
+local last_id = 500
+function holding(list, box, ruck)
+    local p = at_spot({ list = list, ruck = ruck })
+    last_id = last_id + 1
+    local id = last_id
+    p.id = function() return id end
+    local function each(self, fn, arg) for _, s in ipairs(self.list) do fn(arg, item(s)) end end
+    local function each_ruck(self, fn, arg) for _, s in ipairs(self.ruck or self.list) do fn(arg, item(s)) end end
     local function none() end
     p.iterate_inventory_box = box and each or none
     p.iterate_inventory = box and none or each
+    p.iterate_ruck = box and none or each_ruck
     return p
+end
+-- the inventory window's own cells (ui_inventory's CC), by bag: the ids it shows, each an item in
+-- the world
+function cells(bags)
+    local cc = {}
+    for bag, list in pairs(bags) do
+        local ids = {}
+        for _, x in ipairs(list) do
+            OBJS[x[1]] = item(x[2])
+            ids[x[1]] = 1
+        end
+        cc[bag] = { indx_id = ids }
+    end
+    return cc
 end
 box = holding({ "wpn_fort17", "wpn_sks", "ammo_545" }, true)
 trader = holding({ "wpn_a", "wpn_b", "wpn_c", "wpn_d", "wpn_e", "wpn_pm" }, false)
@@ -183,6 +211,28 @@ MUTANTS = {
     "who": ("        s = string.format(s, arsenal_where.who_text(how))", "        s = string.format(s, how.who)"),
     "old_level": ('    if not way then return at.lvl and game.translate_string(at.lvl) or "" end', '    if not way then return "" end'),
     "place": ("    return arsenal_where.at_place(s, how.place, at.lvl)", "    return s"),
+    # a window counts what it shows: a trader's stock as it lists it, his ruck without it
+    "stock_all": ("        stock_of(gui, partner)(take)", "        partner:iterate_inventory(take, partner)"),
+    "stock_cells_unread": ("        if #lists == 0 then\n            partner:iterate_ruck(fn, partner)",
+                           "        if true then\n            partner:iterate_ruck(fn, partner)"),
+    "stock_ruck_all": ("            partner:iterate_ruck(fn, partner)", "            partner:iterate_inventory(fn, partner)"),
+    # a stash looked into again a moment after it opens, while its window is still open on it
+    "seen_stash_once": ("    if box then look_again(partner:id()) end\n", ""),
+    "seen_again_closed": ("        if gui and gui.npc_is_box and gui:IsShown() then ok, box = pcall(gui.GetPartner, gui) end",
+                          "        if gui then ok, box = pcall(gui.GetPartner, gui) end"),
+    "seen_again_other": ("        if ok and box and box:id() == id then see(gui, box) end", "        if ok and box then see(gui, box) end"),
+    # the player's own boxes
+    "seen_own_stash": ("    if box and not zone_stash(partner) then return end\n", ""),
+    "seen_own_list": ('    if type(caches) == "table" then return caches[id] ~= nil end', '    if type(caches) == "table" then return true end'),
+    "seen_own_backpack": ('    if type(m.player_created_stashes) == "table" and m.player_created_stashes[id] ~= nil then return false end\n',
+                          ""),
+    "seen_own_workbench": ("        if sid == id then return false end\n", ""),
+    # a live companion
+    "seen_pack": ('    if not box and gui.mode == "loot" and IsStalker(partner) and living(gui, partner) then return end\n', ""),
+    "gift_as_body": ('    elseif IsStalker(partner) and living(gui, partner) then\n        return { kind = "gift"',
+                     '    elseif false then\n        return { kind = "gift"'),
+    "living_companions_only": ("    return gui.npc_is_companion == true or (partner.alive ~= nil and partner:alive() == true)",
+                               "    return gui.npc_is_companion == true"),
 }
 
 
@@ -375,6 +425,121 @@ def main():
     check(m7.is_found("pso") and news()[-1] == "New in Arsenal: E, PSO-1"
           and m7.describe(m7.found_at("pso")) == "seen in a stash" + place,
           "an attachment seen on a gun in a window counts with it: %s" % news()[-1])
+
+    def fresh_module():
+        mod = load(src)
+        mod.on_game_start()
+        g.carry(lua.table_from([]))
+        g.callbacks.load_state(lua.table())
+        g.callbacks.actor_on_first_update(None)
+        g.TIMERS = lua.table_from({})
+        return mod
+
+    # a trader's stock as the trade window lists it, in its own cells: not the gun in his slot, nor
+    # what his trade keeps off the counter (in his ruck still), which the window leaves out; without
+    # those cells, his ruck, never his slots
+    m8 = fresh_module()
+    g.seen_on = True
+    lua.execute("""
+owl = holding({ "wpn_a", "wpn_b" }, false, { "wpn_a", "wpn_b" })
+owl.stalker = true
+owl.character_name = function() return "Owl" end
+owl.character_community = function() return "stalker" end
+beard = holding({ "wpn_c", "wpn_d" }, false, { "wpn_d" })
+beard.stalker = true
+beard.character_name = function() return "Beard" end
+beard.character_community = function() return "stalker" end
+""")
+    gui.mode, gui.npc_is_box, gui.partner = "trade", False, g.owl
+    gui.CC = g.cells(lua.eval('{ npc_trade_bag = { { 901, "wpn_b" } }, npc_trade = {} }'))
+    g.show("UIInventory")
+    check(m8.is_found("wpn_b") and not m8.is_found("wpn_a")
+          and m8.describe(m8.found_at("wpn_b")) == "seen in Owl's stock" + place,
+          "a trader's stock as the window lists it: not what it leaves out: %s %s"
+          % (m8.is_found("wpn_a"), m8.describe(m8.found_at("wpn_b"))))
+    gui.CC, gui.partner = None, g.beard
+    g.show("UIInventory")
+    check(m8.is_found("wpn_d") and not m8.is_found("wpn_c"),
+          "a trade window without cells of its own: his ruck, not his slots: %s" % m8.is_found("wpn_c"))
+
+    # a stash fills as it opens (treasure_manager spawns its loot), after its window says it is open:
+    # looked into again a moment later, while the window is still open on it, what came counts, in
+    # one line; a window closed by then, or open on another box, counts nothing more
+    m9 = fresh_module()
+    g.shown = True
+    lua.execute("""
+fresh = holding({ "wpn_a" }, true)
+shut = holding({}, true)
+other = holding({}, true)
+moved = holding({ "wpn_e" }, true)
+treasure_manager = { caches = { [fresh.id()] = true, [shut.id()] = true, [other.id()] = false, [moved.id()] = "x" } }
+""")
+    gui.mode, gui.npc_is_box, gui.partner = "loot", True, g.fresh
+    before = len(news())
+    g.show("UIInventory")
+    g.fresh.list[2] = "wpn_b"
+    g.run_timers()
+    check(m9.is_found("wpn_a") and m9.is_found("wpn_b") and news()[before:] == ["New in Arsenal: A", "New in Arsenal: B"]
+          and m9.describe(m9.found_at("wpn_b")) == "seen in a stash" + place,
+          "a stash looked into again a moment later: what spawned after it opened counts, once: %s" % news()[before:])
+    gui.partner = g.shut
+    g.show("UIInventory")
+    g.shut.list[1] = "wpn_c"
+    g.shown = False
+    g.run_timers()
+    g.shown = True
+    gui.partner = g.other
+    g.show("UIInventory")
+    g.other.list[1] = "wpn_d"
+    gui.partner = g.moved
+    g.run_timers()
+    check(not m9.is_found("wpn_c") and not m9.is_found("wpn_d") and not m9.is_found("wpn_e"),
+          "a window closed by then, or open on another box, counts nothing more: %s %s %s"
+          % (m9.is_found("wpn_c"), m9.is_found("wpn_d"), m9.is_found("wpn_e")))
+
+    # a box of the player's own (a dropped backpack, a furniture stash: none of treasure_manager's
+    # stashes) counts nothing, then or later; without treasure_manager's list, the boxes item_backpack
+    # and Hideout Furniture record as his (player_created_stashes, workshop_stashes)
+    m10 = fresh_module()
+    lua.execute('mine = holding({ "wpn_a" }, true)')
+    gui.partner = g.mine
+    g.show("UIInventory")
+    check(not m10.is_found("wpn_a") and len(g.TIMERS) == 0, "a box of the player's own counts nothing, then or later")
+    lua.execute("""
+treasure_manager = nil
+pack, bench, found_box = holding({ "wpn_a" }, true), holding({ "wpn_b" }, true), holding({ "wpn_c" }, true)
+alife_storage_manager = { get_state = function() return {
+    player_created_stashes = { [pack.id()] = "inv_backpack" }, workshop_stashes = { [77] = bench.id() } } end }
+""")
+    for b in ("pack", "bench", "found_box"):
+        gui.partner = g[b]
+        g.show("UIInventory")
+    got = [m10.is_found(s) for s in ("wpn_a", "wpn_b", "wpn_c")]
+    check(got == [False, False, True],
+          "without treasure_manager's list: not a backpack or furniture stash of his, a box else: %s" % got)
+    lua.execute("alife_storage_manager = nil")
+
+    # a live companion: what is taken from his pack he hands over (given to you by him); what his
+    # window shows is no body, stash or stock, and does not count by being seen
+    m11 = fresh_module()
+    g.seen_on, g.shown = False, True
+    lua.execute("""
+wolf = holding({ "wpn_c", "wpn_d" }, false)
+wolf.stalker = true
+wolf.alive = function() return true end
+wolf.character_name = function() return "Wolf" end
+wolf.character_community = function() return "stalker" end
+""")
+    gui.mode, gui.npc_is_box, gui.partner = "loot", False, g.wolf
+    g.take("wpn_c")
+    w11 = m11.describe(m11.found_at("wpn_c"))
+    g.seen_on, g.shown = True, False
+    g.show("UIInventory")
+    check(w11 == "given to you by Wolf" + place and not m11.is_found("wpn_d"),
+          "a companion's pack: what is taken from it, given by him; what it shows does not count: %s %s"
+          % (w11, m11.is_found("wpn_d")))
+    gui.CC, g.seen_on = None, False
+    lua.execute("treasure_manager = nil")
     print("\n%d failed" % len(fails))
     return 1 if fails else 0
 

@@ -254,6 +254,13 @@ MUTANTS = {
     "short_keeps_parens": ('    s = s:gsub("%s*%b()%s*$", "")', '    s = s'),
     "kits_no_more": ("        if k and more > 0 and i == MAX_KITS then", "        if false then"),
     "silencer_stuck": ("        local want = not on and mount.sec or false", "        local want = mount.sec"),
+    # what is on a carried gun, by the engine's own names (1.1.0-1.8.0 asked for *_attached, which
+    # game_object does not export, and saw nothing on)
+    "silencer_unread": ("pcall(e.obj.weapon_is_silencer, e.obj)", "pcall(e.obj.weapon_is_silencer_attached, e.obj)"),
+    "launcher_unread": ("pcall(e.obj.weapon_is_grenadelauncher, e.obj)",
+                        "pcall(e.obj.weapon_is_grenadelauncher_attached, e.obj)"),
+    "attached_unmounted": ("        if ok and sil and m.silencer then self.att_now.silencer = m.silencer.sec end",
+                           "        if ok and sil then self.att_now.silencer = true end"),
     "switch_dead": ('    arsenal_pages.open("catalog")', "    -- nothing"),
     "page_not_pressed": ("    theme.set_active(self.page_workbench, true)\n", ""),
     "back_dead": ('        pda:SetActiveSubdialog("eptLauncher")', "        -- nowhere"),
@@ -500,8 +507,9 @@ z_arsenal_mac = { has_tile = function() return TILE end }
     lua.execute("""
 GUN = item("wpn_test", 7, { "up_firsta_t", "up_secona_t" })
 GUN.parent_obj = ACTOR_OBJ
-GUN.weapon_is_silencer_attached = function() return false end
-GUN.weapon_is_grenadelauncher_attached = function() return false end
+-- what is on it, as game_object says: nothing
+GUN.weapon_is_silencer = function() return false end
+GUN.weapon_is_grenadelauncher = function() return false end
 SUIT = item("suit_x", 3)
 SUIT.parent_obj = ACTOR_OBJ
 CARRIED = { SUIT, GUN, item("itm_basickit", 50), item("upgr_w_1_internal", 51), item("upgr_w_2_external", 52, nil, 2) }
@@ -650,6 +658,30 @@ def steps(lua, g, ui, data, page_, pages, modxml, load, check):
     page_.cb["wb_cell_1_3"]()
     page_.cb.wb_install()
     check(len(g.INSTALLS) == 1 and g.INSTALLS[1].id == 7, "Install hands the item to the toolkit")
+
+    # a carried gun with its suppressor and launcher on (game_object's weapon_is_silencer and
+    # weapon_is_grenadelauncher): both shown as they are, their weight in the card's
+    lua.execute("""
+SEC.wpn_both = { upgrades = "up_gr_thirda_t", silencer_status = "2", silencer_name = "sil_own",
+    grenade_launcher_status = "2", grenade_launcher_name = "gl_up", inv_name = "st_both" }
+CATS.wpn_both = "rifles"
+BOTH = item("wpn_both", 9)
+BOTH.parent_obj = ACTOR_OBJ
+BOTH.weapon_is_silencer = function() return true end
+BOTH.weapon_is_grenadelauncher = function() return true end
+table.insert(CARRIED, BOTH)
+BY_ID[9], WORLD[9] = BOTH, "wpn_both"
+""")
+    ui.show_next(None, 9)
+    page_ = ui.get_ui()
+    now = page_.att_now
+    att = [(r.btn.shown, r.btn.text) for r in page_.att_rows.values()]
+    weight = card_rows()[-1]
+    check(page_.cur.key == "id:9" and now.silencer == "sil_own" and now.launcher == "gl_up"
+          and att[1:] == [(True, "sil_own"), (True, "gl_up")],
+          "a gun with its suppressor and launcher on: both shown as they are: %s %s" % (dict(now.items()), att))
+    check(weight[3] == "4.6 kg", "and their weight is in the gun's, 3 + 0.3 + 1.3: %s" % (weight,))
+    lua.execute("table.remove(CARRIED); BY_ID[9], WORLD[9] = nil, nil")
 
     # more kinds of kit than frames: the last frame counts the rest
     data.set_plan(7, "wpn_test", lua.eval("""{ up_firstc_t = true, up_firstf_t = true, up_seconc_t = true, up_secone_t = true,

@@ -1,14 +1,16 @@
-"""Run arsenal_pages.script and z_arsenal_mac.script under LuaJIT against stand-ins for Modded
-Exes' tab registry (pda_dynamic_tabs), Mod App Creator, MCM's option and the PDA, and check the
-catalog's way in: its tile in MAC's launcher, or a PDA tab of its own. The tab comes only in play,
-a second after the first update (one added during a load crashed the game, 2026-10-11), never
-while the scripts start or the game loads; with MAC only when MCM asks for it, in place of the
-tile; without MAC always; without the registry never. Changing the option adds or takes away the
-tab once the game runs again, and the tile the other way round, once however often it changes; a
-tab taken away while it was the PDA's last section sends the PDA to Tasks. The catalog opens in
-the tab's section while there is one, and in its own for the tile and other mods; Back goes to
-the launcher only while the tile is there. A page that fails to build, a registry that refuses or
-a PDA that cannot be read leaves the game running and the catalog in reach.
+"""Run arsenal_pages.script, z_arsenal_mac.script and arsenal_mcm.script under LuaJIT against
+stand-ins for Modded Exes' tab registry (pda_dynamic_tabs), Mod App Creator, MCM and the PDA, and
+check the catalog's way in: its tile in MAC's launcher, or a PDA tab of its own. The tab comes only
+in play, a second after the first update (one added during a load crashed the game, 2026-10-11),
+never while the scripts start or the game loads; with MAC only when MCM asks for it, in place of
+the tile; without MAC always, and MCM never asked for the option its page then lacks; without the
+registry never. Changing the option adds or takes away the tab once the game runs again, and the
+tile the other way round, once however often it changes; a tab taken away while it was the PDA's
+last section sends the PDA to Tasks, and the page the PDA was on otherwise stays, though the
+registry's rebuild of the bar selects its pushed tab again. The catalog opens in the tab's section
+while there is one, and in its own for the tile and other mods; Back goes to the launcher only
+while the tile is there. A page that fails to build, a registry that refuses or a PDA that cannot
+be read leaves the game running and the catalog in reach.
 
     python test_tab.py            the real scripts
     python test_tab.py MUTANT     a broken copy (see MUTANTS); the run must fail
@@ -23,6 +25,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 GD = os.path.join(HERE, "..", "gamedata")
 PAGES = io.open(os.path.join(GD, "scripts", "arsenal_pages.script"), encoding="latin-1").read()
 MAC = io.open(os.path.join(GD, "scripts", "z_arsenal_mac.script"), encoding="latin-1").read()
+MCM = io.open(os.path.join(GD, "scripts", "arsenal_mcm.script"), encoding="latin-1").read()
 
 STUBS = r"""
 logs = {}
@@ -54,6 +57,16 @@ calls = {}
 getters = {}
 SEQ = 0
 REFUSE = false
+-- the bar's pushed tab (CUITabControl's active id), and the registry's rebuild of the live bar as
+-- a tab comes or goes (apply, RebuildTabs, CUIPdaWnd::RebuildExtraTabs): a pushed tab of the
+-- registry's is selected again, which switches the PDA to it, and one that is gone gives way to
+-- the bar's first, Tasks
+PUSHED = ""
+local function rebuild()
+    if not PUSHED:find("^ept_dynamic_") then return end
+    if not getters[PUSHED] then PUSHED = "eptTasks" end
+    PDA:SetActiveSubdialog(PUSHED)
+end
 pda_dynamic_tabs = {
     register = function(caption, getter, after)
         if REFUSE then error("no tab bar") end
@@ -61,11 +74,13 @@ pda_dynamic_tabs = {
         local id = "ept_dynamic_" .. SEQ
         calls[#calls + 1] = "register " .. tostring(caption) .. (after and (" after " .. after) or "")
         getters[id] = getter
+        rebuild()
         return id
     end,
     unregister = function(id)
         calls[#calls + 1] = "unregister " .. id
         getters[id] = nil
+        rebuild()
         return true
     end,
 }
@@ -75,9 +90,18 @@ mac_mcm = {
     add_app = function(id, data) added[id] = data end,
     remove_app = function(id) removed[#removed + 1] = id; added[id] = nil end,
 }
--- MCM's option
+-- MCM, for arsenal_mcm.pda_tab: the option where Arsenal's page defines it (MAC and the registry,
+-- arsenal_mcm's tab_choice), else what ui_mcm.get does with a path no page defines: nil, and a
+-- "!MCM given bad path" line in the log
 PDA_TAB = false
-arsenal_mcm = { pda_tab = function() return PDA_TAB end }
+OFFERED = true
+bad_paths = 0
+ui_mcm = { get = function(path)
+    if path == "arsenal/pda_tab" then
+        if not OFFERED then bad_paths = bad_paths + 1; return nil end
+        return PDA_TAB
+    end
+end }
 -- the PDA: the section it showed last, and what was opened in it
 ACTIVE = "eptTasks"
 opened = {}
@@ -113,8 +137,10 @@ MUTANTS = {
                        "        sync()\n"),
     "sync_repeats": ("        return true\n    end)\nend", "        return false\n    end)\nend"),
     # whether it comes
-    "tab_ignores_option": ("(arsenal_mcm.pda_tab() or not (mac_mcm and mac_mcm.add_app))", "(not (mac_mcm and mac_mcm.add_app))"),
-    "tab_needs_option": ("(arsenal_mcm.pda_tab() or not (mac_mcm and mac_mcm.add_app))", "(arsenal_mcm.pda_tab())"),
+    "tab_ignores_option": ("(not (mac_mcm and mac_mcm.add_app) or arsenal_mcm.pda_tab())", "(not (mac_mcm and mac_mcm.add_app))"),
+    "tab_needs_option": ("(not (mac_mcm and mac_mcm.add_app) or arsenal_mcm.pda_tab())", "(arsenal_mcm.pda_tab())"),
+    "option_asked_first": ("(not (mac_mcm and mac_mcm.add_app) or arsenal_mcm.pda_tab())",
+                           "(arsenal_mcm.pda_tab() or not (mac_mcm and mac_mcm.add_app))"),
     "tab_unsupported_tried": ("    return tab_supported() and (", "    return ("),
     "tab_addtab_unchecked": ("\n        and CUITabControl ~= nil and CUITabControl.AddTab ~= nil", ""),
     "register_twice": ("    if want and not tab_section then", "    if want then"),
@@ -132,6 +158,11 @@ MUTANTS = {
     "untab_kept": ("        local ok, err = pcall(pda_dynamic_tabs.unregister, id)\n", "        local ok, err = true\n"),
     "untab_stranded": ('        if pda_menu and pda_menu:GetActiveSection() == id then pda_menu:SetActiveSubdialog("eptTasks") end\n', ""),
     "untab_always_tasks": ("pda_menu:GetActiveSection() == id then", "true then"),
+    # the page the PDA was on, after the registry's rebuild
+    "tab_moves_page": ("        keep_section(was)\n", ""),
+    "untab_moves_page": ("        keep_section(was, id)\n", ""),
+    "page_read_late": ("        keep_section(was)\n", "        keep_section(pda_section())\n"),
+    "gone_tab_kept": (" and was ~= gone and ", " and "),
     # where the catalog opens, and Back
     "section_fixed": ("    return tab_section or PAGES.catalog.tab", "    return PAGES.catalog.tab"),
     "open_ignores_tab": ('page == "catalog" and catalog_section() or PAGES[page].tab', "PAGES[page].tab"),
@@ -175,8 +206,11 @@ def main():
         if not addtab:
             lua.execute("CUITabControl = {}")
         g.PDA_TAB = option
+        # MCM's page defines the option where a tile and a tab can both be
+        g.OFFERED = mac and registry and addtab
         load = lua.eval("function(name, src) local env = setmetatable({}, {__index = _G}); local f = assert(loadstring(src)); "
                         "setfenv(f, env); _G[name] = env; f(); return env end")
+        load("arsenal_mcm", MCM)
         pages = load("arsenal_pages", pages_src)
         tile = load("z_arsenal_mac", mac_src)
         seen = []
@@ -275,13 +309,56 @@ def main():
     check(calls(g)[-1] == "unregister ept_dynamic_2" and len(g.opened) == n and g.ACTIVE == "eptMap",
           "off while the PDA was elsewhere: it stays there: %s" % g.ACTIVE)
 
-    # without MAC: the tab whatever the option, no tile, no Back to a launcher
+    # another mod's tab pushed (Seasons of the Zone's) and a page of that mod's reached from it:
+    # the registry's rebuild as the catalog's tab comes or goes selects that tab again, and the
+    # page the PDA was on is put back
+    lua, g, pages, tile, seen = game()
+    g.play(1)
+    other = g.pda_dynamic_tabs.register("pda_app_seasons", lambda: "year page")
+    g.PUSHED, g.ACTIVE = other, "eptForecast"
+    g.PDA_TAB = True
+    option_change(g)
+    g.play(0.01)
+    came, tab = g.ACTIVE, pages.catalog_section()
+    g.PDA_TAB = False
+    option_change(g)
+    g.play(0.01)
+    check(tab != "eptArsenal" and pages.catalog_section() == "eptArsenal" and came == "eptForecast"
+          and g.ACTIVE == "eptForecast",
+          "another mod's page stays as the catalog's tab comes and goes: %s, then %s" % (came, g.ACTIVE))
+    # the catalog's own tab pushed and Workbench reached from it: the tab goes, Workbench stays
+    g.PDA_TAB = True
+    option_change(g)
+    g.play(0.01)
+    g.PUSHED, g.ACTIVE = pages.catalog_section(), "eptWorkbench"
+    g.PDA_TAB = False
+    option_change(g)
+    g.play(0.01)
+    check(g.ACTIVE == "eptWorkbench", "Workbench stays as the catalog's tab goes: %s" % g.ACTIVE)
+    # the PDA on the tab taken away, pushed or not: Tasks
+    for pushed in ("catalog", "eptLauncher"):
+        g.PDA_TAB = True
+        option_change(g)
+        g.play(0.01)
+        sec = pages.catalog_section()
+        g.PUSHED, g.ACTIVE = (sec if pushed == "catalog" else pushed), sec
+        g.PDA_TAB = False
+        option_change(g)
+        g.play(0.01)
+        check(g.ACTIVE == "eptTasks", "the PDA off the catalog's gone tab, %s pushed: %s" % (pushed, g.ACTIVE))
+
+    # without MAC: the tab whatever the option, no tile, no Back to a launcher; and MCM, whose page
+    # has no tab option without MAC, is never asked for it (it would log a bad path)
     for option in (False, True):
         lua, g, pages, tile, seen = game(mac=False, option=option)
         g.play(1)
         check(seen == [[], [], []] and calls(g) == ["register st_arsenal_title"] and tile.has_tile() is False
               and pages.back_to_launcher() is False and pages.catalog_section() == "ept_dynamic_1",
               "without MAC, the option %s: the tab in play, no tile: %s" % ("on" if option else "off", calls(g)))
+        option_change(g)
+        g.play(0.01)
+        check(g.bad_paths == 0, "without MAC, the option %s: MCM never asked for an option no page defines: "
+              "%d reads" % ("on" if option else "off", g.bad_paths))
 
     # without the registry, or without AddTab: the tile, the option on or not, nothing logged
     for what in ("registry", "addtab"):
@@ -292,6 +369,13 @@ def main():
               and pages.catalog_section() == "eptArsenal" and len(g.logs) == 0,
               "without the %s: the tile though the option is on, nothing logged: %s %s"
               % ("registry" if what == "registry" else "tab control's AddTab", calls(g), list(g.logs.values())))
+    # neither MAC nor the registry (Anomaly without Modded Exes): no tab tried, no tile, nothing
+    # said of a tab
+    lua, g, pages, tile, seen = game(mac=False, registry=False)
+    g.play(1)
+    said = [l for l in g.logs.values() if "PDA tab" in l]
+    check(calls(g) == [] and tile.has_tile() is False and pages.wants_tab() is False and not said,
+          "without MAC or the registry: no tab tried, no tile, nothing said of a tab: %s" % said)
 
     # a registry that refuses: the tile instead, logged once
     lua, g, pages, tile, seen = game(option=True)
