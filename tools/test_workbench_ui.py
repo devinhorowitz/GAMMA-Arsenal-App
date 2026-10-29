@@ -294,8 +294,10 @@ MUTANTS = {
     "fe_guard_unlocalized": ("    return rawget(mod, name)\n", "    return nil\n"),
     "fe_storm": ("        if not (guard > 0 or overclocked) and (xr_conditions.surge_started() or psi_storm_manager.is_started()) then",
                  "        if false then"),
-    "fe_sarcophagus": ("        if SARCOPHAGUS[lvl] and not overclocked then return false end\n", ""),
-    "fe_jam": ("        if (fe.MONOLITH_HACKERS or {})[lvl]", "        if false"),
+    "fe_sarcophagus": ("        if SARCOPHAGUS[lvl] and locs.secret_errors ~= false and not overclocked then return false end\n", ""),
+    "fe_jam": ("        if locs.monolith_hackers ~= false and (fe.MONOLITH_HACKERS or {})[lvl]", "        if false"),
+    "fe_secret_switch": ("SARCOPHAGUS[lvl] and locs.secret_errors ~= false and", "SARCOPHAGUS[lvl] and"),
+    "fe_jam_switch": ("if locs.monolith_hackers ~= false and (fe.MONOLITH", "if (fe.MONOLITH"),
     "fe_jam_free": ("JAM_FREE[get_actor_true_community()] or ", ""),
     "fe_fail_closed": ("tostring(works))\n    end\n    return true", "tostring(works))\n    end\n    return false"),
     "fe_warn_every": ("    if not warned then", "    if true then"),
@@ -306,6 +308,7 @@ MUTANTS = {
                       r'if not name:match("%.xml$") then return end'),
     "dxml_no_caption": ('if not (tab and xml:query("caption_static")[1]) then return end', "if not tab then return end"),
     "dxml_dup": ('if #xml:query("tab > button[id=" .. id .. "]") == 0 then', "if true then"),
+    "dxml_visible_caption": ('<text_color><e a="0" r="0" g="0" b="0"/>', '<text_color><e a="255" r="0" g="0" b="0"/>'),
     "dxml_dialogs_twice": ('if #xml:query("dialog[id=arsenal_rumor]") == 0 then', "if true then"),
     "dxml_unguarded": ('        guarded("DXML " .. tostring(name), edit, name, xml)', "        edit(name, xml)"),
     "talks_unguarded": ('        guarded("the talks", add_talks, character_id, list)', "        add_talks(character_id, list)"),
@@ -318,8 +321,10 @@ PAGES_MUTANTS = {"router_all", "router_unsafe", "router_no_compare", "router_no_
                  "open_flat_ignored", "open_flat_compare", "no_customize", "customize_unguarded",
                  "fe_absent", "fe_npc_pda", "fe_charge", "fe_charge_any", "fe_locked", "fe_bios", "fe_bsod", "fe_guard",
                  "fe_guard_unlocalized",
-                 "fe_storm", "fe_sarcophagus", "fe_jam", "fe_jam_free", "fe_fail_closed", "fe_warn_every"}
+                 "fe_storm", "fe_sarcophagus", "fe_jam", "fe_jam_free", "fe_fail_closed", "fe_warn_every",
+                 "fe_secret_switch", "fe_jam_switch"}
 MODXML_MUTANTS = {"dxml_old_names", "dxml_any_file", "dxml_no_caption", "dxml_dup", "dxml_dialogs_twice", "dxml_unguarded",
+                  "dxml_visible_caption",
                   "talks_unguarded", "guard_every_time", "talks_twice", "talks_gunsmith_anyone"}
 
 # Fatal Error as arsenal_pages meets it: the slotted PDA, its charge, encryption and reboot, the
@@ -349,6 +354,7 @@ function fe_working()
     FE_ON.charged, FE_ON.encrypted, FE_ON.tab, FE_ON.surge, FE_ON.psi = true, false, "eptArsenal", false, false
     FE_ON.level, FE_ON.community = "l01_escape", "stalker"
     fatal_error_mcm.REBOOT = 0
+    fatal_error_mcm.SETTINGS = nil
     fe_guard(0)
 end
 """
@@ -381,6 +387,8 @@ function make_xml(has_tab, has_caption, buttons)
         local id = s:match('id="([%w_]+)"')
         self.tab.buttons[id] = true
         self.inserted[#self.inserted + 1] = id
+        LAST_BUTTONS = LAST_BUTTONS or {}
+        LAST_BUTTONS[id] = s
     end
     return x
 end
@@ -845,7 +853,16 @@ pda = { set_active_subdialog = function(section, a, b) ORIG_CALLS[#ORIG_CALLS + 
              ("FE_ON.level = 'l10_radar'", False, "a level the Monolith jams"),
              ("FE_ON.level = 'l10_radar'; FE_PDA.upgrades.up_seconc_pda = true", True, "there, with the upgrade against it"),
              ("FE_ON.level = 'l10_radar'; FE_ON.community = 'monolith'", True, "there, as the Monolith"),
-             ("FE_ON.level = 'l10_radar'; FE_PDA.overclocked = true", True, "there, overclocked")]
+             ("FE_ON.level = 'l10_radar'; FE_PDA.overclocked = true", True, "there, overclocked"),
+             # 1.7.9.5's switches for the two, on as it ships
+             ("FE_ON.level = 'l12u_sarcofag'; fatal_error_mcm.SETTINGS = { locs = { secret_errors = false } }",
+              True, "the Sarcophagus, its errors switched off"),
+             ("FE_ON.level = 'l12u_sarcofag'; fatal_error_mcm.SETTINGS = { locs = { secret_errors = true } }",
+              False, "the Sarcophagus, its errors on"),
+             ("FE_ON.level = 'l10_radar'; fatal_error_mcm.SETTINGS = { locs = { monolith_hackers = false } }",
+              True, "a jammed level, the jam switched off"),
+             ("FE_ON.level = 'l10_radar'; fatal_error_mcm.SETTINGS = { locs = { monolith_hackers = true } }",
+              False, "a jammed level, the jam on")]
     bad = []
     for setup, want, what in cases:
         lua.execute("fe_working(); " + setup)
@@ -887,6 +904,18 @@ pda = { set_active_subdialog = function(section, a, b) ORIG_CALLS[#ORIG_CALLS + 
                "ui\\pda_one_16.xml", "ui\\pda_two_16.xml"]
     missed = [n for n in layouts if inserted(n) != both]
     check(not missed, "the three buttons in the PDA's layouts and Fatal Error's per-model ones: %s" % missed)
+    # parked: no width, and a see-through caption in every state, so a bar laid out by other code
+    # draws nothing of it; the text stays, for the PDA's title
+    parked = {}
+    for bid, s in g.LAST_BUTTONS.items():
+        b = ET.fromstring(s)
+        tc = b.find("text_color")
+        parked[bid] = (b.get("width"), b.find("text").text,
+                       tc is not None and all(tc.find(k) is not None and tc.find(k).get("a") == "0" for k in "etdh"))
+    check(parked == {"eptArsenal": ("0", "st_arsenal_title", True),
+                     "eptWorkbench": ("0", "st_arsenal_workbench", True),
+                     "eptArsenalCompare": ("0", "st_arsenal_compare", True)},
+          "each parked button: no width, its title, a see-through caption: %s" % parked)
     others = [("ui\\pda_apps_16.xml", False, False), ("ui\\pda_bios_16.xml", False, False),
               ("ui\\pda_glitched.xml", False, False), ("ui\\pda_widget.xml", True, False),
               ("ui\\inventory_new.xml", True, True), ("ui\\pda_16.xml.bak", True, True)]

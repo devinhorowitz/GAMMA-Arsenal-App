@@ -753,7 +753,11 @@ magazine_binder = {
 }
 utils_xml = {
     get_icons_texture = function(sec) return "ui\\ui_icon_equipment" end,
-    get_item_axis = function(sec) return { x1 = 0, y1 = 0, w = 100, h = 50 } end,
+    -- the base's two forms: a table, or with `unpacked` the four corners
+    get_item_axis = function(sec, grid, unpacked)
+        if unpacked then return 0, 0, 100, 50 end
+        return { x1 = 0, y1 = 0, x2 = 100, y2 = 50, w = 100, h = 50 }
+    end,
 }
 utils_ui = { stats_table = { weapon = {
     accuracy = { index = 1, magnitude = 1, value_functor = { "ish_item_stats", "scale_100", "utils_ui", "prop_accuracry" } },
@@ -1188,6 +1192,14 @@ MUTANTS = {
     "effects_named": ("id = not named and \"st_arsenal_round_effect\" or nil", "id = \"st_arsenal_round_effect\""),
     "as_found": ("return worn_round(a) and fresh_round(a) or a", "return a"),
     "effects_stats": ("        effects = effects(sec) }", "        effects = {} }"),
+    "icon_table_axis": ("local x1, y1, x2, y2 = utils_xml.get_item_axis(sec, nil, true)",
+                        "local x1, y1, x2, y2 = utils_xml.get_item_axis(sec)"),
+    "icon_rect_size": ("cw = grid.w or (x2 - x1), ch = grid.h or (y2 - y1) }",
+                       "cw = x2 - x1, ch = y2 - y1 }"),
+    "burn_always_light": ('    return arg == nil or arg == "Burn" or (hit ~= nil and arg == hit.light_burn)',
+                          "    return true"),
+    "burn_no_gain": ('    return ini_sys:r_float_ex(ps, "burn_protection") or 0\nend',
+                     "    return 0\nend"),
 }
 
 
@@ -1330,6 +1342,21 @@ def main():
           "a jacket fully upgraded: psi through the upgrade that opens another (19, not 16 for the bigger single "
           "one or 24 for both), spine armor added by a profile, burn unmoved, a belt slot, carry weight in float32 to a "
           "tenth (1.1 + 4.2 shows 5.3: 5.4 summed as decimals, 6 as whole kilos): %s" % mx)
+    # GAMMA's card since its October 2026 build: the Burn row asks for hit.burn, burn itself,
+    # which upgrades raise (b1's 0.2 on the jacket's 0.4), so the max and a plan move with it
+    lua.execute('hit = { burn = 1, light_burn = 2 }\n'
+                'ADB_BURN = utils_ui.stats_table.outfit.burn_protection.value_functor\n'
+                'ADB_BURN[3] = hit.burn\n'
+                'grok_actor_damage_balancer.get_adb_constants = (function(get) return function(name)\n'
+                '    if name == hit.burn then name = "Burn" end\n'
+                '    return get(name) end end)(grok_actor_damage_balancer.get_adb_constants)')
+    burn_max = tuple(m.max_stat("novice_outfit", "burn_protection") or ())
+    lua.execute('ADB_BURN[3] = hit.light_burn')
+    light_max = tuple(m.max_stat("novice_outfit", "burn_protection") or ())
+    lua.execute('ADB_BURN[3] = "Burn"')
+    check(burn_max == (61, 41) and light_max == (41, 41),
+          "the Burn row asking for hit.burn: upgrades in (0.4 + 0.2 shows 61); for hit.light_burn, unmoved: %s %s"
+          % (burn_max, light_max))
     # who wears them: a faction's characters of a rank, all its spawn sections together, and those
     # in each model (every visual that drops it, a visual that drops both variants once); a
     # story character as special; a monster's section is no faction
@@ -2013,6 +2040,28 @@ def main():
     psi = tuple(m.max_stat("novice_outfit", "telepatic_protection") or ())
     sections["novice_outfit"]["upgrades"] = "up_gr_j_a, up_gr_j_b"
     check(psi == (19, 0), "Full Upgrades' rewrite of a jacket: each upgrade once: %s" % (psi,))
+
+    # icons as the inventory's cells take them: the texture rectangle from get_item_axis's
+    # unpacked form, which an HQ icon pack hooks (LEWD StG44's zzz_hqicons hands its 360-texel
+    # area there, and its table form stays the grid's), drawn at the grid's size
+    tex, a = m.icon("wpn_pm")
+    check(tex == "ui\\ui_icon_equipment" and (a.x1, a.y1, a.w, a.h, a.cw, a.ch) == (0, 0, 100, 50, 100, 50),
+          "a plain icon: the grid's rectangle, at its size: %s %s" % (tex, a and (a.x1, a.y1, a.w, a.h, a.cw, a.ch)))
+    lua.execute('''
+        local texture, axis = utils_xml.get_icons_texture, utils_xml.get_item_axis
+        HQ = { texture, axis }
+        utils_xml.get_icons_texture = function(sec)
+            if sec == "wpn_pm" then return "ui\\\\lewd\\\\792x33_mh_hqi" end
+            return texture(sec)
+        end
+        utils_xml.get_item_axis = function(sec, grid, unpacked)
+            if sec == "wpn_pm" and unpacked then return 0, 0, 360, 360 end
+            return axis(sec, grid, unpacked)
+        end''')
+    tex, a = m.icon("wpn_pm")
+    check(tex == "ui\\lewd\\792x33_mh_hqi" and (a.x1, a.y1, a.w, a.h, a.cw, a.ch) == (0, 0, 360, 360, 100, 50),
+          "an HQ icon: its whole area, drawn at the grid's size: %s %s" % (tex, a and (a.x1, a.y1, a.w, a.h, a.cw, a.ch)))
+    lua.execute("utils_xml.get_icons_texture, utils_xml.get_item_axis = HQ[1], HQ[2]")
     print("\n%d failed" % len(fails))
     return 1 if fails else 0
 

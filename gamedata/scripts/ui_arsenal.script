@@ -49,8 +49,9 @@ local function row_icon(xml, row, sec, role)
     local icon = xml:InitStatic("wpn_row_icon", row)
     local p, bw, bh = icon:GetWndPos(), icon:GetWidth(), icon:GetHeight()
     local wide = utils_xml.is_widescreen() and 0.8 or 1
-    local k = math.min(bw / (a.w * wide), bh / a.h, 1)
-    local w, h = a.w * wide * k, a.h * k
+    local sw, sh = a.cw or a.w, a.ch or a.h
+    local k = math.min(bw / (sw * wide), bh / sh, 1)
+    local w, h = sw * wide * k, sh * k
     icon:InitTexture(tex)
     icon:SetTextureRect(Frect():set(a.x1, a.y1, a.x1 + a.w, a.y1 + a.h))
     icon:SetStretchTexture(true)
@@ -1156,8 +1157,9 @@ local function put_icon(xml, parent, frame, sec, pad)
     local icon = xml:InitStatic("entry_icon", parent)
     local wide = utils_xml.is_widescreen() and 0.8 or 1
     local fw, fh = frame:GetWidth() - 2 * pad, frame:GetHeight() - 2 * pad
-    local k = math.min(fw / (a.w * wide), fh / a.h, 1)
-    local w, h = a.w * wide * k, a.h * k
+    local sw, sh = a.cw or a.w, a.ch or a.h
+    local k = math.min(fw / (sw * wide), fh / sh, 1)
+    local w, h = sw * wide * k, sh * k
     icon:InitTexture(tex)
     icon:SetTextureRect(Frect():set(a.x1, a.y1, a.x1 + a.w, a.y1 + a.h))
     icon:SetStretchTexture(true)

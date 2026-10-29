@@ -86,10 +86,14 @@ local function edit(name, xml)
     if not name:match("^ui[\\/]pda[%w_]*%.xml$") then return end
     local tab = xml:query("tab")[1]
     if not (tab and xml:query("caption_static")[1]) then return end
+    -- parked: no width, past the bar's end. Its caption is see-through as well, since a bar laid
+    -- out by other code can still draw it; the PDA's title copies only the text
     for id, title in pairs(PAGES) do
         if #xml:query("tab > button[id=" .. id .. "]") == 0 then
             xml:insertFromXMLString([[<button x="1000" y="0" width="0" height="0" id="]] .. id .. [[" frame_mode="0">]]
-                .. [[<text align="c" vert_align="c" x="0" y="0" font="letterica16">]] .. title .. [[</text></button>]], tab)
+                .. [[<text align="c" vert_align="c" x="0" y="0" font="letterica16">]] .. title .. [[</text>]]
+                .. [[<text_color><e a="0" r="0" g="0" b="0"/><t a="0" r="0" g="0" b="0"/>]]
+                .. [[<d a="0" r="0" g="0" b="0"/><h a="0" r="0" g="0" b="0"/></text_color></button>]], tab)
         end
     end
 end

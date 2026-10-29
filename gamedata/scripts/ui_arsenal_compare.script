@@ -34,8 +34,9 @@ local function fit_icon(st, x, y, w, h, sec)
         return
     end
     local wide = utils_xml.is_widescreen() and 0.8 or 1
-    local k = math.min(w / (a.w * wide), h / a.h, 1)
-    local iw, ih = a.w * wide * k, a.h * k
+    local sw, sh = a.cw or a.w, a.ch or a.h
+    local k = math.min(w / (sw * wide), h / sh, 1)
+    local iw, ih = sw * wide * k, sh * k
     st:InitTexture(tex)
     st:SetTextureRect(Frect():set(a.x1, a.y1, a.x1 + a.w, a.y1 + a.h))
     st:SetStretchTexture(true)

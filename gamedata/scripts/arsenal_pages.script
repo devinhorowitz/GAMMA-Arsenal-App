@@ -204,7 +204,9 @@ end
 -- or psi storm, unless it was just rebooted (reboot_protection, a local of process_pda_call) or
 -- is overclocked; not the Sarcophagus unless overclocked, nor a level the Monolith jams unless
 -- the PDA has the upgrade against it, the player's faction is one the jam spares, or it is
--- overclocked. Without Fatal Error the flat window always opens.
+-- overclocked. From 1.7.9.5 the Sarcophagus and the jam each have a switch on its MCM page
+-- (SETTINGS.locs: secret_errors, monolith_hackers), on as it ships and before it had them.
+-- Without Fatal Error the flat window always opens.
 local JAM_FREE = { monolith = true, greh = true, zombied = true }
 local SARCOPHAGUS = { l12u_sarcofag = true }
 local warned = false
@@ -241,8 +243,9 @@ function pda_works()
             return false
         end
         local lvl = level.name()
-        if SARCOPHAGUS[lvl] and not overclocked then return false end
-        if (fe.MONOLITH_HACKERS or {})[lvl]
+        local locs = type(fe.SETTINGS) == "table" and type(fe.SETTINGS.locs) == "table" and fe.SETTINGS.locs or {}
+        if SARCOPHAGUS[lvl] and locs.secret_errors ~= false and not overclocked then return false end
+        if locs.monolith_hackers ~= false and (fe.MONOLITH_HACKERS or {})[lvl]
             and not (device:has_upgrade("up_seconc_pda") or JAM_FREE[get_actor_true_community()] or overclocked) then
             return false
         end

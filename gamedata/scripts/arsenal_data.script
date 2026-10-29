@@ -910,11 +910,23 @@ function description(sec)
     return translated(ini_sys:r_string_ex(sec, "description"))
 end
 
--- texture and rectangle of a weapon's inventory icon (HD icon overrides apply)
+-- texture and rectangle of an item's inventory icon, taken as the inventory's cells take them:
+-- the rectangle from get_item_axis's unpacked form, the one icon hooks answer (an HQ icon
+-- pack hands its own area there while its table form stays the grid's), and cw, ch, the
+-- size the grid gives it, which the pages draw it at (HD icon overrides apply)
 function icon(sec)
     local tex = utils_xml.get_icons_texture(sec)
-    local a = utils_xml.get_item_axis(sec)
-    return tex, a
+    local grid = utils_xml.get_item_axis(sec)
+    local x1, y1, x2, y2 = utils_xml.get_item_axis(sec, nil, true)
+    if type(x1) == "table" then
+        local t = x1
+        x1, y1 = t.x1, t.y1
+        x2 = t.x2 or (t.x1 and t.w and t.x1 + t.w)
+        y2 = t.y2 or (t.y1 and t.h and t.y1 + t.h)
+    end
+    if not (type(grid) == "table" and x1 and y1 and x2 and y2) then return tex, grid end
+    return tex, { x1 = x1, y1 = y1, w = x2 - x1, h = y2 - y1,
+                  cw = grid.w or (x2 - x1), ch = grid.h or (y2 - y1) }
 end
 
 -- the names of rounds (ammo or grenades), each once, short names first; worn rounds share
@@ -2710,8 +2722,9 @@ end
 -- BR class, Outfits Affect Movespeed's speed, the game's own radiation, belt slots and carry
 -- weight. GAMMA's functions read a live suit, so stand-ins here read the same values from the
 -- section, kept as the engine keeps them (CustomOutfit.cpp, ActorHelmet.cpp): protections and
--- bone armor are float32 and upgrades add to them in float32, or a value lands a point off;
--- the card's burn is light burn, copied from burn when the suit loads, which no upgrade moves.
+-- bone armor are float32 and upgrades add to them in float32, or a value lands a point off.
+-- Up to GAMMA's October 2026 build the card's burn was light burn, copied from burn when the
+-- suit loads, which no upgrade moves; since then it is burn itself (burn_row below says which).
 ---------------------------------------------------------------------------------------------
 
 -- a number as a float32: round to nearest, ties to even
@@ -2795,7 +2808,7 @@ local function adb(name)
 end
 
 -- get_outfit_value for a section, as it returns for a live suit or helmet at full condition:
--- for bullets the bone armor, else the hit type's protection (burn: light burn), times the
+-- for bullets the bone armor, else the hit type's protection ("Burn": light burn), times the
 -- hit type's adjuster, in percent rounded up
 function standin_outfit_value(obj, sec, name)
     local adj, key = adb(name)
@@ -2913,12 +2926,32 @@ function armor_signature(sec)
     return table.concat(t, "|")
 end
 
+-- What the card's Burn row asks the damage balancer for. GAMMA's card asked for "Burn", light
+-- burn, which no upgrade moves; since its October 2026 build it asks for hit.burn, burn
+-- itself, which upgrades raise. nil while the card's rows aren't set up.
+local function burn_row()
+    local st = utils_ui and utils_ui.stats_table
+    local r = st and st.outfit and st.outfit.burn_protection
+    local f = r and r.value_functor
+    return f and f[3]
+end
+
+local function burn_is_light()
+    local arg = burn_row()
+    return arg == nil or arg == "Burn" or (hit ~= nil and arg == hit.light_burn)
+end
+
 -- The card's value of an armor row, as the card shows it, from a suit's values: the row's
 -- function as the stand-ins compute it, times the row's magnitude, rounded up; nil for a row
 -- these formulas do not cover
 local ARMOR_VALUE = {
     fire_wound_protection = function(p) local a = adb("FireWound"); return a and math.ceil(p.armor * a * 100) end,
-    burn_protection = function(p) local a = adb("Burn"); return a and math.ceil(p.light_burn * a * 100) end,
+    burn_protection = function(p)
+        if burn_is_light() then
+            local a = adb("Burn"); return a and math.ceil(p.light_burn * a * 100)
+        end
+        local a = adb(burn_row()); return a and math.ceil(p.burn_protection * a * 100)
+    end,
     shock_protection = function(p) local a = adb("Shock"); return a and math.ceil(p.shock_protection * a * 100) end,
     chemical_burn_protection = function(p)
         local a = adb("ChemicalBurn"); return a and math.ceil(p.chemical_burn_protection * a * 100)
@@ -3008,6 +3041,10 @@ for _, k in ipairs(PROTECTIONS) do
     if k ~= "burn_protection" then
         ARMOR_GAIN[k] = function(ps) return ini_sys:r_float_ex(ps, k) or 0 end
     end
+end
+ARMOR_GAIN.burn_protection = function(ps)
+    if burn_is_light() then return 0 end
+    return ini_sys:r_float_ex(ps, "burn_protection") or 0
 end
 ARMOR_GAIN.artefact_count = function(ps) return ini_sys:r_float_ex(ps, "artefact_count") or 0 end
 ARMOR_GAIN.additional_inventory_weight = function(ps) return ini_sys:r_float_ex(ps, "additional_inventory_weight") or 0 end
