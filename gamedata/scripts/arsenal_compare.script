@@ -217,8 +217,8 @@ local FACTS = {
         if not j then return nil end
         local base = j.base or 0
         if j.worn then
-            return { text = string.format(T("st_arsenal_cmp_jam_worn"), percent(base), percent(base + j.worn)),
-                     num = base + j.worn }
+            return { text = string.format(T("st_arsenal_cmp_jam_worn"), percent(base), percent(j.both)),
+                     num = j.both }
         end
         return { text = percent(base), num = base }
     end,

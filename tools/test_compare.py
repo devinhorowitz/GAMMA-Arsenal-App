@@ -247,7 +247,9 @@ arsenal_data = {
         if m then return m[1], m[2] end
     end,
     hit_power = function(sec) return ({ wpn_ak74 = 0.45, wpn_akm = 0.5, wpn_svd = 1.2 })[sec] or 0 end,
-    jam_chance = function(sec) return ({ wpn_ak74 = { base = 0.003, worn = 0.014 }, wpn_akm = { base = 0 } })[sec] end,
+    jam_chance = function(sec)
+        return ({ wpn_ak74 = { base = 0.003, worn = 0.014, both = 1 - 0.997 * 0.986 }, wpn_akm = { base = 0 } })[sec]
+    end,
     fire_modes = function(sec) return ({ wpn_svd = "1" })[sec] or "1 / A" end,
     weight = function(sec) return ({ wpn_ak74 = 3.3, wpn_akm = 3.6, sci_suit = 5, exo_suit = 15.004, helm_sphere = 2 })[sec] or 1 end,
     kg = function(x) return math.floor(x * 100 + 0.5) / 100 end,
@@ -296,6 +298,7 @@ DATA_MUTANTS = {
     "facts_armor_weight_higher": ('    { "stops", "st_arsenal_cmp_stops" },\n    { "weight", "st_arsenal_wb_weight", true },',
                                   '    { "stops", "st_arsenal_cmp_stops" },\n    { "weight", "st_arsenal_wb_weight" },'),
     "facts_jam_worn": ("        if j.worn then", "        if false then"),
+    "facts_jam_both": ("                     num = j.both }", "                     num = base + j.worn }"),
     "facts_wide": ("wide = f[4] == true", "wide = false"),
 }
 
@@ -495,7 +498,7 @@ def row_steps(lua, g, cmp, ui, check, sz, src):
             ("Drag", ("-5 %", -5, None), None, None, None, False),
             ("Recoil", ("40", 40, "50"), ("35", 35, "30"), "r", "r", False),
             ("Hit power", ("0.45", 0.45, None), ("0.5", 0.5, None), "r", None, False),
-            ("Jam chance", ("0.3%, worn 1.7%", 0.017, None), ("0%", 0, None), "r", None, False),
+            ("Jam chance", ("0.3%, worn 1.7%", 1 - 0.997 * 0.986, None), ("0%", 0, None), "r", None, False),
             ("Fire modes", ("1 / A", None, None), ("1 / A", None, None), None, None, False),
             ("Weight", ("3.3 kg", 3.3, None), ("3.6 kg", 3.6, None), "l", None, False),
             ("Rounds", ("5.45x39 FMJ, 5.45x39 AP, 5.45x39 HP", None, None), ("7.62x39 FMJ", None, None), None, None, True)]

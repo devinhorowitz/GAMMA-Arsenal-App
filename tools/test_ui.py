@@ -431,7 +431,8 @@ end
 HIT = { wpn_fort17 = 0.465, wpn_fort = 0.465, wpn_pm = 0.45 }
 function arsenal_data.hit_power(sec) return HIT[sec] or 0 end
 -- jams: the Fort-17 from the engine and with worn parts, the PM with worn parts, the AK-74 never
-JAMS = { wpn_fort17 = { base = 0.003, worn = 0.014 }, wpn_pm = { base = 0, worn = 0.017 }, wpn_ak74 = { base = 0 } }
+JAMS = { wpn_fort17 = { base = 0.003, worn = 0.014, both = 1 - 0.997 * 0.986 }, wpn_pm = { base = 0, worn = 0.017, both = 0.017 },
+         wpn_ak74 = { base = 0 } }
 function arsenal_data.jam_chance(sec) return JAMS[sec] end
 -- the SEVA against bullets; PEN = "all" or "none" for a suit that stops everything or nothing
 function arsenal_data.penetration(sec)
@@ -519,7 +520,8 @@ MUTANTS = {
                     "    if false then\n        for _, f in ipairs(arsenal_data.FACTIONS) do"),
     "toggle_check_sync": ("    self.by_faction_check:SetCheck(by_faction)\n", ""),
     "jam_line": ("        if jam then text(\"entry_line\", jam) end\n", ""),
-    "jam_both": ('        if base > 0 then return string.format(T("st_arsenal_jam_both"), percent(base), percent(base + j.worn)) end\n', ""),
+    "jam_both": ('        if base > 0 then return string.format(T("st_arsenal_jam_both"), percent(base), percent(j.both)) end\n', ""),
+    "jam_both_value": ('percent(base), percent(j.both)) end\n', 'percent(base), percent(j.worn)) end\n'),
     "jam_none": ('return base > 0 and string.format(T("st_arsenal_jam_base"), percent(base)) or T("st_arsenal_jam_none")',
                  'return base > 0 and string.format(T("st_arsenal_jam_base"), percent(base)) or nil'),
     "hit_power_line": ("        if hp and hp > 0 then\n", "        if false then\n"),

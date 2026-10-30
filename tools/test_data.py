@@ -879,7 +879,13 @@ MUTANTS = {
     "worn_once": ("if e and not seen[e] then", "if e then"),
     "worn_faction": ("        if not (f and FACTION_AT[f]) then return end\n        total[f] = total[f] or {}",
                      "        total[f] = total[f] or {}"),
-    "drop_rare": ("if type(rare) == \"table\" and rare[sec] then chance = chance * 0.15 end", "-- no rare roll"),
+    "drop_rare": ("if type(rare) == \"table\" and rare[sec] then chance = chance * RARE end", "-- no rare roll"),
+    "kept_wrapper": ("    local vd = odm and odm.ValidateDrop\n", "    local vd = nil\n"),
+    "kept_mode": ('            if name == "outfit_drops" then return 3 end\n', ""),
+    "kept_restore": ("        math.random, gd.get_eco_factor = real_random, real_eco\n", ""),
+    "kept_cutoff": ("        share = lo / 100\n", "        share = (lo + 1) / 100\n"),
+    "kept_cache": ("    local known = kept_by_vd[vd]\n", "    local known = kept_by_vd[next(kept_by_vd) or vd]\n"),
+    "kept_unused": ("        chance = chance * kept\n", ""),
     "drop_mode": ("    if mode ~= 2 and mode ~= 3 then return { off = true } end\n", ""),
     "drop_gate": ("rank = need > 0 and math.ceil(need) or nil", "rank = nil"),
     "drop_novice": ('rt = (rt == "outfit_novice" and "outfit_light") or (rt == "outfit" and "outfit_medium") or rt', "rt = rt"),
@@ -1061,6 +1067,7 @@ MUTANTS = {
                  'local jc = 60 * (ini_sys:r_float_ex(sec, "condition_shot_dec") or 0.0008) * 666 * j'),
     "jam_cond": ("if c < 1 then jc = jc * (1 + ((1.0 - c) / 0.7 - 0.05)) end", "-- no condition factor"),
     "jam_floor": ("out.worn = math.max(0, math.min(1000, math.floor(jc))) / 1000", "out.worn = jc / 1000"),
+    "jam_both_sum": ("out.both = 1 - (1 - out.base) * (1 - out.worn)", "out.both = out.base + out.worn"),
     "jam_parts": ('if parts and j and parts:r_string_ex("con_parts_list", base) then', "if parts and j then"),
     "jam_config": ("j = ok and tonumber(j)", "j = 0.75"),
     "tier_number": ('local tier = tonumber(en.sec:match("_(%d+)$")) or 1', "local tier = 1"),
@@ -1389,6 +1396,44 @@ def main():
     g.OUTFIT_DROPS = None
     check(full == (1.5, None, None) and off == (None, None, True),
           "full drops need no rank; with drops off, none: %s %s" % (full, off))
+    # the item's own roll, asked of validate_drop itself: GAMMA's May build keeps a rare suit at a
+    # roll of 15 or less, its October 2026 build at 50 or less, a helmet with a roll of its own at
+    # 50 in both; outfit_drop_mcm's wrapper (the MCM's chance) is left out by asking its ValidateDrop
+    lua.execute('''
+        KEPT_RNG, KEPT_ECO = math.random, game_difficulties.get_eco_factor
+        function make_validate(cutoff)
+            return function(section)
+                local mode = game_difficulties.get_eco_factor("outfit_drops") or 2
+                if death_manager.rare_armors[section] then
+                    if math.random(100) > cutoff then return false end
+                end
+                if section == "helm_x" then
+                    if math.random(100) > 50 then return false end
+                end
+                if mode == 3 then return true end
+                return false
+            end
+        end
+        outfit_drop_mcm.ValidateDrop = make_validate(15)
+        death_manager.validate_drop = function(section)
+            if math.random(100) <= 10 then return outfit_drop_mcm.ValidateDrop(section) end
+            return false
+        end''')
+    restored = lua.eval("function() return rawequal(math.random, KEPT_RNG) and rawequal(game_difficulties.get_eco_factor, KEPT_ECO) end")
+    may = (drop("exo_z"), drop("helm_x"), drop("novice_outfit"))
+    lua.execute("outfit_drop_mcm.ValidateDrop = make_validate(50)")
+    october = (drop("exo_z"), drop("helm_x"), drop("novice_outfit"))
+    check(may == ((1.5, 7552, None), (30, 250, None), (70, None, None))
+          and october == ((5, 7552, None), (30, 250, None), (70, None, None)) and restored(),
+          "an item's own roll, read from validate_drop: a rare suit's 15%% (May build) or 50%% (October), a helmet's "
+          "50%%, none for the rest; the RNG and the economy put back: %s %s" % (may, october))
+    lua.execute("outfit_drop_mcm.ValidateDrop = nil; death_manager.validate_drop = make_validate(50)")
+    plain = drop("exo_z")
+    lua.execute("death_manager.validate_drop = function() error('boom') end")
+    broken = (drop("exo_z"), drop("helm_x"))
+    check(plain == (5, 7552, None) and broken == ((1.5, 7552, None), (60, 250, None)) and restored(),
+          "without the wrapper, death_manager's own; one that errors leaves the known rare roll: %s %s" % (plain, broken))
+    lua.execute("death_manager.validate_drop, KEPT_RNG, KEPT_ECO, make_validate = nil, nil, nil, nil")
     ranks = [m.rank_at(v) for v in (0, 3998, 3999, 7552, 49999, 90000)]
     check(ranks == ["novice", "novice", "trainee", "experienced", "legend", "legend"],
           "a rating's rank, each up to its bound: %s" % ranks)
@@ -1754,6 +1799,20 @@ def main():
           "worn parts: %s" % (jam("wpn_saiga"),))
     check(jam("wpn_pm") == (0.003, None), "the engine's misfire at the start condition, no parts: %s" % (jam("wpn_pm"),))
     check(jam("wpn_fort") == (0.011488, None), "below the start condition, toward the end chance: %s" % (jam("wpn_fort"),))
+    # a worn gun that also misfires from the engine: either roll jams it, 1 - (1 - base)(1 - worn),
+    # as GAMMA's tooltip has worked it out since its October 2026 build (it added them before)
+    g = lua.globals()
+    parts = g.itms_manager.ini_parts
+    g.itms_manager.ini_parts = lua.eval('{ r_string_ex = function(self, s, k) '
+                                        'return s == "con_parts_list" and k == "wpn_fort" and "prt_barrel" or nil end }')
+    jf = m.jam_chance("wpn_fort")
+    g.itms_manager.ini_parts = parts
+    jp = m.jam_chance("wpn_pm")
+    both = round(jf.both, 9) if jf.both is not None else None
+    check((round(jf.base, 6), jf.worn) == (0.011488, 0.014) and both == round(1 - (1 - jf.base) * (1 - jf.worn), 9)
+          and both != round(jf.base + jf.worn, 9) and jp.both is None,
+          "worn parts and the engine's misfire: either roll, not their sum; none without parts: %s %s"
+          % ((jf.base, jf.worn, jf.both), jp.both))
     check(m.special("ammo_545") is False and m.special("ammo_vog") is False, "ammo is never special")
     g = lua.globals()
     g.JAM = 0.5

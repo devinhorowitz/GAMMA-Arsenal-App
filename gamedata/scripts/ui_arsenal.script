@@ -1140,7 +1140,7 @@ local function jam_text(j)
     local T = game.translate_string
     local base = j.base or 0
     if j.worn then
-        if base > 0 then return string.format(T("st_arsenal_jam_both"), percent(base), percent(base + j.worn)) end
+        if base > 0 then return string.format(T("st_arsenal_jam_both"), percent(base), percent(j.both)) end
         return string.format(T("st_arsenal_jam_worn"), percent(j.worn))
     end
     return base > 0 and string.format(T("st_arsenal_jam_base"), percent(base)) or T("st_arsenal_jam_none")

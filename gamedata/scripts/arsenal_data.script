@@ -1076,6 +1076,10 @@ end
 --     a band further down, averaged over the parts, times the section's condition_shot_dec x
 --     666, the MCM's jam chance and the condition's factor, out of 1000); nil for a gun
 --     without parts, or when WPO's settings cannot be read
+--   both: the chance a shot jams once the parts wear. The engine's misfire and WPO's jam are
+--     separate rolls on every shot, so it is 1 - (1 - base) x (1 - worn), as GAMMA's tooltip
+--     (momopate_proper_jam_chance) works it out since its October 2026 build; before, the
+--     tooltip added the two. nil without worn
 function jam_chance(sec)
     local gc = grok_gun_condition_fixed
     local lock = gc and tonumber(gc.cond)
@@ -1100,6 +1104,7 @@ function jam_chance(sec)
         local jc = 30 * (ini_sys:r_float_ex(sec, "condition_shot_dec") or 0.0008) * 666 * j
         if c < 1 then jc = jc * (1 + ((1.0 - c) / 0.7 - 0.05)) end
         out.worn = math.max(0, math.min(1000, math.floor(jc))) / 1000
+        out.both = 1 - (1 - out.base) * (1 - out.worn)
     end
     return out
 end
@@ -1782,12 +1787,62 @@ end
 
 -- How a fighter's suit or helmet drops, as GAMMA decides when his body is first searched
 -- (death_manager.validate_drop, wrapped by outfit_drop_mcm): its chance by repair type (MCM),
--- a rare suit's own roll, and, with progressive drops, the player's rank it needs (cost below
--- the outfit_drop_settings line in death_outfits.ltx: rank times its multiplier plus its start;
--- GAMMA's helmet multiplier never applies, its check reads kind as a number):
+-- the item's own roll in validate_drop (a rare suit's, the Spartan helmet's), and, with
+-- progressive drops, the player's rank it needs (cost below the outfit_drop_settings line in
+-- death_outfits.ltx: rank times its multiplier plus its start; GAMMA's helmet multiplier never
+-- applies, its check reads kind as a number):
 --     { chance = percent, rank = the rating it needs, or nil }, or { off = true } when this
 -- economy drops none
 local HALF = { helm_spartan = true }
+local RARE = 0.15
+
+-- The share of an item's drops its own roll in validate_drop keeps. GAMMA despawns a rare suit
+-- when math.random(100) comes up above a cutoff: 15 up to its October 2026 build, 50 since (the
+-- Spartan helmet's is 50 in both). validate_drop is asked itself: with the roll pinned to a
+-- value and full drops (so the rank gate stays out), it keeps the item at every value up to the
+-- cutoff. outfit_drop_mcm wraps it with the MCM's chance and keeps the original as
+-- ValidateDrop, which is the one asked. nil when it can't be asked; kept per validate_drop.
+local kept_by_vd = setmetatable({}, { __mode = "k" })
+
+local function kept_share(sec)
+    local odm = outfit_drop_mcm
+    local vd = odm and odm.ValidateDrop
+    if type(vd) ~= "function" then vd = death_manager and death_manager.validate_drop end
+    local gd = game_difficulties
+    if type(vd) ~= "function" or not (gd and type(gd.get_eco_factor) == "function") then return nil end
+    local known = kept_by_vd[vd]
+    if known and known[sec] then return known[sec] end
+    local real_random, real_eco = math.random, gd.get_eco_factor
+    local function keeps(r)
+        math.random = function() return r end
+        gd.get_eco_factor = function(name, ...)
+            if name == "outfit_drops" then return 3 end
+            return real_eco(name, ...)
+        end
+        local ok, res = pcall(vd, sec)
+        math.random, gd.get_eco_factor = real_random, real_eco
+        if not ok then return nil end
+        return res == true
+    end
+    local share
+    local top = keeps(100)
+    if top == nil then return nil end
+    if top then
+        share = 1
+    else
+        local lo, hi = 0, 99        -- the highest roll it keeps; 0 when it keeps none
+        while lo < hi do
+            local mid = math.ceil((lo + hi) / 2)
+            local k = keeps(mid)
+            if k == nil then return nil end
+            if k then lo = mid else hi = mid - 1 end
+        end
+        share = lo / 100
+    end
+    kept_by_vd[vd] = known or {}
+    kept_by_vd[vd][sec] = share
+    return share
+end
 
 function armor_drop(sec)
     local ok, mode = pcall(function() return game_difficulties.get_eco_factor("outfit_drops") end)
@@ -1797,9 +1852,14 @@ function armor_drop(sec)
     rt = (rt == "outfit_novice" and "outfit_light") or (rt == "outfit" and "outfit_medium") or rt
     local okc, c = pcall(function() return outfit_drop_mcm.get_config(rt .. "_chance") end)
     local chance = okc and tonumber(c) or 50
-    local rare = death_manager and death_manager.rare_armors
-    if type(rare) == "table" and rare[sec] then chance = chance * 0.15 end
-    if HALF[sec] then chance = chance * 0.5 end
+    local kept = kept_share(sec)
+    if kept then
+        chance = chance * kept
+    else
+        local rare = death_manager and death_manager.rare_armors
+        if type(rare) == "table" and rare[sec] then chance = chance * RARE end
+        if HALF[sec] then chance = chance * 0.5 end
+    end
     if mode == 3 then return { chance = chance } end
     local cost = ini_sys:r_float_ex(sec, "cost")
     if not cost then return { off = true } end
