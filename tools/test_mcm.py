@@ -88,11 +88,14 @@ MUTANTS = {
     "no_callback": ('RegisterScriptCallback("on_key_press", on_key_press)', "-- not registered"),
     "any_key": ("if not (k and key == k) then return end", "if not k then return end"),
     "seen_def": ('{ id = "count_seen", type = "check", val = 1, def = false }', '{ id = "count_seen", type = "check", val = 1 }'),
-    "seen_any": ('ui_mcm.get("arsenal/count_seen") end)\n    return ok and v == true',
-                 'ui_mcm.get("arsenal/count_seen") end)\n    return ok'),
+    "seen_any": ('pcall(opt, "arsenal/count_seen")\n    return ok and v == true',
+                 'pcall(opt, "arsenal/count_seen")\n    return ok'),
     "jail_def": ('{ id = "jailbreak", type = "check", val = 1, def = false }', '{ id = "jailbreak", type = "check", val = 1 }'),
-    "jail_any": ('ui_mcm.get("arsenal/jailbreak") end)\n    return (ok and v == true) or false',
-                 'ui_mcm.get("arsenal/jailbreak") end)\n    return ok'),
+    "jail_any": ('pcall(opt, "arsenal/jailbreak")\n    return (ok and v == true) or false',
+                 'pcall(opt, "arsenal/jailbreak")\n    return ok'),
+    # a read through a closure made for it, as 1.8.4 read every option
+    "read_closure": ('    local ok, v = pcall(opt, "arsenal/jailbreak")',
+                     '    local ok, v = pcall(function() return ui_mcm and ui_mcm.get("arsenal/jailbreak") end)'),
     "pda_ignored": ("if not arsenal_pages.pda_works() then", "if false then"),
     "pda_silent": ('        actor_menu.set_msg(1, game.translate_string("st_arsenal_pda_down"), 3)\n', ""),
     "during_press": ('    CreateTimeEvent("arsenal_mcm", "open_flat", 0, function()\n'
@@ -108,17 +111,17 @@ MUTANTS = {
     "load_skips_compare": ("{ ui_arsenal, ui_arsenal_workbench, ui_arsenal_compare }", "{ ui_arsenal, ui_arsenal_workbench }"),
     "gunsmith_def": ('{ id = "gunsmith", type = "check", val = 1, def = true }', '{ id = "gunsmith", type = "check", val = 1 }'),
     "gunsmith_dropped": ('            { id = "gunsmith", type = "check", val = 1, def = true },\n', ""),
-    "gunsmith_off_unset": ('ui_mcm.get("arsenal/gunsmith") end)\n    return not (ok and v == false)',
-                           'ui_mcm.get("arsenal/gunsmith") end)\n    return ok and v == true'),
-    "gunsmith_always": ('ui_mcm.get("arsenal/gunsmith") end)\n    return not (ok and v == false)',
-                        'ui_mcm.get("arsenal/gunsmith") end)\n    return true'),
+    "gunsmith_off_unset": ('pcall(opt, "arsenal/gunsmith")\n    return not (ok and v == false)',
+                           'pcall(opt, "arsenal/gunsmith")\n    return ok and v == true'),
+    "gunsmith_always": ('pcall(opt, "arsenal/gunsmith")\n    return not (ok and v == false)',
+                        'pcall(opt, "arsenal/gunsmith")\n    return true'),
     "news_def": ('{ id = "news", type = "check", val = 1, def = true }', '{ id = "news", type = "check", val = 1 }'),
     "sources_def": ('{ id = "sources", type = "check", val = 1, def = false }', '{ id = "sources", type = "check", val = 1 }'),
     "sources_dropped": ('            { id = "sources", type = "check", val = 1, def = false },\n', ""),
-    "sources_any": ('ui_mcm.get("arsenal/sources") end)\n    return (ok and v == true) or false',
-                    'ui_mcm.get("arsenal/sources") end)\n    return ok'),
-    "news_off_unset": ('ui_mcm.get("arsenal/news") end)\n    return not (ok and v == false)',
-                       'ui_mcm.get("arsenal/news") end)\n    return ok and v == true'),
+    "sources_any": ('pcall(opt, "arsenal/sources")\n    return (ok and v == true) or false',
+                    'pcall(opt, "arsenal/sources")\n    return ok'),
+    "news_off_unset": ('pcall(opt, "arsenal/news")\n    return not (ok and v == false)',
+                       'pcall(opt, "arsenal/news")\n    return ok and v == true'),
     "news_dropped": ('            { id = "news", type = "check", val = 1, def = true },\n', ""),
     "set_inverted": ('ui_mcm.set("arsenal/news", on and true or false)', 'ui_mcm.set("arsenal/news", not on)'),
     "tell_ignores": ("    if not news() then\n", "    if false then\n"),
@@ -140,8 +143,8 @@ MUTANTS = {
                              "    local ok, v = true, mac_mcm ~= nil and mac_mcm.add_app ~= nil and arsenal_pages.tab_supported()"),
     "tab_at_end": ("table.insert(page.gr, 4, {", "table.insert(page.gr, {"),
     "tab_def": ('{ id = "pda_tab", type = "check", val = 1, def = false }', '{ id = "pda_tab", type = "check", val = 1 }'),
-    "tab_any": ('ui_mcm.get("arsenal/pda_tab") end)\n    return (ok and v == true) or false',
-                'ui_mcm.get("arsenal/pda_tab") end)\n    return ok'),
+    "tab_any": ('pcall(opt, "arsenal/pda_tab")\n    return (ok and v == true) or false',
+                'pcall(opt, "arsenal/pda_tab")\n    return ok'),
 }
 
 
@@ -187,6 +190,20 @@ def main():
     mcm, g.ui_mcm = g.ui_mcm, None
     check(m.jailbreak() is False, "off without MCM")
     g.ui_mcm = mcm
+    # a read leaves nothing for the collector: the pages read options thousands of times as they
+    # fill (measured with the collector stopped and the JIT off)
+    per_read = lua.eval("""function(m, n)
+        if jit then jit.off() end
+        m.jailbreak(); m.news(); m.flat_key(); m.count_seen(); m.gunsmith(); m.sources()
+        collectgarbage("collect"); collectgarbage("stop")
+        local before = collectgarbage("count")
+        for _ = 1, n do m.jailbreak(); m.news(); m.flat_key(); m.count_seen(); m.gunsmith(); m.sources() end
+        local kb = collectgarbage("count") - before
+        collectgarbage("restart")
+        if jit then jit.on() end
+        return kb * 1024 / n
+    end""")(m, 2000)
+    check(per_read < 1, "reading the options makes no closure: %.1f bytes for six reads" % per_read)
     # "Show where items are defined": a check box, off by default, for modders
     src = [o for o in opts.gr.values() if o.id == "sources"]
     check(len(src) == 1 and src[0].type == "check" and src[0]["def"] is False,

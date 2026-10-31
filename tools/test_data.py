@@ -834,6 +834,10 @@ end
 """
 
 MUTANTS = {
+    # a gun's maximum worked out for every question, as 1.8.4 did
+    "max_rebuilt": ("    if not got then\n        got = pack(upgraded(sec, stat))", "    if true then\n        got = pack(upgraded(sec, stat))"),
+    # the cache handing back the maximum twice, not the maximum and the value as it is
+    "max_wrong_base": ("    return unpack(got, 1, got.n)", "    return got[1], got[1]"),
     "group_missing": ('"light", "medium", "heavy", "exo", "helmets" } },', '"light", "medium", "heavy", "exo" } },'),
     "tree_twice": ("                if ini_sys:section_exist(el) and not placed[el] then\n                    placed[el] = true\n",
                    "                if ini_sys:section_exist(el) then\n"),
@@ -1295,6 +1299,21 @@ def main():
     check(tuple(rof) == (780, 700), "fire rate fully upgraded, through a group an upgrade opens: %s" % (tuple(rof),))
     check(m.max_stat("wpn_ak74", "damage") is None and m.max_stat("wpn_ak74", "max_range") is None,
           "no maximum for a stat the formulas here do not cover")
+    # a gun's maximum kept: asked again (every model page asks for every card row), the same
+    # answer and nothing left for the collector (the collector stopped, the JIT off)
+    again = lua.eval("""function(m, n)
+        if jit then jit.off() end
+        collectgarbage("collect"); collectgarbage("stop")
+        local before = collectgarbage("count")
+        local a, b
+        for _ = 1, n do a, b = m.max_stat("wpn_ak74", "accuracy") end
+        local kb = collectgarbage("count") - before
+        collectgarbage("restart")
+        if jit then jit.on() end
+        return kb * 1024 / n, a, b
+    end""")(m, 500)
+    check(again[0] < 1 and (again[1], again[2]) == tuple(acc),
+          "a gun's maximum asked again: the same, %.1f bytes a time" % again[0])
     # Full Upgrades: an upgrade reached both as a group of its own and through another's effects
     # counts once: 600 + 50 + 80, not 810 with c2 twice
     fu = tuple(m.max_stat("probe_fu_gun", "fire_rate") or ())

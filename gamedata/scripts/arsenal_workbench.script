@@ -138,8 +138,18 @@ function cells(t)
     return out
 end
 
+-- whether a section has an upgrade tree, kept per section: the configs don't change while the
+-- game runs, and a tree built only to ask leaves about 30 KB for the collector. The catalog asks
+-- for every model it shows, Workbench for every item carried.
+local tree_of = {}
 function has_tree(sec)
-    return #cells(tree(sec)) > 0
+    if sec == nil then return false end
+    local has = tree_of[sec]
+    if has == nil then
+        has = #cells(tree(sec)) > 0
+        tree_of[sec] = has
+    end
+    return has
 end
 
 -- the other upgrade of a cell's pair, if it has one (GAMMA marks an odd column without one

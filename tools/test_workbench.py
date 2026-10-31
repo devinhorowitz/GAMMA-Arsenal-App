@@ -288,6 +288,8 @@ MUTANTS = {
     "no_upgrades_guard": ('    if sec and utils_item and utils_item.get_upgrades_tree and (ini_sys:r_string_ex(sec, "upgrades") or "") ~= "" then',
                           "    if sec and utils_item and utils_item.get_upgrades_tree then"),
     "no_new_table": ("pcall(utils_item.get_upgrades_tree, sec, true)", "pcall(utils_item.get_upgrades_tree, sec)"),
+    # a tree built for every question, as 1.8.4 did
+    "has_tree_rebuilt": ("    if has == nil then\n", "    if true then\n"),
     "no_pcall_tree": ("        local ok, got = pcall(utils_item.get_upgrades_tree, sec, true)",
                       "        local ok, got = true, utils_item.get_upgrades_tree(sec, true)"),
     "no_at": ("            if c then t.at[c.section] = { row = row, col = col } end\n", ""),
@@ -462,6 +464,12 @@ def main():
     check(not isinstance(r[0], str) and len(env.cells(r[0])) == 0 and len(g.logs) == 1 and "wpn_broken" in g.logs[1],
           "a tree that fails to build: none, logged: %s" % list(g.logs.values()))
     check(env.has_tree("wpn_test") is True and env.has_tree("wpn_plain") is False, "has_tree")
+    # kept per section: asked again, GAMMA builds no second tree (each leaves about 30 KB for the
+    # collector, and the catalog asks for every model it shows)
+    n = len(g.tree_calls)
+    again = [env.has_tree("wpn_test") for _ in range(5)]
+    check(again == [True] * 5 and len(g.tree_calls) == n and env.has_tree(None) is False,
+          "has_tree asked again: the same answer, no tree built: %d built" % (len(g.tree_calls) - n))
 
     order = [(x.row, x.col) for x in env.cells(t).values()]
     check(order == [(1, 1), (1, 2), (1, 3), (1, 4), (1, 5), (1, 6), (2, 1), (2, 3), (2, 5), (3, 1), (4, 1), (4, 3), (4, 4),

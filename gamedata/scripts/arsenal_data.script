@@ -602,7 +602,7 @@ end
 -- A stat card value of a section fully upgraded: in every group, the upgrade that raises it
 -- most, or none. Returns the maximum and the value as it is, or nil for a stat the card
 -- formulas here do not cover.
-function max_stat(sec, stat)
+local function upgraded(sec, stat)
     if is_armor(sec) then return armor_max(sec, stat) end
     local f = CARD[stat]
     if not f or stat == "damage" then return nil end
@@ -626,6 +626,30 @@ function max_stat(sec, stat)
         if pick then p = pick end
     end
     return cur, base
+end
+
+local function pack(...)
+    return { n = select("#", ...), ... }
+end
+
+-- upgraded(), a gun's kept per stat and section: its configs don't change while the game runs,
+-- and working it out copies the gun's values for every upgrade, about 10 KB for the collector
+-- each time. A model's page asks for every row of its card. Armor is worked out each time: its
+-- card follows GAMMA's live stat table (armor_max).
+local max_of = {}
+function max_stat(sec, stat)
+    if sec == nil or stat == nil or is_armor(sec) then return upgraded(sec, stat) end
+    local by = max_of[stat]
+    if not by then
+        by = {}
+        max_of[stat] = by
+    end
+    local got = by[sec]
+    if not got then
+        got = pack(upgraded(sec, stat))
+        by[sec] = got
+    end
+    return unpack(got, 1, got.n)
 end
 
 -- What tells guns of one name apart, in the order a player cares about. A tagger returns the

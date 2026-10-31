@@ -730,28 +730,30 @@ function WorkbenchPDA:AttachmentInfo(i, line)
     end
 end
 
--- the details follow the cursor over the tree and the attachment buttons
+-- the details follow the cursor over the tree and the attachment buttons. This runs every frame
+-- the page shows, so it makes no table until the cursor moves onto something else: the key
+-- ("r_c" for a cell, "att<i>" for an attachment) is a string the game already holds.
 function WorkbenchPDA:Update()
     CUIScriptWnd.Update(self)
-    local over
+    local r0, c0, a0
     if self.t then
         for r, f in ipairs(self.forms) do
             for c, s in ipairs(f.slots) do
-                if not over and self.t[r] and self.t[r][c] and s.btn:IsCursorOverWindow() then
-                    over = { cell = { r, c }, key = r .. "_" .. c }
+                if not r0 and self.t[r] and self.t[r][c] and s.btn:IsCursorOverWindow() then
+                    r0, c0 = r, c
                 end
             end
         end
         for i, row in ipairs(self.att_rows) do
-            if not over and row.btn:IsShown() and row.btn:IsCursorOverWindow() then
-                over = { att = i, key = "att" .. i }
+            if not (r0 or a0) and row.btn:IsShown() and row.btn:IsCursorOverWindow() then
+                a0 = i
             end
         end
     end
-    local key = over and over.key
+    local key = (r0 and r0 .. "_" .. c0) or (a0 and "att" .. a0) or nil
     if key ~= self.hover then
         self.hover = key
-        self:ShowInfo(over)
+        self:ShowInfo((r0 and { cell = { r0, c0 } }) or (a0 and { att = a0 }) or nil)
     end
 end
 

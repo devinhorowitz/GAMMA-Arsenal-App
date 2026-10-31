@@ -442,8 +442,17 @@ function ArsenalPDA:OnMarkRead()
     self:FillWeapons()
 end
 
+-- each glowing row of `rows` (none: nil) in `color`
+local function glow(rows, color)
+    if not rows then return end
+    for _, row in pairs(rows) do
+        if row.glow then row.glow:SetTextureColor(color) end
+    end
+end
+
 -- new rows glow in the headings' amber, slowly brightening and fading; and how far each list and
--- the entry are scrolled is kept for the next open (view)
+-- the entry are scrolled is kept for the next open (view). This runs every frame the page shows,
+-- so it makes no table.
 function ArsenalPDA:Update()
     CUIScriptWnd.Update(self)
     if self.restore then self:Restore() end
@@ -452,11 +461,8 @@ function ArsenalPDA:Update()
     view.detail_scroll = self.detail:GetCurrentScrollPos()
     local wave = 0.5 + 0.5 * math.sin(time_global() * 2 * math.pi / GLOW_PERIOD)
     local color = theme.argb("heading", math.floor(GLOW_MIN + (GLOW_MAX - GLOW_MIN) * wave))
-    for _, rows in ipairs({ self.cat_rows or {}, self.wpn_rows or {} }) do
-        for _, row in pairs(rows) do
-            if row.glow then row.glow:SetTextureColor(color) end
-        end
-    end
+    glow(self.cat_rows, color)
+    glow(self.wpn_rows, color)
 end
 
 function ArsenalPDA:OnBack()

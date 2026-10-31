@@ -245,6 +245,10 @@ MUTANTS = {
     "install_always": ("    self.btn_install:Enable(why == nil)", "    self.btn_install:Enable(true)"),
     "install_unchecked": ("    if not e or arsenal_workbench.cannot_install(e.id, e.sec, self.plan) then", "    if not e then"),
     "hover_dead": ("    if key ~= self.hover then", "    if false then"),
+    # what the cursor is over made into a table every frame, as 1.8.4 did
+    "hover_garbage": ('    local key = (r0 and r0 .. "_" .. c0) or (a0 and "att" .. a0) or nil\n',
+                      '    local over = (r0 and { cell = { r0, c0 } }) or (a0 and { att = a0 }) or nil\n'
+                      '    local key = (r0 and r0 .. "_" .. c0) or (a0 and "att" .. a0) or nil\n'),
     "info_no_state": ('        line(T("st_arsenal_wb_state_" .. st), st == "installed" and "good" or (st == "planned" and "heading" or "dim"))',
                       "        line(nil)"),
     "info_no_props": ("            if ok and type(s) == \"string\" and s ~= \"\" then line(s, \"body\") end", "            -- no lines"),
@@ -633,6 +637,20 @@ def steps(lua, g, ui, data, page_, pages, modxml, load, check):
     check(len(info) >= 4 and info[0] == "name_up_firstc_t" and info[1] == "Click to plan it."
           and info[2].startswith("Kit: kit_2_external") and "line prop_dispersion of s_firstc" in info,
           "the upgrade under the cursor: name, state, kit, its lines: %s" % info)
+    # the cursor resting there: frame after frame, nothing made for the collector (GC profilers
+    # rank scripts by what they leave), the collector stopped and the JIT off
+    per_frame = lua.eval("""function(page, frames)
+        if jit then jit.off() end
+        page.Update(page)
+        collectgarbage("collect"); collectgarbage("stop")
+        local before = collectgarbage("count")
+        for _ = 1, frames do page.Update(page) end
+        local kb = collectgarbage("count") - before
+        collectgarbage("restart")
+        if jit then jit.on() end
+        return kb * 1024 / frames
+    end""")(page_, 500)
+    check(per_frame < 4, "the cursor resting on an upgrade: no table a frame: %.1f bytes a frame" % per_frame)
     g.HOVER = None
     page_.Update(page_)
     info = [c.text for c in page_.info.content[1].children.values()]

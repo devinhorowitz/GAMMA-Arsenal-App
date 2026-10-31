@@ -659,6 +659,9 @@ MUTANTS = {
     "cat_bright": ('fresh and "bright" or "body"', '"body"'),
     "cat_fresh_unlisted": ("if listed(e) and is_new(e) then return true end", "if is_new(e) then return true end"),
     "no_pulse": ("if row.glow then row.glow:SetTextureColor(color) end", "-- still"),
+    # the two lists gathered in a new table every frame, as 1.8.4 did
+    "glow_garbage": ("    glow(self.cat_rows, color)\n    glow(self.wpn_rows, color)\n",
+                     "    for _, rows in ipairs({ self.cat_rows or {}, self.wpn_rows or {} }) do glow(rows, color) end\n"),
     "pulse_flat": ("math.floor(GLOW_MIN + (GLOW_MAX - GLOW_MIN) * wave)", "GLOW_MAX"),
     "read_on_show": ("    local shown = e.variants[1]\n",
                      "    if arsenal_intel then arsenal_intel.viewed(e) end\n    local shown = e.variants[1]\n"),
@@ -1242,6 +1245,21 @@ arsenal_intel = {
         pulse.append(rows[0].glow.tcolor)
     check(pulse == ["heading@110", "heading@40"] and cat.glow.tcolor == "heading@40",
           "the glow brightens and fades over two seconds: %s" % pulse)
+    # every frame the page shows, it leaves nothing for the collector (GC profilers rank scripts
+    # by what they leave): a second period of frames, the collector stopped, the JIT off
+    per_frame = lua.eval("""function(ui, frames)
+        local function period() for i = 1, 125 do TIME = 2000 + i * 16; ui.Update(ui) end end
+        if jit then jit.off() end
+        period()
+        collectgarbage("collect"); collectgarbage("stop")
+        local before = collectgarbage("count")
+        for _ = 1, frames / 125 do period() end
+        local kb = collectgarbage("count") - before
+        collectgarbage("restart")
+        if jit then jit.on() end
+        return kb * 1024 / frames
+    end""")(ui, 4000)
+    check(per_frame < 4, "a frame of the page makes no table: %.1f bytes a frame" % per_frame)
     check(lua.eval("NEW.wpn_pm") is True, "shown first by itself, it stays new until clicked")
     pm = shown(ui)
     texts = texts_of(pm)

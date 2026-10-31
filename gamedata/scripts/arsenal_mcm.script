@@ -58,9 +58,20 @@ function on_mcm_load()
     return page
 end
 
+-- An option as MCM holds it, and whether a modifier key is held: called through pcall(opt, id), so
+-- a read makes no closure. The pages read options thousands of times as they fill, and each
+-- closure would be left for the collector.
+local function opt(id)
+    return ui_mcm and ui_mcm.get(id)
+end
+
+local function mod_key(m)
+    return ui_mcm.get_mod_key(m)
+end
+
 -- the key that opens Arsenal flat, or nil while it is unbound or MCM is missing
 function flat_key()
-    local ok, k = pcall(function() return ui_mcm and ui_mcm.get("arsenal/flat_key") end)
+    local ok, k = pcall(opt, "arsenal/flat_key")
     k = ok and tonumber(k)
     return (k and k >= 0) and k or nil
 end
@@ -68,7 +79,7 @@ end
 -- the modifier asked for with the key: 0 none, 1 Shift, 2 Ctrl, 3 Alt; none while unset or
 -- MCM is missing
 function flat_mod()
-    local ok, m = pcall(function() return ui_mcm and ui_mcm.get("arsenal/flat_mod") end)
+    local ok, m = pcall(opt, "arsenal/flat_mod")
     m = ok and tonumber(m)
     return (m and m >= 1 and m <= 3) and m or 0
 end
@@ -78,7 +89,7 @@ end
 local function mod_held()
     local m = flat_mod()
     if m == 0 then return true end
-    local ok, held = pcall(function() return ui_mcm.get_mod_key(m) end)
+    local ok, held = pcall(mod_key, m)
     return not ok or held == true
 end
 
@@ -86,40 +97,40 @@ end
 -- launcher; false while the option is off, or not offered (no MAC), or MCM is missing.
 -- arsenal_pages.wants_tab decides what the PDA gets.
 function pda_tab()
-    local ok, v = pcall(function() return ui_mcm and ui_mcm.get("arsenal/pda_tab") end)
+    local ok, v = pcall(opt, "arsenal/pda_tab")
     return (ok and v == true) or false
 end
 
 -- whether the guns in a body, stash or trader's stock count when their window opens; false
 -- while the option is off or MCM is missing
 function count_seen()
-    local ok, v = pcall(function() return ui_mcm and ui_mcm.get("arsenal/count_seen") end)
+    local ok, v = pcall(opt, "arsenal/count_seen")
     return ok and v == true
 end
 
 -- whether the jailbreak is on: Arsenal lists everything; false while it is off or MCM is missing
 function jailbreak()
-    local ok, v = pcall(function() return ui_mcm and ui_mcm.get("arsenal/jailbreak") end)
+    local ok, v = pcall(opt, "arsenal/jailbreak")
     return (ok and v == true) or false
 end
 
 -- whether technicians and traders sell word of special guns: true unless the player turned the
 -- talk off
 function gunsmith()
-    local ok, v = pcall(function() return ui_mcm and ui_mcm.get("arsenal/gunsmith") end)
+    local ok, v = pcall(opt, "arsenal/gunsmith")
     return not (ok and v == false)
 end
 
 -- whether Arsenal's PDA messages are on: true unless the player silenced them
 function news()
-    local ok, v = pcall(function() return ui_mcm and ui_mcm.get("arsenal/news") end)
+    local ok, v = pcall(opt, "arsenal/news")
     return not (ok and v == false)
 end
 
 -- whether each model's page ends with where the game read it from (arsenal_sources); false while
 -- the option is off or MCM is missing
 function sources()
-    local ok, v = pcall(function() return ui_mcm and ui_mcm.get("arsenal/sources") end)
+    local ok, v = pcall(opt, "arsenal/sources")
     return (ok and v == true) or false
 end
 
