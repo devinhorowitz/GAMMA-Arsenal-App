@@ -42,9 +42,12 @@ arsenal_collection = { entry_found = function(e) return FOUND[e.sec] end }
 JAIL = false
 NEWLY = true
 KNOWN = { wpn_ak74 = true }
+-- what the catalog lists (arsenal_intel.listed): what is known and turns up
+LISTED = { wpn_ak74 = true }
 arsenal_intel = {
     jailbroken = function() return JAIL end,
     known = function(e) return KNOWN[e.sec] == true end,
+    listed = function(e) return LISTED[e.sec] == true end,
     studied = function(e) return false end,
     is_new = function(e) return e.sec == "wpn_ak74" end,
     reveal = function(x, how, fact, study, quiet)
@@ -119,6 +122,8 @@ MUTANTS = {
                              ""),
     "api_found_wrong": ("API", "found = arsenal_collection ~= nil and arsenal_collection.entry_found(e) ~= nil,",
                         "found = true,"),
+    "api_known_not_listed": ("API", "known = intel == nil or intel.listed(e) == true,",
+                             "known = intel == nil or intel.known(e) == true,"),
     # arsenal_sources
     "src_order": ("SOURCES", "return count[a] > count[b]", "return count[a] < count[b]"),
     "src_tie": ("SOURCES", "            return a < b\n", "            return a > b\n"),
@@ -187,6 +192,12 @@ def main():
     pm = a.model("wpn_pm")
     check(pm.found is True and pm.known is False and pm.new is False, "a found one: found; one not learned of: not known")
     check(a.model("nope") is None and a.model(None) is None, "nil for what Arsenal does not list, and for nil")
+    # known is what the catalog lists: a model the player has had but that turns up nowhere in this
+    # game is known to Arsenal's discovery, yet the catalog leaves it out, and so does known
+    g.KNOWN.wpn_pm = True
+    pm = a.model("wpn_pm")
+    g.KNOWN.wpn_pm = None
+    check(pm.known is False, "known: whether the catalog lists it, not what discovery knows: %s" % pm.known)
 
     # models: a category's, as model() gives them
     ms = a.models("rifles")

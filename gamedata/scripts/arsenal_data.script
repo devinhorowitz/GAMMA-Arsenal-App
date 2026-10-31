@@ -1104,6 +1104,13 @@ end
 --     separate rolls on every shot, so it is 1 - (1 - base) x (1 - worn), as GAMMA's tooltip
 --     (momopate_proper_jam_chance) works it out since its October 2026 build; before, the
 --     tooltip added the two. nil without worn
+-- A built-in suppressor jams the gun too (oleh5230's addition to arti_jamming's calculate_jam):
+-- on every shot of a gun with parts that the parts' roll leaves alone, a second roll of
+-- math_random(1000) against misfire_start_prob x 330, or 1 for a start chance under 0.002
+-- (get_silencer_jam_chance), whatever the parts' wear. It is a separate roll as well, so base
+-- takes it in, 1 - (1 - misfire) x (1 - suppressor), as the tooltip's third factor does; the
+-- tooltip shows that factor unrounded (0.198% for the Vintorez), the roll keeps whole thousandths
+-- (0.1%), and this is the roll.
 function jam_chance(sec)
     local gc = grok_gun_condition_fixed
     local lock = gc and tonumber(gc.cond)
@@ -1128,6 +1135,11 @@ function jam_chance(sec)
         local jc = 30 * (ini_sys:r_float_ex(sec, "condition_shot_dec") or 0.0008) * 666 * j
         if c < 1 then jc = jc * (1 + ((1.0 - c) / 0.7 - 0.05)) end
         out.worn = math.max(0, math.min(1000, math.floor(jc))) / 1000
+        if status(sec, "silencer_status") == 1 then
+            local sp = ini_sys:r_float_ex(sec, "misfire_start_prob") or 0.003
+            local sj = sp < 0.002 and 1 or sp * 330
+            out.base = 1 - (1 - out.base) * (1 - math.max(0, math.min(1000, math.floor(sj))) / 1000)
+        end
         out.both = 1 - (1 - out.base) * (1 - out.worn)
     end
     return out
@@ -1166,7 +1178,28 @@ function upgrade_options(sec)
     return out
 end
 
+-- A section's weight as the inventory shows it: its inv_weight. 3DSS's add_scope_weight gives a
+-- scoped combination another the moment it spawns: the gun it is made of (its parent_section)
+-- at that gun's inv_weight, plus the scope's (the section's name less the gun's and "_"), plus
+-- the inv_weight changes of the upgrades it comes with, whatever the combination's own
+-- inv_weight says (wpn_ak101_1p29's 4.4 already holds the 1P29, wpn_ak74_kobra's 3.3 leaves
+-- the Kobra out). Its own get_parent_and_scope splits the name, so it is asked; without 3DSS a
+-- combination weighs its own inv_weight.
 function weight(sec)
+    local asw = add_scope_weight
+    if type(asw) == "table" and type(asw.get_parent_and_scope) == "function" then
+        local ok, base, scope = pcall(asw.get_parent_and_scope, sec)
+        local bw = ok and scope and ini_sys:r_float_ex(base, "inv_weight")
+        local sw = bw and ini_sys:r_float_ex(scope, "inv_weight")
+        if sw then
+            local up = 0
+            for u in each_of(sec, "installed_upgrades") do
+                local ps = ini_sys:r_string_ex(u, "section")
+                up = up + (ps and ini_sys:r_float_ex(ps, "inv_weight") or 0)
+            end
+            return bw + sw + up
+        end
+    end
     return ini_sys:r_float_ex(sec, "inv_weight") or 0
 end
 
@@ -1547,8 +1580,9 @@ end
 -- section names no rank (UNISG's black ops).
 local carried     -- gun model -> faction -> rank (or "special") -> the chance one fighter carries it
 -- A line's second field asks for attachments: bits 1 scope (one of the gun's scopes, or its
--- scope mount), 2 launcher, 4 suppressor, rolled against the loadout's chances; "r" any the
--- gun can take (xrs_rnd_npc_loadout.resolve_random_attachment)
+-- scope mount), 2 launcher, 4 suppressor; "r" any the gun can take
+-- (xrs_rnd_npc_loadout.resolve_random_attachment). Each is then rolled against the line's
+-- chance for it (line_bits), and one whose chance is 0 never comes.
 local npc_attach  -- gun section -> the attachment bits some loadout line asks for
 local mounted     -- attachment section -> faction -> rank (or "special") -> 1: a fighter's gun may come with it
 
@@ -1595,6 +1629,34 @@ local function npc_rolls(s, bits, black, per_gun)
     return addons, kitted
 end
 
+-- The attachment bits a loadout line asks for that may come. Its fields 5 to 7 are the chances,
+-- in percent, of its scope, launcher and suppressor; "d" or none is [settings]'
+-- default_scope_chance, default_gl_chance or default_sil_chance for this game's economy (one
+-- value an economy; 15, 100 and 100 for one that is no number), as
+-- xrs_rnd_npc_loadout.init_settings reads them. create_item_on_npc drops a mount when
+-- 100 x math.random() is not below its chance, so one whose chance is 0 never comes (GAMMA's
+-- Clear Sky masters' MP7, P90 and Vector, and Duty masters' RAPTR, never get their suppressors).
+local MOUNT_CHANCES = { { 1, 5, "default_scope_chance", 15 }, { 2, 6, "default_gl_chance", 100 },
+    { 4, 7, "default_sil_chance", 100 } }
+
+local function line_bits(ini, f)
+    local bits = (f[2] == "r") and 7 or tonumber(f[2]) or 0
+    local ok, eco = pcall(function() return game_difficulties.get_eco_factor("type") end)
+    eco = ok and tonumber(eco) or 1
+    for _, c in ipairs(MOUNT_CHANCES) do
+        if bit.band(bits, c[1]) ~= 0 then
+            local chance = tonumber(f[c[2]])
+            if chance == nil then
+                local s = ini:r_string_ex("settings", c[3])
+                local d = s and fields(s, ",")[eco]
+                chance = d and (tonumber(d) or c[4])
+            end
+            if chance and chance <= 0 then bits = bits - c[1] end
+        end
+    end
+    return bits
+end
+
 -- a slot's chances per model, and its lines that ask for attachments ({ section, bits })
 local function slot_chances(ini, slot)
     local weights, total, armed = {}, 0, {}
@@ -1605,7 +1667,7 @@ local function slot_chances(ini, slot)
             weights[f[1]] = (weights[f[1]] or 0) + w
             total = total + w
             if w > 0 then
-                local bits = (f[2] == "r") and 7 or tonumber(f[2]) or 0
+                local bits = line_bits(ini, f)
                 npc_attach[f[1]] = bit.bor(npc_attach[f[1]] or 0, bits)
                 if bits ~= 0 then armed[#armed + 1] = { f[1], bits } end
             end
@@ -2214,15 +2276,20 @@ local function build_turns_up()
             if type(s) == "string" then mark_up(s, "homestead") end
         end
     end
-    -- Crafting: a workshop recipe's result (x_<item> in items\settings\craft.ltx's sections)
+    -- Crafting: a workshop recipe's result, as ui_workshop reads items\settings\craft.ltx: its
+    -- numbered sections, [1] up to the first number missing ([item_combination] is never read),
+    -- every line's key less its first two characters (x_, y_, a_: an item may have several
+    -- recipes; GAMMA keys its gauss and grenade rounds a_, b_ and c_), for an item the game has,
+    -- when the line's value has 6, 8 or 10 fields (a tool, a recipe, then two to four parts with
+    -- their counts)
     local craft = itms_manager and itms_manager.ini_craft
-    if craft then
-        craft:section_for_each(function(sec)
-            for _, x in ipairs(lines(craft, sec)) do
-                local item = x.k:match("^x_(.+)$")
-                if item then mark_up(item, "craft") end
-            end
-        end)
+    local page = 1
+    while craft and craft:section_exist(tostring(page)) do
+        for _, x in ipairs(lines(craft, tostring(page))) do
+            local n = #fields(x.v, ",")
+            if n == 6 or n == 8 or n == 10 then mark_up(x.k:sub(3), "craft") end
+        end
+        page = page + 1
     end
     -- and the ammo maker's: ammo_maker.script adds every line of items\ammo\importer.ltx to the
     -- workshop's ammo page, the line's key the round it makes (ArtiGrok's copy takes a _bad
@@ -3200,7 +3267,16 @@ for _, stat in ipairs({ "fire_wound_protection", "apres_modifier", "burn_protect
     ARMOR_TAGGERS[#ARMOR_TAGGERS + 1] = function(sec)
         local gr = armor_row(stat)
         if not gr then return nil end
-        local s = utils_ui.get_stats_string_value(nil, sec, standin_row(gr, ARMOR_STANDIN), stat)
+        local s
+        if stat == "additional_inventory_weight" then
+            -- carry weight as the card shows it, to a tenth (utils_ui's UIInfoItem:Update);
+            -- get_stats_string_value rounds it up to a whole kilo (5.3 kg would tag "6 kg")
+            local v = armor_value(stat, armor_params(sec))
+            local unit = (gr.unit and gr.unit ~= "") and game.translate_string(gr.unit) or ""
+            s = (v and v ~= 0) and (tostring(v) .. " " .. unit) or nil
+        else
+            s = utils_ui.get_stats_string_value(nil, sec, standin_row(gr, ARMOR_STANDIN), stat)
+        end
         s = s and plain(s):gsub("^%+", ""):gsub("%s+%%", "%%") or "0"
         return string.format("%s %s", plain(game.translate_string(gr.name)), s)
     end
@@ -3472,7 +3548,7 @@ end
 -- forget the catalog (a new game, or a test)
 function reset()
     by_var, by_cat, total = nil, nil, 0
-    trees, worn_rounds = {}, {}
+    trees, worn_rounds, max_of = {}, {}, {}
     carried, stashed, stashed_eco, made, kits, worn = nil, nil, nil, nil, nil, nil
     speeds, turns_up, addon_ok, rolled, reach, model_up = nil, nil, nil, nil, nil, nil
     sold, trade_names, fired_by_index = nil, nil, nil

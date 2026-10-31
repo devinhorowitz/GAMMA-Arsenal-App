@@ -210,8 +210,12 @@ function person(id, comm, rank, items, extra)
     function o:iterate_ruck(fn, owner) for _, s in ipairs(extra and extra.ruck or self.items) do fn(owner, item(s)) end end
     function o:name() return "npc" .. id end
     function o:spawn_ini() return extra and extra.spawn_ini or nil end
+    function o:profile_name() return extra and extra.profile or nil end
     return o
 end
+-- story ids by object id (_g.get_object_story_id): Sidorovich, Owl, a base's technician
+STORY = {}
+function get_object_story_id(id) return STORY[id] end
 -- an item: its section, its id, and whose hands it is in (parent), if anyone's
 function item(sec, id, holder)
     return { section = function() return sec end, id = function() return id or 0 end, name = function() return sec end,
@@ -283,10 +287,11 @@ MUTANTS = {
                    "        if x ~= f then"),
     "pda_rank": ("    local top = rank_at(rank) or #arsenal_data.RANKS", "    local top = #arsenal_data.RANKS"),
     "decrypt": ("        scan_pdas()\n        return r", "        return r"),
-    "trade_fact": ('function() return { sold = who } end, stock)', 'function() return nil end, stock)'),
+    "trade_fact": ('function() return { sold_by = { [key] = who } } end,', 'function() return nil end,'),
     "stash_fact": ('function() return { stash = lvl } end', 'function() return nil end'),
     # a window teaches what it shows: a trader's stock as it lists it, his ruck without it
-    "trade_all": ('function() return { sold = who } end, stock)', 'function() return { sold = who } end)'),
+    "trade_all": ('function() return { sold_by = { [key] = who } } end,\n            stock)',
+                  'function() return { sold_by = { [key] = who } } end)'),
     "cells_unread": ("        if #lists == 0 then\n            partner:iterate_ruck(fn, partner)",
                      "        if true then\n            partner:iterate_ruck(fn, partner)"),
     "ruck_all": ("            partner:iterate_ruck(fn, partner)", "            partner:iterate_inventory(fn, partner)"),
@@ -322,8 +327,28 @@ MUTANTS = {
                    "    if not willing(npc) then return false end"),
     "talk_enemy": ("        and not (npc.relation and npc:relation(db.actor) == game_object.enemy)", ""),
     "talk_specs": ("specs = KNOWS_SPECS[rank] == true", "specs = false"),
-    "gunsmith_known": ("if not st.known[e.sec] and arsenal_data.special(e.sec) then list[#list + 1] = e end",
+    "gunsmith_known": ("if not heard_of(e) and arsenal_data.special(e.sec) then list[#list + 1] = e end",
                        "if arsenal_data.special(e.sec) then list[#list + 1] = e end"),
+    # a talk's pick is kept for that fighter only, and while it is still news
+    "offer_stale": ("    if t and heard_of(t.e) then return nil end\n", ""),
+    "can_pay_stale": ("    local t = offer_of(npc_of(a, b))\n    return t ~= nil and db.actor:money() >= t.price",
+                      "    local t = mine(offers, npc_of(a, b))\n    return t ~= nil and db.actor:money() >= t.price"),
+    "pay_stale": ("    local t = offer_of(npc)\n    if not t then return end\n    pay(npc, t.price)",
+                  "    local t = mine(offers, npc)\n    if not t then return end\n    pay(npc, t.price)"),
+    "rumor_stale": ("    if t and heard_of(t.g.e) then t = nil end\n", ""),
+    "picks_any_owner": ("    if t and t.who ~= whose(npc) then return nil end\n", ""),
+    # a gun the player has had (his collection) is no news, nor word to pass on or sell
+    "owned_news": ("    local owned = new and had(e)\n", "    local owned = false\n"),
+    "gear_owned": ("        if not heard_of(g.e) then\n            local low", "        if not st.known[g.e.sec] then\n            local low"),
+    "gunsmith_owned": ("if not heard_of(e) and arsenal_data.special(e.sec) then",
+                       "if not st.known[e.sec] and arsenal_data.special(e.sec) then"),
+    # who sold a model: each trader by a key of his own, shown by his name
+    "trader_by_name": ('    if ok and type(sid) == "string" and sid ~= "" then return sid end\n', ""),
+    "trader_profile_dropped": ('    return (okP and type(p) == "string" and p ~= "" and (p .. "|") or "") .. tostring(who)',
+                               "    return tostring(who)"),
+    "sold_legacy_unread": ('        for n in pairs(type(fx.sold) == "table" and fx.sold or {}) do add(n) end\n', ""),
+    "sold_names_twice": ('        if type(n) == "string" and n ~= "" and not seen[n] then',
+                         '        if type(n) == "string" and n ~= "" then'),
     "gunsmith_money": ("    return t ~= nil and db.actor:money() >= t.price", "    return t ~= nil"),
     "pay_by_transfer": ("    pay(npc, t.price)", "    dialogs.relocate_money_from_actor(a, b, t.price)"),
     "pay_npc_unpaid": ("    npc:give_money(price)\n", ""),
@@ -663,10 +688,12 @@ def main():
     gui = lua.table_from({"mode": "trade", "npc_is_box": False})
     gui.IsShown = lua.eval("function(self) return SHOWN end")
     trader = g.person(400, "stalker", "novice", lua.table_from(["wpn_trade"]), lua.table_from({"name": "Sidorovich"}))
+    lua.execute('STORY[400] = "esc_m_trader"')
     gui.GetPartner = lua.eval("function(p) return function() return p end end")(trader)
     g.ui_inventory = lua.table_from({"GUI": gui})
     run(lambda: cb.GUI_on_show("UIInventory"))
-    check(facts("wpn_trade", "sold") == {"Sidorovich": True}, "a trader's stock: sold by him: %s" % facts("wpn_trade", "sold"))
+    check(facts("wpn_trade", "sold_by") == {"esc_m_trader": "Sidorovich"},
+          "a trader's stock: sold by him, kept by his story id: %s" % facts("wpn_trade", "sold_by"))
     rec = st().known["wpn_trade"]
     page = rec and run(lambda: m.describe(rec.how, rec.at))
     check(page == "Sidorovich in Garbage, at the Depot", "and on its page, where: %s" % page)
@@ -706,7 +733,7 @@ def main():
     gui.CC = g.cells(lua.eval('{ npc_trade_bag = { { 4101, "wpn_trade" } }, npc_trade = {} }'))
     run(lambda: cb.GUI_on_show("UIInventory"))
     run(lambda: g.run_timers())
-    check(known() == ["wpn_trade"] and facts("wpn_trade", "sold") == {"Owl": True} and st().facts["wpn_mono"] is None
+    check(known() == ["wpn_trade"] and facts("wpn_trade", "sold_by") == {"Owl": "Owl"} and st().facts["wpn_mono"] is None
           and list(g.NEWS.values()) == ["Learned from Owl: Trade Knife"],
           "a trader's stock as the window lists it, not the gun in his slot: %s %s" % (known(), list(g.NEWS.values())))
     m.reset()
@@ -716,6 +743,33 @@ def main():
     gui.GetPartner = partner_of(beard)
     run(lambda: cb.GUI_on_show("UIInventory"))
     check(known() == ["wpn_trade"], "a trade window without cells of its own: his ruck, not his slots: %s" % known())
+
+    # "Sold by" keeps each trader by a key of his own: his story id, else his profile and name. A
+    # trader whose name now reads otherwise (another language) is one trader still, by the name he
+    # has now; two traders of one name stay two. The page lists the names once each, sorted, and
+    # the names 1.8.5 and earlier kept (sold, by name alone) with them.
+    m.reset()
+    gui.CC = None
+    sid = g.person(400, "stalker", "novice", lua.table_from(["wpn_trade"]), lua.table_from({"name": "Sidorovich"}))
+    gui.GetPartner = partner_of(sid)
+    run(lambda: cb.GUI_on_show("UIInventory"))
+    sid2 = g.person(400, "stalker", "novice", lua.table_from(["wpn_trade"]), lua.table_from({"name": "Sidorovich-ru"}))
+    gui.GetPartner = partner_of(sid2)
+    run(lambda: cb.GUI_on_show("UIInventory"))
+    check(facts("wpn_trade", "sold_by") == {"esc_m_trader": "Sidorovich-ru"},
+          "a story trader by his story id: one trader under a new name: %s" % facts("wpn_trade", "sold_by"))
+    for pid, prof in ((420, "sim_trader_a"), (421, "sim_trader_b")):
+        gui.GetPartner = partner_of(g.person(pid, "stalker", "novice", lua.table_from(["wpn_trade"]),
+                                             lua.table_from({"name": "Ivan", "profile": prof})))
+        run(lambda: cb.GUI_on_show("UIInventory"))
+    keys = sorted(facts("wpn_trade", "sold_by").keys())
+    check(keys == ["esc_m_trader", "sim_trader_a|Ivan", "sim_trader_b|Ivan"],
+          "two traders of one name, by profile: two: %s" % keys)
+    fx = lua.eval('{ sold_by = { a = "Owl", b = "Owl", c = "Beard" }, sold = { Owl = true, Sidorovich = true } }')
+    names = run(lambda: list(m.sold_names(fx).values()))
+    check(names == ["Beard", "Owl", "Sidorovich"] and len(m.sold_names(None)) == 0,
+          "the page's names: sorted, each once, with those an older Arsenal kept: %s" % names)
+    lua.execute("STORY[400] = nil")
 
     # a stash fills as it opens (treasure_manager spawns its loot), after its window says it is open:
     # looked into again a moment later, while the window is still open on it, it teaches what came,
@@ -894,6 +948,88 @@ def main():
     check(off == (True, False) and back is True and older is True,
           "the paid talk off: no offer, the free talk stays; on again, offered; without the option, offered: "
           "%s %r %r" % (off, back, older))
+
+    # Every technician and trader the player talks to picks a special gun as his talk opens. Two
+    # may pick one gun: bought from one, the other sells it no more, and picks again (nothing is
+    # left here, so no offer)
+    m.reset()
+    g.MONEY = 20000
+    a1 = g.person(900, "stalker", "expert", None, lua.table_from({"name": "Cardan"}))
+    b1 = g.person(901, "dolg", "expert", None, lua.table_from({"name": "Mangun"}))
+    both = (run(lambda: m.gunsmith_ok(g.db.actor, a1)), run(lambda: m.gunsmith_ok(g.db.actor, b1)))
+    run(lambda: m.gunsmith_pay(g.db.actor, a1))
+    run(lambda: m.gunsmith_told(a1, "arsenal_gunsmith", "4"))
+    again = run(lambda: m.gunsmith_ok(g.db.actor, b1))
+    check(both == (True, True) and g.MONEY == 17000 and again is False,
+          "two picked one gun: bought from one, the other offers it no more: %s %s %s" % (both, g.MONEY, again))
+    # heard of meanwhile, while his talk is open: no "yes" for it, and nothing charged at the "yes"
+    m.reset()
+    g.MONEY = 20000
+    c1 = g.person(902, "stalker", "expert", None, lua.table_from({"name": "Cardan"}))
+    offered = run(lambda: m.gunsmith_ok(g.db.actor, c1))
+    run(lambda: m.reveal("wpn_special", lua.table_from({"kind": "found"}), None, True, True))
+    yes = run(lambda: m.gunsmith_can_pay(g.db.actor, c1))
+    run(lambda: m.gunsmith_pay(g.db.actor, c1))
+    check(offered is True and yes is False and g.MONEY == 20000 and c1.purse == 0,
+          "heard of since his offer: no yes, and nothing charged: %s %s %s" % (offered, yes, g.MONEY))
+    # a new technician given a released one's id picks his own offer, priced as it stands now
+    m.reset()
+    d1 = g.person(903, "stalker", "expert", None, lua.table_from({"name": "Cardan"}))
+    run(lambda: m.gunsmith_ok(g.db.actor, d1))
+    first = run(lambda: m.gunsmith_offer(d1, "arsenal_gunsmith", "1"))
+    g.release(903)
+    g.COST.wpn_special = 50000
+    d2 = g.person(903, "stalker", "expert", None, lua.table_from({"name": "Hermann"}))
+    run(lambda: m.gunsmith_ok(g.db.actor, d2))
+    second = run(lambda: m.gunsmith_offer(d2, "arsenal_gunsmith", "1"))
+    g.COST.wpn_special = 30000
+    check("3000" in str(first) and "5000" in str(second),
+          "a new technician given his id: his own offer: %r %r" % (first, second))
+
+    # a fighter's word, picked as his talk opens: heard of since, he tells something else; a new
+    # fighter given a released one's id has his own word, here none (a Bandit knows nothing here)
+    m.reset()
+    g.math.randomseed(4)
+    teller = g.person(910, "dolg", "legend", None, lua.table_from({"name": "Duty legend"}))
+    run(lambda: m.rumor_ok(g.db.actor, teller))
+    said = run(lambda: m.rumor_text(teller, "arsenal_rumor", "1"))
+    told = [s for s, e in M.items() if e.name in str(said)]
+    for s in told:
+        run(lambda: m.reveal(s, lua.table_from({"kind": "found"}), None, False, True))
+    n0 = len(known())
+    run(lambda: m.rumor_ok(g.db.actor, teller))
+    said2 = run(lambda: m.rumor_text(teller, "arsenal_rumor", "1"))
+    run(lambda: m.rumor_told(teller, g.db.actor, "arsenal_rumor", "1"))
+    check(len(told) == 1 and said2 != said and len(known()) == n0 + 1,
+          "heard of since he picked it: he tells something new: %r then %r, %s learned" % (said, said2, len(known()) - n0))
+    m.reset()
+    run(lambda: m.rumor_ok(g.db.actor, g.person(911, "dolg", "legend", None, lua.table_from({"name": "Duty legend"}))))
+    g.release(911)
+    other = run(lambda: m.rumor_ok(g.db.actor, g.person(911, "bandit", "novice", None, lua.table_from({"name": "Bandit"}))))
+    check(other is False, "a new fighter given a released one's id: his own word, not the other's: %s" % other)
+
+    # A gun the player has had (his collection, here only: a save begun before Arsenal kept what
+    # he learned) is no news: known, but not announced, marked new or counted new; no tally, talk
+    # or PDA tells of it, and no technician sells word of it
+    m.reset()
+    g.NEWS, g.TIMERS = lua.table_from({}), lua.table_from({})
+    g.FOUND["wpn_army"] = lua.table_from({})
+    got = run(lambda: m.reveal("wpn_army", lua.table_from({"kind": "tally", "faction": "army"})))
+    run(lambda: g.run_timers())
+    check(got is None and "wpn_army" in known() and "wpn_army" not in new() and len(g.NEWS) == 0,
+          "one he has had: known, no news, not new: %s %s %s" % (got, new(), list(g.NEWS.values())))
+    g.FOUND["wpn_army"] = None
+    m.reset()
+    g.FOUND["wpn_free"] = lua.table_from({})
+    for i in range(10):
+        run(lambda: cb.npc_on_death_callback(g.person(920 + i, "freedom", "novice"), g.db.actor))
+    check("wpn_free" not in known(), "ten kills of Freedom tell nothing of the gun he has had: %s" % known())
+    g.FOUND["wpn_free"] = None
+    m.reset()
+    g.FOUND["wpn_special"] = lua.table_from({})
+    sold = run(lambda: m.gunsmith_ok(g.db.actor, g.person(930, "stalker", "expert", None, lua.table_from({"name": "Cardan"}))))
+    g.FOUND["wpn_special"] = None
+    check(sold is False, "no technician sells word of a gun he has had: %s" % sold)
 
     # news: one line per source, three names then how many more; seen pages no longer new
     m.reset()

@@ -677,7 +677,10 @@ MUTANTS = {
                   "    -- what fits it, its camos, parts and repair kits, once it is studied\n    if true then"),
     "facts_rows": ("        if full then return rows end\n", ""),
     "facts_stash": ('        line(string.format(game.translate_string("st_arsenal_stashes_seen"), table.concat(names, ", ")))\n', ""),
-    "facts_sold": ('        line(string.format(game.translate_string("st_arsenal_sold_at"), table.concat(names, ", ")))\n', ""),
+    "facts_sold": ('        line(string.format(game.translate_string("st_arsenal_sold_at"), table.concat(sellers, ", ")))\n', ""),
+    # "Seen for sale at" from the old record alone, as 1.8.5 read it: the traders kept by trader drop out
+    "sold_by_unread": ("arsenal_intel and arsenal_intel.sold_names and arsenal_intel.sold_names(fx) or {}",
+                       "(function() local t = {} for n in pairs(fx.sold or {}) do t[#t + 1] = n end table.sort(t) return t end)()"),
     "kit_mine": ("            if f == mine then has = true end\n", ""),
     "where_unknown": ('line(game.translate_string(full and "st_arsenal_no_source" or "st_arsenal_where_unknown"), "dim")',
                       'line(game.translate_string("st_arsenal_no_source"), "dim")'),
@@ -710,6 +713,8 @@ MUTANTS = {
     "sources_no_files": ("            for _, f in ipairs(src.files) do\n", "            for _, f in ipairs({}) do\n"),
     "show_next_ignored": ("            self.cat, self.sec = e.cat, e.sec\n", ""),
     "show_next_sticky": ("        next_sec = nil\n        if e and listed(e) then", "        if e and listed(e) then"),
+    "show_next_filtered": ("            view.show = self:ShowFor(e)\n", ""),
+    "show_next_filter_reset": ('and show or "all"\nend', 'and "all" or "all"\nend'),
     # 1.8: groups that fold, the Show and Sort boxes, icons in the rows, the page opened where it was left
     "group_flat": ("    return arsenal_data.GROUPS or {", "    return nil or {"),
     "group_no_heading": ("            if g.flat or #g.cats < 2 then", "            if true then"),
@@ -773,6 +778,10 @@ MUTANTS = {
     "restore_now": ("    self.restore = kept\n", "    self.restore = kept\n    self:Restore()\n"),
     "restore_cat_lost": ("    self.cat = view.cat or self.cat\n", ""),
     "restore_no_reveal": ("        if i and i >= 0 then scroll_to(self.wpn_list, math.max(0, i - 3) * MODEL_ROW_H) end\n", ""),
+    "refill_kept_out_of_view": ("        if (keep + 1) * MODEL_ROW_H > self.wpn_list:GetHeight() then self.restore = { reveal = true } end\n",
+                                ""),
+    "refill_always_reveals": ("        if (keep + 1) * MODEL_ROW_H > self.wpn_list:GetHeight() then self.restore",
+                              "        if true then self.restore"),
     # Back, with MAC's tile or without it (the page; then arsenal_pages, PAGES_MUTANTS)
     "back_unplaced": ("    arsenal_pages.show_back(self.back_row, self.flat)\n    self:SetCounts()", "    self:SetCounts()"),
     "back_row_empty": ("arsenal_pages.back_row(self.btn_back, self.action_btns)", "arsenal_pages.back_row(self.btn_back, {})"),
@@ -1193,7 +1202,7 @@ def main():
 KNOWN = { wpn_pm = true, wpn_fort = true, wpn_ak74 = true }
 STUDIED = {}
 NEW = { wpn_pm = true, wpn_ghost = true }
-FACTS = { wpn_pm = { stash = { l02_garbage = true }, sold = { Sidorovich = true } },
+FACTS = { wpn_pm = { stash = { l02_garbage = true }, sold = { Sidorovich = true }, sold_by = { jup_b6_trader = "Owl" } },
           wpn_fort = { carried = { bandit = { trainee = true }, stalker = { legend = true } }, ways = { kit = true } } }
 LEARNED = { wpn_pm = { at = { d = 3, mo = 6, y = 2012, lvl = "l01_escape" }, how = { kind = "pda" } } }
 arsenal_intel = {
@@ -1201,6 +1210,14 @@ arsenal_intel = {
     listed = function(e) return KNOWN[e.sec] == true end,
     studied = function(e) return STUDIED[e.sec] == true end,
     facts = function(e) return FACTS[e.sec] end,
+    -- as arsenal_intel's: the names by trader, then those an older Arsenal kept by name
+    sold_names = function(fx)
+        local t, seen = {}, {}
+        for _, n in pairs(fx and fx.sold_by or {}) do if not seen[n] then seen[n] = true; t[#t + 1] = n end end
+        for n in pairs(fx and fx.sold or {}) do if not seen[n] then seen[n] = true; t[#t + 1] = n end end
+        table.sort(t)
+        return t
+    end,
     learned = function(e) return LEARNED[e.sec] end,
     describe = function(how, at) return "a Duty PDA" .. (at and at.lvl and (" in " .. game.translate_string(at.lvl)) or "") end,
     is_new = function(e) return NEW[e.sec] == true end,
@@ -1269,8 +1286,8 @@ arsenal_intel = {
           and any(t.startswith("Not studied yet") for t in texts),
           "a known model not yet studied: how it was learned, no stats: %s %s" % (stats, texts[:5]))
     check(ui.cmp_add.shown is False and ui.cmp_status.text == "", "and no Compare: its stats are unknown")
-    check(texts[i + 1:i + 3] == ["Seen in stashes at Garbage", "Seen for sale at Sidorovich"],
-          "where to find it: only where it was seen: %s" % texts[i:i + 3])
+    check(texts[i + 1:i + 3] == ["Seen in stashes at Garbage", "Seen for sale at Owl, Sidorovich"],
+          "where to find it: only where it was seen, traders kept by trader and by name alike: %s" % texts[i:i + 3])
     # a click on it, though it is shown already: read, like an opened letter
     pm_glow, cat_glow = rows[0].glow, cat.glow
     ui.wpn_list.sel = 0
@@ -1658,6 +1675,21 @@ arsenal_intel = {
     ui.cb.cat_list()
     ui = m.get_ui()
     check(ui.cat == "pistols", "and only once: the open after it keeps the page as left: %s" % ui.cat)
+    # a model the Show box's choice leaves out (Found, and the PM not found) is shown all the
+    # same, the box gone to All; one it lists (the Fort-17, found) leaves the choice alone
+    show_only(ui, "found")
+    m.show_next("wpn_pm")
+    ui = m.get_ui()
+    pm_rows = [r.key for r in ui.wpn_list["items"].values()]
+    check(ui.sec == "wpn_pm" and "wpn_pm" in pm_rows and ui.show_box.text == "All",
+          "show_next past the Show box: the model shown and listed, the box on All: %s %s %s"
+          % (ui.sec, pm_rows, ui.show_box.text))
+    show_only(ui, "found")
+    m.show_next("wpn_fort17")
+    ui = m.get_ui()
+    check(ui.sec == "wpn_fort" and ui.show_box.text == "Found",
+          "show_next on a model the box lists: its choice kept: %s %s" % (ui.sec, ui.show_box.text))
+    show_only(ui, "all")
 
     # Mark all read: shown while anything is new; a click reads it all, glows and count with it
     g.arsenal_intel = intel
@@ -1985,6 +2017,62 @@ end
     i = model_names(ui).index("X6") if "X6" in model_names(ui) else -1
     check(ui.sec == "wpn_x6" and i == 8 and ui.wpn_list.scroll == (i - 3) * row_h,
           "show_next: its row scrolled into view, a few rows below the top: %s %s %s" % (ui.sec, i, ui.wpn_list.scroll))
+    lua.execute("arsenal_data.list, arsenal_data.get = BASE_LIST, BASE_GET")
+    # the list filled anew (the order turned round, as Sort, Show and Mark all read refill it):
+    # the model chosen, kept, comes into view at the next update when it lands below what the
+    # list shows; one still in view leaves the list at its top
+    lua.execute("""
+LONG = {}
+for i = 1, 24 do
+    local sec = string.format("wpn_y%02d", i)
+    local e = { name = string.format("Y%02d", i), sec = sec, cat = "pistols", variants = { { sec = sec, name = sec } } }
+    e.variants[1].entry = e
+    LONG[#LONG + 1] = e
+end
+BASE_LIST, BASE_GET = arsenal_data.list, arsenal_data.get
+arsenal_data.list = function(c)
+    if c ~= "pistols" then return BASE_LIST(c) end
+    local out = {}
+    for _, e in ipairs(BASE_LIST(c)) do out[#out + 1] = e end
+    for _, e in ipairs(LONG) do out[#out + 1] = e end
+    return out
+end
+arsenal_data.get = function(s)
+    for _, e in ipairs(LONG) do if e.sec == s then return e end end
+    return BASE_GET(s)
+end
+""")
+    ui = m.get_ui()
+    ui.Update(ui)
+    keys_cat = [r.key for r in ui.cat_list["items"].values()]
+    ui.cat_list.sel = keys_cat.index("pistols")
+    ui.cb.cat_list()
+    ui.wpn_list.sel = 0
+    ui.cb.wpn_list()
+    kept = ui.sec
+    ui.cb.sort_dir()
+    ui.Update(ui)
+    names = model_names(ui)
+    i = [r.key for r in ui.wpn_list["items"].values()].index(kept) if kept else -1
+    below = (i + 1) * row_h > sz["wpn_list"][3]
+    check(ui.sec == kept and below and ui.wpn_list.sel == i and ui.wpn_list.scroll == (i - 3) * row_h,
+          "the order turned round: the model kept, last now, scrolled into view: %s %s of %d, %s"
+          % (ui.sec, i, len(names), ui.wpn_list.scroll))
+    ui.cb.sort_dir()
+    ui.Update(ui)
+    i = [r.key for r in ui.wpn_list["items"].values()].index(kept) if kept else -1
+    check(ui.sec == kept and i == 0 and ui.wpn_list.scroll == 0,
+          "turned back: the model first again, the list at its top: %s %s %s" % (ui.sec, i, ui.wpn_list.scroll))
+    ui.wpn_list.sel = 12
+    ui.cb.wpn_list()
+    kept = ui.sec
+    ui.cb.sort_dir()
+    ui.Update(ui)
+    i = [r.key for r in ui.wpn_list["items"].values()].index(kept) if kept else -1
+    check(ui.sec == kept and 3 < i and (i + 1) * row_h <= sz["wpn_list"][3] and ui.wpn_list.scroll == 0,
+          "one that lands where the list still shows it: the list left at its top: %s %s %s"
+          % (ui.sec, i, ui.wpn_list.scroll))
+    ui.cb.sort_dir()
     lua.execute("arsenal_data.list, arsenal_data.get = BASE_LIST, BASE_GET")
 
     # what goes on a gun, while immersive: a category of its own; its page says what it fits (the

@@ -35,6 +35,9 @@ local MARKS = {
     parent = "ui_inGame2_workshop_upgr_dark",
 }
 local pending    -- what to show next time the page opens: { sec, id }
+-- how long an upgrade's or attachment's details stay once the cursor leaves it (ms), so it can
+-- reach them in the details panel, where they stay while it is there
+local GRACE = 1500
 
 local function T(id, ...)
     local s = game.translate_string(id)
@@ -64,6 +67,15 @@ local function count(set)
     local n = 0
     for _ in pairs(set) do n = n + 1 end
     return n
+end
+
+-- a scroll view back where it was scrolled, as far as it still reaches. The engine's SetScrollPos
+-- measures the view first and keeps the position within it (CUIScrollView::SetScrollPos), so it
+-- is left to that. GetMaxScrollPos is the size the view last measured: read after a refill, before
+-- the view's next update, it gave 1 in game (2026-10-31) for an AK-74N tree 600 tall
+local function scroll_to(ctrl, pos)
+    if not (ctrl and pos) then return end
+    ctrl:SetScrollPos(math.max(0, pos))
 end
 
 -- an inventory icon on a static made once: fitted into a box at most at its own size, centered
@@ -277,6 +289,9 @@ function WorkbenchPDA:Reset(want)
         self.entries[#self.entries + 1] = { key = "sec:" .. s, sec = s, name = name_of(s) }
     end
     local key = self.cur and self.cur.key
+    -- the item shown last, made anew under another id since (a scope put on or taken off)
+    local moved = self.cur and self.cur.id and arsenal_workbench.moved_id(self.cur.id)
+    if moved and moved ~= self.cur.id then key = "id:" .. moved end
     if want then
         if want.id and ids[want.id] then
             key = "id:" .. want.id
@@ -348,8 +363,9 @@ function WorkbenchPDA:Select(e)
     self.installed = W.as_set(self.inst_list)
     local plan, att = W.plan_of(e.id, e.sec)
     self.plan = W.valid(self.t, self.installed, plan)
-    self.att = att
-    if count(self.plan) ~= count(plan) then
+    local _, ups = self:Lists()
+    self.att = W.fitted(e.sec, ups, att)
+    if count(self.plan) ~= count(plan) or count(self.att) ~= count(att) then
         W.set_plan(e.id, e.sec, self.plan, self.att)
     end
     -- what is attached now: a carried gun's suppressor and launcher, as the engine says
@@ -395,14 +411,16 @@ end
 -- drawing
 ---------------------------------------------------------------------------------------------
 
-function WorkbenchPDA:Refresh()
+-- everything drawn anew; `keep`: the same item, its tree left scrolled where it was
+function WorkbenchPDA:Refresh(keep)
     local e = self.cur
     self.title:SetText(e and e.name or "")
-    self:FillTree()
+    self:FillTree(keep)
     self:FillCard()
     self:FillKits()
     self:FillAttachments()
     self:UpdateButtons()
+    self.hover, self.left_at = nil, nil
     self:ShowInfo(nil)
 end
 
@@ -413,9 +431,13 @@ local function put_row(view, f, open)
     view:AddWindow(f.st, true)
 end
 
-function WorkbenchPDA:FillTree()
+function WorkbenchPDA:FillTree(keep)
     -- Clear frees what the scroll view owns, so the rows are let go of first; every one goes
-    -- back below, whatever the filling does
+    -- back below, whatever the filling does. Clear also scrolls the view to its top
+    -- (CUIScrollView::Clear), and a click on a lower row would lose it from view: the same item's
+    -- tree goes back where it was scrolled at the next update, once the view has measured its rows
+    -- (as the catalog's lists do); another item's starts at its top.
+    self.tree_scroll = keep and self.tree_view:GetCurrentScrollPos() or nil
     for _, f in ipairs(self.forms) do
         f.st:SetAutoDelete(false)
     end
@@ -662,13 +684,16 @@ function WorkbenchPDA:ShowInfo(what)
         elseif why == nil then
             line(T("st_arsenal_wb_install_hint"), "dim")
         end
+        -- what the last handoff of this very item left unchecked, but what it has got since
         local last = arsenal_workbench.last_install
-        if last and last.sec == e.sec and last.left and #last.left > 0 then
+        if e.id and last and last.id == e.id and last.left then
             local names = {}
             for _, u in ipairs(last.left) do
-                names[#names + 1] = T(ini_sys:r_string_ex(u, "name") or u)
+                if not self.installed[u] then
+                    names[#names + 1] = T(ini_sys:r_string_ex(u, "name") or u)
+                end
             end
-            line(T("st_arsenal_wb_left", table.concat(names, ", ")), "warn")
+            if #names > 0 then line(T("st_arsenal_wb_left", table.concat(names, ", ")), "warn") end
         end
     end
     box:SetWndSize(vector2():set(box:GetWidth(), y))
@@ -690,11 +715,17 @@ function WorkbenchPDA:CellInfo(r, c, line)
         local p = W.partner(t, r, c)
         line(T("st_arsenal_wb_state_partner", T(p.name or p.section)), "dim")
     elseif st == "parent" then
-        local names = {}
+        -- what its row has that opens it; with one of those in already, what is missing is an
+        -- upgrade of another row's group (the engine's rule)
+        local names, opener_in = {}, false
         for _, pc in ipairs(W.parents(t, r, c)) do
-            names[#names + 1] = T(t[r][pc].name or t[r][pc].section)
+            local p = t[r][pc]
+            if self.installed[p.section] or self.plan[p.section] then opener_in = true end
+            names[#names + 1] = T(p.name or p.section)
         end
-        line(#names > 0 and T("st_arsenal_wb_state_parent", table.concat(names, T("st_arsenal_wb_or")))
+        -- the string table trims a text's ends, so the spaces around "or" are added here
+        local sep = " " .. (T("st_arsenal_wb_or"):gsub("^%s+", ""):gsub("%s+$", "")) .. " "
+        line((#names > 0 and not opener_in) and T("st_arsenal_wb_state_parent", table.concat(names, sep))
             or T("st_arsenal_wb_state_group"), "dim")
     else
         line(T("st_arsenal_wb_state_" .. st), st == "installed" and "good" or (st == "planned" and "heading" or "dim"))
@@ -732,9 +763,15 @@ end
 
 -- the details follow the cursor over the tree and the attachment buttons. This runs every frame
 -- the page shows, so it makes no table until the cursor moves onto something else: the key
--- ("r_c" for a cell, "att<i>" for an attachment) is a string the game already holds.
+-- ("r_c" for a cell, "att<i>" for an attachment) is a string the game already holds. Off them,
+-- the details stay a moment (GRACE), and as long as the cursor is on the details panel, its
+-- scrollbar included, so what an upgrade does below its description can be scrolled to.
 function WorkbenchPDA:Update()
     CUIScriptWnd.Update(self)
+    if self.tree_scroll then
+        scroll_to(self.tree_view, self.tree_scroll)
+        self.tree_scroll = nil
+    end
     local r0, c0, a0
     if self.t then
         for r, f in ipairs(self.forms) do
@@ -751,6 +788,16 @@ function WorkbenchPDA:Update()
         end
     end
     local key = (r0 and r0 .. "_" .. c0) or (a0 and "att" .. a0) or nil
+    if key == nil and self.hover ~= nil then
+        if self.info:IsCursorOverWindow() then
+            self.left_at = nil
+            return
+        end
+        local now = time_global()
+        self.left_at = self.left_at or now
+        if now - self.left_at < GRACE then return end
+    end
+    self.left_at = nil
     if key ~= self.hover then
         self.hover = key
         self:ShowInfo((r0 and { cell = { r0, c0 } }) or (a0 and { att = a0 }) or nil)
@@ -781,8 +828,11 @@ function WorkbenchPDA:OnCell(r, c)
         return
     end
     self.plan = plan
+    -- a suppressor or launcher whose mount left with the upgrade unplanned leaves the plan too
+    local _, ups = self:Lists()
+    self.att = arsenal_workbench.fitted(self.cur.sec, ups, self.att)
     self:Save()
-    self:Refresh()
+    self:Refresh(true)
     self.hover = r .. "_" .. c
     self:ShowInfo({ cell = { r, c } })
 end
@@ -822,7 +872,7 @@ function WorkbenchPDA:OnAttachment(i)
         self.att[slot] = want
     end
     self:Save()
-    self:Refresh()
+    self:Refresh(true)
     self.hover = "att" .. i
     self:ShowInfo({ att = i })
 end
@@ -831,7 +881,7 @@ function WorkbenchPDA:OnClear()
     if not self.cur then return end
     self.plan, self.att = {}, {}
     self:Save()
-    self:Refresh()
+    self:Refresh(true)
 end
 
 function WorkbenchPDA:OnInstall()

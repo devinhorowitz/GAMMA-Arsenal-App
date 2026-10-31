@@ -357,6 +357,8 @@ function ArsenalPDA:Reset()
             last_key[by_faction] = self.cat
             by_faction = false
             self.cat, self.sec = e.cat, e.sec
+            -- one the Show box's choice leaves out is shown all the same: the box goes to All
+            view.show = self:ShowFor(e)
             same = false
         end
     end
@@ -665,6 +667,15 @@ local function passes(show, found, new)
     return true
 end
 
+-- the Show box's choice that lists a model another app asked for (show_next, Reset): the one
+-- chosen when it lists the model (New lists everything while discovery is off, as in
+-- FillWeapons), else All
+function ArsenalPDA:ShowFor(e)
+    local show = view.show
+    if show == "new" and not immersive() then return show end
+    return passes(show, arsenal_collection.entry_found(e) ~= nil, is_new(e)) and show or "all"
+end
+
 ---------------------------------------------------------------------------------------------
 -- The model list's order (the Sort box): by name; the finds, newest first; a stat of the card,
 -- most first; the weight, lightest first; for rounds, damage and armor piercing; with the
@@ -915,6 +926,9 @@ function ArsenalPDA:FillWeapons()
     if keep then
         self.wpn_list:SetSelectedIndex(keep)
         self:ShowEntry(self.sec)
+        -- filled anew, the list is at its top: a row kept below what it shows comes into view, as
+        -- on another app's model (Restore, at the next update; an open sets its own scrolling)
+        if (keep + 1) * MODEL_ROW_H > self.wpn_list:GetHeight() then self.restore = { reveal = true } end
     elseif first then
         self.wpn_list:SetSelectedIndex(0)
         self:ShowEntry(first)
@@ -1663,11 +1677,11 @@ function ArsenalPDA:ShowEntry(sec)
     elseif up.trader then
         line(game.translate_string("st_arsenal_sold_by"))
     end
-    if fx.sold then
-        local names = {}
-        for n in pairs(fx.sold) do names[#names + 1] = n end
-        table.sort(names)
-        line(string.format(game.translate_string("st_arsenal_sold_at"), table.concat(names, ", ")))
+    -- the traders seen selling it, each once (arsenal_intel.sold_names: by trader, and by name as
+    -- 1.8.5 and earlier kept them)
+    local sellers = arsenal_intel and arsenal_intel.sold_names and arsenal_intel.sold_names(fx) or {}
+    if #sellers > 0 then
+        line(string.format(game.translate_string("st_arsenal_sold_at"), table.concat(sellers, ", ")))
     end
     if up.story then
         local names = {}
@@ -2062,9 +2076,9 @@ end
 --     ui_arsenal.add_action("workbench", { label = "st_workbench_customize",
 --         show = function(sec) return <whether it applies to this section> end,
 --         run = function(sec) <open the app on that section> end })
--- `sec` is the section the page shows (the first found variant, else the first). The button
--- shows only on the pages it applies to, at most three apps' at once; adding an id again
--- replaces it.
+-- `sec` is the section the page shows (the first found variant, else the first). The page has
+-- one button (MAX_ACTIONS): the first app added whose `show` applies to the section has it, the
+-- rest none. Adding an id again replaces it, last in that order.
 function add_action(id, def)
     assert(type(id) == "string" and type(def) == "table" and type(def.run) == "function",
         "ui_arsenal.add_action(id, { label, show, run }): id a string, run a function")

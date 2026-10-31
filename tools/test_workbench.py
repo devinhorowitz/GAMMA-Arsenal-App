@@ -20,7 +20,8 @@ SRC = io.open(os.path.join(HERE, "..", "gamedata", "scripts", "arsenal_workbench
 # Kiparis has them: the fourth row's c/d group is opened by its a and by the fifth row's c/d.
 SECTIONS = {
     "wpn_test": dict(upgrades="up_gr_firstab_t, up_gr_secona_t, up_gr_thirda_t, up_gr_fourta_t, up_gr_fiftha_t",
-                     installed_upgrades="up_firsta_t, up_secona_t", inv_name="st_test", parent_section="wpn_test"),
+                     installed_upgrades="up_firsta_t, up_secona_t", inv_name="st_test", parent_section="wpn_test",
+                     inv_weight="3"),
     "up_gr_firstab_t": dict(elements="up_firsta_t, up_firstb_t"),
     "up_firsta_t": dict(section="s_firsta", property="prop_recoil", effects="up_gr_firstcd_t"),
     "up_firstb_t": dict(section="s_firstb", property="prop_weight"),
@@ -50,7 +51,8 @@ SECTIONS = {
     "up_gr_fifthcd_t": dict(elements="up_fifthc_t, up_fifthd_t"),
     "up_fifthc_t": dict(section="s_fifthc", property="prop_calibre", effects="up_gr_fourtcd_t"),
     "up_fifthd_t": dict(section="s_fifthd", property="prop_rpm", effects="up_gr_fourtcd_t"),
-    # change sections: a suppressor mount on f, a launcher mount on the fifth row's a
+    # change sections, each adding 0.1 kg as it goes in: a suppressor mount on f, a launcher mount
+    # on the fifth row's a
     "s_firsta": {}, "s_firstb": {}, "s_firstc": {}, "s_firstd": {}, "s_firste": {},
     "s_firstf": dict(silencer_status="2", silencer_name="sil_up"),
     "s_secona": {}, "s_seconc": {}, "s_secone": {}, "s_thirda": {}, "s_fourta": {}, "s_fourtc": {}, "s_fourtd": {},
@@ -59,9 +61,33 @@ SECTIONS = {
     "s_fifthc": {}, "s_fifthd": {},
     "sil_up": dict(inv_weight="0.4"), "gl_up": dict(inv_weight="1.3"), "sil_own": dict(inv_weight="0.3"),
     "scope_a": dict(inv_weight="0.25"), "scope_b": dict(inv_weight="0.5"),
-    # a gun with its own suppressor mount, its scoped combination, a suit, a helmet, a knife
-    "wpn_own": dict(upgrades="up_gr_thirda_t", silencer_status="2", silencer_name="sil_own", inv_name="st_own"),
-    "wpn_own_scope_a": dict(parent_section="wpn_own", upgrades="up_gr_thirda_t", inv_name="st_own"),
+    # a gun with its own suppressor mount, its scoped combination (whose own inv_weight counts the
+    # scope, as many of GAMMA's do), a suit, a helmet, a knife
+    "wpn_own": dict(upgrades="up_gr_thirda_t", silencer_status="2", silencer_name="sil_own", inv_name="st_own",
+                    inv_weight="3"),
+    "wpn_own_scope_a": dict(parent_section="wpn_own", upgrades="up_gr_thirda_t", inv_name="st_own", inv_weight="3.25"),
+    # the AK-101 and its combination with the 1P29, with this install's weights (gamecfg,
+    # 2026-10-31): the combination's own inv_weight is the gun's and the scope's together
+    "wpn_ak101": dict(upgrades="up_gr_thirda_t", parent_section="wpn_ak101", inv_weight="3.6"),
+    "wpn_ak101_1p29": dict(parent_section="wpn_ak101", upgrades="up_gr_thirda_t", inv_weight="4.4"),
+    "1p29": dict(inv_weight="0.800"),
+    # the SVT-40's first two rows as GAMMA has them (wpn_svt40): the second row's c/d group is
+    # opened by its a and by the first row's f, whose group is e/f
+    "wpn_svt": dict(upgrades="up_gr_firstab_v, up_gr_seconab_v", inv_name="st_svt", inv_weight="3.9"),
+    "up_gr_firstab_v": dict(elements="up_firsta_v"),
+    "up_firsta_v": dict(section="s_v", property="prop_recoil", effects="up_gr_firstcd_v"),
+    "up_gr_firstcd_v": dict(elements="up_firstc_v, up_firstd_v"),
+    "up_firstc_v": dict(section="s_v", property="prop_dispersion", effects="up_gr_firstef_v"),
+    "up_firstd_v": dict(section="s_v", property="prop_rpm", effects="up_gr_firstef_v"),
+    "up_gr_firstef_v": dict(elements="up_firste_v, up_firstf_v"),
+    "up_firste_v": dict(section="s_v", property="prop_bullet_speed"),
+    "up_firstf_v": dict(section="s_v", property="prop_weight", effects="up_gr_seconcd_v"),
+    "up_gr_seconab_v": dict(elements="up_secona_v"),
+    "up_secona_v": dict(section="s_v", property="prop_reliability", effects="up_gr_seconcd_v"),
+    "up_gr_seconcd_v": dict(elements="up_seconc_v, up_second_v"),
+    "up_seconc_v": dict(section="s_v", property="prop_inertion"),
+    "up_second_v": dict(section="s_v", property="prop_rpm"),
+    "s_v": {},
     "suit_x": dict(upgrades="up_gr_thirda_t", inv_name="st_suit"),
     "helm_x": dict(upgrades="up_gr_thirda_t", inv_name="st_helm"),
     "wpn_knife": dict(upgrades="up_gr_thirda_t", inv_name="st_knife"),
@@ -79,6 +105,9 @@ SECTIONS = {
     "wpn_fu2": dict(upgrades="up_gr_firstab_t", inv_name="st_fu2"),
     "itm_basickit": {}, "itm_advancedkit": {}, "itm_expertkit": {},
 }
+for _k, _v in SECTIONS.items():
+    if _k.startswith("s_"):
+        _v.setdefault("inv_weight", "0.1")
 
 STUBS = r"""
 SEC = ...
@@ -257,7 +286,8 @@ function CreateTimeEvent(ev, act, t, f, ...) EVENTS[ev .. "/" .. act] = { f = f,
 function RemoveTimeEvent(ev, act) EVENTS[ev .. "/" .. act] = nil end
 function ResetTimeEvent(ev, act, t) RESETS = (RESETS or 0) + 1 end
 function workshop(installed, enabled)
-    local dlg = { inst_upgr = {}, upgr = utils_item.get_upgrades_tree("wpn_test"), upgr_xml = {}, checks = {}, evals = 0 }
+    local dlg = { inst_upgr = {}, upgr = utils_item.get_upgrades_tree(WS_SEC or "wpn_test"), upgr_xml = {}, checks = {},
+                  evals = 0 }
     for _, u in ipairs(installed) do dlg.inst_upgr[u] = true end
     for r, row in pairs(dlg.upgr) do
         dlg.upgr_xml[r] = {}
@@ -282,6 +312,19 @@ ui_workshop = { get_workshop_ui = function(a, b, flags, dbg)
     WS = workshop(WS_INSTALLED or {}, WS_ENABLED or {})
     return WS
 end }
+
+-- _g's alife_clone_weapon as GAMMA's scope swap calls it: the gun made anew as `section` under
+-- the next id (nil when CLONE_FAIL), each call and its arguments recorded; a second value, to
+-- see every one come back through a wrapper
+CLONES, NEXT_ID = {}, 500
+function alife_clone_weapon(se, section, ...)
+    CLONES[#CLONES + 1] = { se = se, section = section, n = select("#", ...), extra = (...) }
+    if CLONE_FAIL then return nil end
+    NEXT_ID = NEXT_ID + 1
+    local id = NEXT_ID
+    return { id = id, section_name = function() return section end }, "second"
+end
+function se_item(id, sec) return { id = id, section_name = function() return sec end } end
 """
 
 MUTANTS = {
@@ -352,7 +395,34 @@ MUTANTS = {
     "check_logs_all": ("    if live ~= p.rad then", "    if true then"),
     "scope_keeps_gun": ("    if not scope then return base end", "    if not scope then return sec end"),
     "scope_no_combo": ("    return ini_sys:section_exist(combo) and combo or base\nend", "    return base\nend"),
-    "scope_weight_off": ("    return p.inv_weight + weight_of(scope) + weight_of(att.silencer)", "    return p.inv_weight + weight_of(att.silencer)"),
+    "scope_weight_off": ("    return w + weight_of(loose) + weight_of(att.silencer)", "    return w + weight_of(att.silencer)"),
+    # W3: a combination weighed by its own inv_weight plus its scope, as 1.8.5 did
+    "weight_combo_own": ("    local w = scope and (weight_of(base_of(sec)) + weight_of(scope)) or weight_of(sec)",
+                         "    local w = scope and (weight_of(sec) + weight_of(scope)) or weight_of(sec)"),
+    "weight_no_upgrades": ('        w = w + (ps and ini_sys:r_float_ex(ps, "inv_weight") or 0)\n', ""),
+    # W4: a planned suppressor or launcher kept with its mount gone
+    "fitted_keeps": ("        if out[slot] and not (m[slot] and m[slot].sec == out[slot]) then", "        if false then"),
+    "fitted_drops_none": ("        if out[slot] and not (m[slot] and m[slot].sec == out[slot]) then",
+                          "        if out[slot] ~= nil and not (m[slot] and m[slot].sec == out[slot]) then"),
+    # W2: a scope swap's clone not followed, or followed carelessly
+    "clone_unfollowed": ("            local ok, err = pcall(function() moved(old, se_new.id, se_new:section_name()) end)",
+                         "            local ok, err = pcall(function() end)"),
+    "clone_args_cut": ("        local out = pack(orig(...))", "        local out = pack(orig(se_old, (select(2, ...))))"),
+    "clone_returns_cut": ("        return unpack(out, 1, out.n)", "        return out[1]"),
+    "clone_scope_kept": ("        if att.scope ~= nil and (att.scope or nil) == scope_of(sec) then att.scope = nil end\n", ""),
+    "clone_wrapped_twice": ('    if clone_wrapped or type(orig) ~= "function" then return end', '    if type(orig) ~= "function" then return end'),
+    "clone_wraps_nothing": ('    if clone_wrapped or type(orig) ~= "function" then return end', "    if clone_wrapped then return end"),
+    "clone_never_wrapped": ("    follow_clones()\n", ""),
+    "moved_ids_none": ("    moved_ids[old] = new\n", ""),
+    "left_unfollowed": ("        last_install.id, last_install.sec = new, sec\n", ""),
+    # M8: what was left, not tied to the item
+    "left_no_id": ("    last_install = { id = job.id, sec = job.sec, left = left, err = err }",
+                   "    last_install = { sec = job.sec, left = left, err = err }"),
+    # M9: what is ready worked out from the plan, not from what is checked; in any order; once
+    "ready_from_plan": ("        for c in pairs(checked) do", "        for c in pairs(planned) do"),
+    "ready_any_order": ("            if o and at and (o.row < at.row or (o.row == at.row and o.col < at.col)) then have[c] = true end",
+                        "            have[c] = true"),
+    "ready_one_pass": ("                        more = true\n", ""),
     "card_plan_now": ("        b = arsenal_data.params_with(planned, plan)", "        b = arsenal_data.params_with(planned, now)"),
     "card_damage": ('            if f and r.stat ~= "damage" then x, y = f(a), f(b) end', "            if f then x, y = f(a), f(b) end"),
     "better_flip": ("    return b > a\nend", "    return b < a\nend"),
@@ -384,15 +454,15 @@ MUTANTS = {
     "no_upgrade_tab": ("    ui:OnButton_upgrade()\n", ""),
     "no_select": ("    dlg.CC:On_Select(idx)\n", ""),
     "no_click": ("    dlg:On_CC_Mouse1(dlg.CC.ID, idx)\n", ""),
-    "check_row_major": ("    for col = 1, COLS do\n        for row = 1, ROWS do\n            local info",
-                        "    for row = 1, ROWS do\n        for col = 1, COLS do\n            local info"),
-    "check_disabled": ("                if not skip[info.section] and st and st.btn:IsEnabled() then",
-                       "                if not skip[info.section] and st then"),
-    "check_later": ("                if not skip[info.section] and st and st.btn:IsEnabled() then",
-                    "                if st and st.btn:IsEnabled() then"),
-    "no_evaluate": ("                    dlg:EvaluateUpgrades()\n", ""),
-    "check_installed": ("            if info and planned[info.section] and not dlg.inst_upgr[info.section] then",
-                        "            if info and planned[info.section] then"),
+    "check_row_major": ("        for col = 1, COLS do\n            for row = 1, ROWS do\n                local info",
+                        "        for row = 1, ROWS do\n            for col = 1, COLS do\n                local info"),
+    "check_disabled": ("                    if st and st.btn:IsEnabled() and ready(s) then",
+                       "                    if st and ready(s) then"),
+    "check_later": ("                    if st and st.btn:IsEnabled() and ready(s) then",
+                    "                    if st and st.btn:IsEnabled() then"),
+    "no_evaluate": ("                        dlg:EvaluateUpgrades()\n", ""),
+    "check_installed": ("                if s and planned[s] and not dlg.inst_upgr[s] and not checked[s] then",
+                        "                if s and planned[s] and not checked[s] then"),
     "pda_not_closed": ("        if get_console_cmd(1, \"g_3d_pda\") then\n            db.actor:activate_slot(0)\n        else\n            pda:HideDialog()\n        end",
                        "        if false then end"),
     "no_wait": ("    if p and p:IsShown() and time_global() - pending.t0 < 3000 then", "    if false then"),
@@ -419,9 +489,10 @@ def main():
     lua = L.LuaRuntime(unpack_returned_tuples=True)
     lua.execute(STUBS, lua.table_from({k: lua.table_from(v) for k, v in SECTIONS.items()}))
     g = lua.globals()
+    loader = lua.eval("function(src) local env = setmetatable({}, {__index = _G}); local f = assert(loadstring(src)); "
+                      "setfenv(f, env); f(); return env end")
     try:
-        env = lua.eval("function(src) local env = setmetatable({}, {__index = _G}); local f = assert(loadstring(src)); "
-                       "setfenv(f, env); f(); return env end")(src)
+        env = loader(src)
         env.on_game_start()
     except L.LuaError as e:
         print("FAIL  the script loads: %s" % e)
@@ -630,6 +701,19 @@ CARRIED[2].disp = 0.005
                   ("additional_inventory_weight", "+5.5 kg", "+5.5 kg", None), ("weight", "8 kg", "8.5 kg", False)],
           "a suit's card: its rows with signs, a row without a formula as the card shows it: %s" % got)
 
+    # a scope's combination weighs what 3DSS sets on it (add_scope_weight.script): the gun it is
+    # made of, the scope and the upgrades, never the combination's own inv_weight (the AK-101 with
+    # a 1P29: 4.40 kg in game, not 4.4 + 0.8)
+    def weight(sec, now, plan, att=None):
+        rows_ = env.card(sec, Lst(*now), Lst(*plan), None, att)
+        return [(r.now_text, r.plan_text) for r in rows_.values() if r.stat == "weight"][0]
+    w1 = weight("wpn_ak101_1p29", [], ["up_thirda_t"])
+    w2 = weight("wpn_ak101", [], [], lua.eval("{ scope = '1p29' }"))
+    w3 = weight("wpn_ak101", ["up_thirda_t"], ["up_thirda_t"])
+    check(w1 == ("4.4 kg", "4.5 kg") and w2 == ("3.6 kg", "4.4 kg") and w3 == ("3.7 kg", "3.7 kg"),
+          "a scoped gun weighs its gun's 3.6 kg and the 1P29's 0.8, carried or planned, each upgrade's added: "
+          "%s %s %s" % (w1, w2, w3))
+
     m = env.mounts("wpn_test", Lst("up_firstf_t", "up_fiftha_t"))
     check(m.silencer is not None and m.silencer.sec == "sil_up" and m.silencer.own is False
           and m.launcher is not None and m.launcher.sec == "gl_up", "mounts an upgrade adds")
@@ -640,6 +724,16 @@ CARRIED[2].disp = 0.005
     f = env.fits("wpn_own_scope_a", Lst())
     check(list(f.scopes.values()) == ["scope_a", "scope_b"] and f.silencer.sec == "sil_own",
           "what fits a scoped gun: its base gun's scopes and mounts")
+    # a plan's suppressor or launcher stays only on a mount its upgrades keep; a planned "none" and
+    # the scope stay
+    f1 = env.fitted("wpn_test", Lst("up_firsta_t"), lua.eval("{ launcher = 'gl_up', silencer = 'sil_up', scope = 'scope_a' }"))
+    f2 = env.fitted("wpn_test", Lst("up_firstf_t", "up_fiftha_t"), lua.eval("{ launcher = 'gl_up', silencer = 'sil_up' }"))
+    f3 = env.fitted("wpn_own_scope_a", Lst(), lua.eval("{ silencer = false }"))
+    f4 = env.fitted("wpn_own", Lst(), lua.eval("{ silencer = 'sil_up' }"))
+    got = [dict(x.items()) for x in (f1, f2, f3, f4)]
+    check(got == [{"scope": "scope_a"}, {"launcher": "gl_up", "silencer": "sil_up"}, {"silencer": False}, {}],
+          "attachments on mounts the plan no longer has leave it; those on its mounts and a planned none stay: %s"
+          % got)
 
     # plans: by id (with the section it was made for) and by section, with attachments
     P7 = ["up_firsta_t", "up_firste_t", "up_firstc_t", "up_thirda_t", "up_seconc_t", "up_secona_t"]
@@ -718,6 +812,36 @@ STASHED = {}
     last = env.last_install
     check(last is not None and sorted(names(x) for x in last.left.values()) == ["firste", "fourtc"] and last.err is None,
           "what was left is told: %s" % (last and list(last.left.values())))
+    check(last is not None and last.id == 7 and last.sec == "wpn_test", "and of which item: %s" % (last and last.id))
+
+    # the engine takes an upgrade only with one in the group of each upgrade that opens it
+    # (Group::can_install). The SVT-40's second-row c is opened by its a and by the first row's f,
+    # of the e/f group; its plan brings e. With e left for want of a kit, c is left too (its kit
+    # would go and the engine refuse it); with e's kit, c goes in after it
+    tv = env.tree("wpn_svt")
+    pv = env.toggle(tv, 2, 3, E, E)
+    check(keys(pv) == ["up_firsta_v", "up_firstc_v", "up_firste_v", "up_secona_v", "up_seconc_v"],
+          "the SVT-40's c brings its row's a and an upgrade of the e/f group, with their openers: %s" % keys(pv))
+    lua.execute("""
+SVT = item("wpn_svt", 40, {})
+SVT.parent_obj = ACTOR_OBJ
+BY_ID[40] = SVT
+WS_SEC, WS_INSTALLED, WS_ENABLED = "wpn_svt", {}, { up_firste_v = false }
+PDA.shown = false
+""")
+
+    def handoff(plan_):
+        env.install(40, "wpn_svt", plan_)
+        g.EVENTS["arsenal_workbench/install"].f()
+        return list(g.WS.dlg_upgrade.checks.values()), sorted(env.last_install.left.values())
+    c1, l1 = handoff(pv)
+    lua.execute("WS_ENABLED = {}")
+    c2, l2 = handoff(pv)
+    lua.execute("WS_SEC, WS_INSTALLED, WS_ENABLED = nil, nil, nil")
+    check(c1 == ["up_firsta_v", "up_secona_v", "up_firstc_v"] and l1 == ["up_firste_v", "up_seconc_v"],
+          "e without its kit: c, which needs it, is not checked either; both left: %s %s" % (c1, l1))
+    check(c2 == ["up_firsta_v", "up_secona_v", "up_firstc_v", "up_firste_v", "up_seconc_v"] and l2 == [],
+          "with it: c checked once e is, nothing left: %s %s" % (c2, l2))
     lua.execute("WS_OPEN = true")
     env.install(7, "wpn_test", plan)
     lua.execute("PDA.shown = false")
@@ -767,6 +891,49 @@ STASHED = {}
     st = env.state(fu2, 1, 2, S("up_firsta_t"), E)
     check(st == "partner", "a gun the mod left as it was keeps its pairs: %s" % st)
     g.FS_FILES["$game_config$mod_system_full_upgrades.ltx"] = None
+
+    # GAMMA's scope swap makes the gun anew under another id (_g.alife_clone_weapon): its plan and
+    # what was left last time follow it, every argument and value passing through
+    env.set_plan(30, "wpn_own", S("up_thirda_t"), lua.eval("{ scope = 'scope_a', silencer = 'sil_own' }"))
+    env.last_install = lua.eval("{ id = 30, sec = 'wpn_own', left = { 'up_thirda_t' } }")
+    clone = lua.eval("function(id, sec, ...) return { alife_clone_weapon(se_item(id, 'x'), sec, ...) } end")
+    r = clone(30, "wpn_own_scope_a", "pos", "more")
+    call_ = g.CLONES[len(g.CLONES)]
+    check(r[1] is not None and r[1].id == 501 and r[2] == "second" and call_.section == "wpn_own_scope_a"
+          and call_.n == 2 and call_.extra == "pos",
+          "the clone made as the game asked, every argument and value through: %s %s %s"
+          % (r[2], call_.section, call_.n))
+    p, a = env.plan_of(501, "wpn_own_scope_a")
+    check(keys(p) == ["up_thirda_t"] and dict(a.items()) == {"silencer": "sil_own"} and keys(env.plan_of(30, "wpn_own")[0]) == [],
+          "a scope put on: the plan under the new id and section, the scope it chose now the gun as it is: %s %s"
+          % (keys(p), dict(a.items())))
+    check(env.last_install.id == 501 and env.last_install.sec == "wpn_own_scope_a",
+          "what was left last time follows: %s" % env.last_install.id)
+    env.set_plan(501, "wpn_own_scope_a", S("up_thirda_t"), lua.eval("{ scope = false }"))
+    clone(501, "wpn_own")
+    a1 = dict(env.plan_of(502, "wpn_own")[1].items())
+    env.set_plan(502, "wpn_own", S("up_thirda_t"), lua.eval("{ scope = 'scope_b' }"))
+    clone(502, "wpn_own_scope_a")
+    a2 = dict(env.plan_of(503, "wpn_own_scope_a")[1].items())
+    check(a1 == {} and a2 == {"scope": "scope_b"},
+          "taken off, a planned none is the gun as it is; another scope planned stays: %s %s" % (a1, a2))
+    check(env.moved_id(30) == 503 and env.moved_id(7) == 7, "an id followed through its clones: %s" % env.moved_id(30))
+    g.CLONE_FAIL = True
+    clone(503, "wpn_own")
+    g.CLONE_FAIL = None
+    check(keys(env.plan_of(503, "wpn_own_scope_a")[0]) == ["up_thirda_t"], "a clone that fails moves nothing")
+    first = g.alife_clone_weapon
+    env.on_game_start()
+    check(lua.eval("function(a, b) return a == b end")(first, g.alife_clone_weapon), "wrapped once")
+    lua.execute("SAVED_CLONE = alife_clone_weapon; alife_clone_weapon = nil")
+    err = None
+    try:
+        loader(src).on_game_start()
+    except L.LuaError as e:
+        err = str(e).splitlines()[0]
+    missing = g.alife_clone_weapon
+    lua.execute("alife_clone_weapon = SAVED_CLONE")
+    check(err is None and missing is None, "a game without it: left as it is: %s %s" % (err, missing))
 
     print("\n%d failed" % len(fails))
     return 1 if fails else 0

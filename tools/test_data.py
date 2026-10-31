@@ -309,6 +309,17 @@ SECTIONS = {
     "wpn_home": dict(kind="w_rifle", inv_name="st_home", inv_grid_x="1"),
     "wpn_abakan": dict(kind="w_rifle", inv_name="st_abakan", inv_grid_x="1"),
     "helm_crafted": dict(**{"class": "E_HLMET"}, kind="o_helmet", inv_name="st_helm_crafted", inv_grid_x="1"),
+    # what other workshop lines make (CRAFT), values only
+    "ammo_gauss": dict(), "craft_short": dict(), "craft_page3": dict(), "craft_combo": dict(),
+    # an AK-101 and its 1P29 combination as GAMMA has them, its own weight with the scope's; a
+    # camo copy that ships an upgrade, its 1P29 combination's own weight without the scope's
+    "wpn_ak101": dict(inv_weight="3.6"),
+    "wpn_ak101_1p29": dict(inv_weight="4.4", parent_section="wpn_ak101"),
+    "1p29": dict(inv_weight="0.800"),
+    "wpn_ak101_camo": dict(inv_weight="3.6", installed_upgrades="up_thirda_ak101"),
+    "wpn_ak101_camo_1p29": dict(inv_weight="3.6", parent_section="wpn_ak101_camo", installed_upgrades="up_thirda_ak101"),
+    "up_thirda_ak101": dict(section="up_sect_thirda_ak101"),
+    "up_sect_thirda_ak101": dict(inv_weight="+0.15"),
     "wpn_multi": dict(kind="w_rifle", max_uses="3", cost="3000"),
     "wpn_stash_sil": dict(kind="w_rifle", inv_name="st_stash_sil", inv_grid_x="1", silencer_status="2",
                           silencer_name="stash_sil", cost="5000"),
@@ -389,25 +400,28 @@ FACTIONS = ["stalker", "dolg", "freedom", "csky", "ecolog", "killer", "army", "b
 # ini files of ordered lines (key, value): name -> section -> lines
 # NPC loadouts: Loners have three ranks of their own (a slot with a missing gun, a gun weighted
 # 0 and a line without a weight), the rest of theirs fall to the faction's loadout; every other
-# faction has none and falls to the default
+# faction has none and falls to the default. A mount whose chance is 0 never comes: the TOZ's
+# suppressor at the default chance, 0 at this economy (2), and at the sniper's 0 (Duty masters'
+# RAPTR line), the Saiga's scope at its line's 0; the AK-74's at its line's 100
 NPC = {
+    "settings": [("default_sil_chance", "25,0,25,25")],
     "default": [("primary", "def_primary")],
     "def_primary": [("wpn_pm:0:r", "")],
     "stalker": [("primary", "vet_primary"), ("secondary", "vet_secondary"), ("extra", "vet_extra")],
-    "vet_primary": [("wpn_toz34:0:0:5", "")],
-    "vet_secondary": [("wpn_saiga:0:0:5", "")],
+    "vet_primary": [("wpn_toz34:4:0:5", "")],
+    "vet_secondary": [("wpn_saiga:1:0:5:0", "")],
     # a Kobra carried loose: still never word of mouth
     "vet_extra": [("kobra:0:0:5", "")],
     "stalker_novice": [("primary", "st_primary"), ("secondary", "st_secondary")],
     "stalker_trainee": [("primary", "st_primary")],
     "stalker_legend": [("primary", "st_primary")],
-    "st_primary": [("wpn_ak74:r:0:30", ""), ("wpn_mp5:0:r:10", ""), ("wpn_mp5_kurtz:0:0", ""),
+    "st_primary": [("wpn_ak74:r:0:30:d:d:100", ""), ("wpn_mp5:0:r:10", ""), ("wpn_mp5_kurtz:0:0", ""),
                    ("wpn_gone:0:0:50", ""), ("wpn_aps:0:0:0", "")],
     "st_secondary": [("wpn_pm:0:r", "")],
     "loadouts_per_name": [("sim_sniper", "loadout_sniper"), ("sim_blackops", "loadout_blackops"),
                           ("sim_nobody", "loadout_missing")],
     "loadout_sniper": [("primary", "sniper_primary")],
-    "sniper_primary": [("wpn_ak74:1:0:10", ""), ("wpn_toz34:0:0:30", "")],
+    "sniper_primary": [("wpn_ak74:1:0:10", ""), ("wpn_toz34:4:0:30:100:100:0", "")],
     "loadout_blackops": [("primary", "blackops_primary")],
     "blackops_primary": [("wpn_mp5:4:1", "")],
     # scopes no NPC gun gets
@@ -492,7 +506,14 @@ TRADE_UNUSED = {"trader": [("buy_supplies", "supplies_1")], "supplies_1": [("wpn
 TASKS = {"task_a": [("on_complete", "%=reward_item(wpn_task) =give_money(100)%")],
          "task_b": [("on_complete", "{+done} %=reward_random_item(helm_reward:wpn_task2)%")],
          "task_spy": [("task_loadout_other", "wpn_spy")]}
-CRAFT = {"1": [("title", "st_craft"), ("x_helm_crafted", "1, recipe_basic_0, prt_o_fabrics_1,5")]}
+# workshop recipes (craft.ltx as GAMMA's Artefacts Reinvention writes it): a helmet; a gauss round
+# keyed a_ (its [6] page keys gauss and grenade rounds a_, b_, c_); one line short of a part's
+# count; a page after a missing number and [item_combination], neither of which ui_workshop reads
+CRAFT = {"1": [("title", "st_craft"), ("x_helm_crafted", "1, recipe_basic_0, prt_o_fabrics_1,5, glue_a,1"),
+               ("a_ammo_gauss", "5, recipe_expert_0, af_ring,1,prt_i_copper,1,prt_i_scrap,2,batteries_dead,3"),
+               ("y_craft_short", "1, recipe_basic_0, prt_o_fabrics_1,5, glue_a")],
+         "3": [("x_craft_page3", "1, recipe_basic_0, prt_o_fabrics_1,5, glue_a,1")],
+         "item_combination": [("x_craft_combo", "5, recipe_ammo_0, prt_i_scrap,4,grenade_f1,1")]}
 # the ammo maker's recipes (items\ammo\importer.ltx): a round, ArtiGrok's numbered recipe for its
 # anomalous round, and a round the game lacks
 AMMO_RECIPES = {"ammo_vanilla": [("ammo_9x18", "5, recipe_ammo_0, casing_p,1"),
@@ -816,20 +837,34 @@ function utils_item.get_outfit_property(obj, sec, name, def)
     if name == "additional_inventory_weight" then return tonumber(S[sec].additional_inventory_weight or 0) end
     return def
 end
--- utils_ui's: the row's function (or the section's value with its shipped upgrades), times the
--- magnitude, rounded up, with a sign and the unit; nil for zero
-function utils_ui.get_stats_string_value(obj, sec, gr, stat)
+-- utils_ui's, as the real ones (the HD Inventory Icons Framework's utils_ui.script, which GAMMA
+-- loads): a row's value is its function's (or the section's value with its shipped upgrades),
+-- nil for zero; its string that value times the magnitude, rounded up whatever its sign (no
+-- tenths: 5.3 kg of carry weight reads 6), with a sign and the unit
+function utils_ui.get_stats_value(obj, sec, gr, stat)
     local f = gr.value_functor
     local value = f and _G[f[1]] and _G[f[1]][f[2]] and _G[f[1]][f[2]](obj, sec, unpack(f, 3))
     if not value then value = utils_item.get_param(sec, nil, stat, gr.typ or "float", true) end
-    if not value or value == 0 then return nil end
+    return (value and value ~= 0) and value or nil
+end
+function utils_ui.get_stats_string_value(obj, sec, gr, stat)
+    local value = utils_ui.get_stats_value(obj, sec, gr, stat)
+    if not value then return nil end
+    local v = math.ceil(value * gr.magnitude)
+    local unit = gr.unit and gr.unit ~= "" and game.translate_string(gr.unit) or ""
+    return ((gr.sign and v > 0) and "+" or "") .. v .. " " .. unit, value * gr.magnitude < 0
+end
+-- the inventory card's text for a row, as UIInfoItem:Update writes it: the same value times the
+-- magnitude, carry weight to a tenth (x10, then /10), up from zero and down below it
+function card_text(obj, sec, gr, stat)
+    local value = utils_ui.get_stats_value(obj, sec, gr, stat)
+    if not value then return nil end
     local v = value * gr.magnitude
-    -- carry weight to a tenth: x10, up (down below zero), /10
     if stat == "additional_inventory_weight" then v = v * 10 end
     v = v >= 0 and math.ceil(v) or math.floor(v)
     if stat == "additional_inventory_weight" then v = v / 10 end
     local unit = gr.unit and gr.unit ~= "" and game.translate_string(gr.unit) or ""
-    return ((gr.sign and v > 0) and "+" or "") .. v .. " " .. unit, v < 0
+    return ((gr.sign and v > 0) and "+" or "") .. v .. " " .. unit
 end
 """
 
@@ -907,7 +942,32 @@ MUTANTS = {
     "up_guards": ('if type(g) == "table" and type(g[1]) == "string" then mark_up(g[1], "task") end', "-- no guards"),
     "up_home": ('if type(s) == "string" then mark_up(s, "homestead") end', "-- no Homestead"),
     "up_gifts": ('        mark_up(g, "gift")\n', ""),
-    "up_craft": ('if item then mark_up(item, "craft") end', "-- no crafting"),
+    "up_craft": ('if n == 6 or n == 8 or n == 10 then mark_up(x.k:sub(3), "craft") end', "-- no crafting"),
+    # the workshop's recipes as 1.8.5 read them: x_ keys only, any field count, every section
+    "craft_x_only": ('mark_up(x.k:sub(3), "craft")', 'mark_up(x.k:match("^x_(.+)$"), "craft")'),
+    "craft_fields": ("if n == 6 or n == 8 or n == 10 then", "if true then"),
+    "craft_every_page": ("while craft and craft:section_exist(tostring(page)) do", "while craft and page < 5 do"),
+    # a built-in suppressor's jam left out, taken unrounded, or without its floor of 1
+    "jam_suppressor": ('        if status(sec, "silencer_status") == 1 then\n'
+                       '            local sp = ini_sys:r_float_ex(sec, "misfire_start_prob") or 0.003',
+                       '        if false then\n'
+                       '            local sp = ini_sys:r_float_ex(sec, "misfire_start_prob") or 0.003'),
+    "jam_suppressor_roll": ("(1 - math.max(0, math.min(1000, math.floor(sj))) / 1000)", "(1 - sj / 1000)"),
+    "jam_suppressor_small": ("local sj = sp < 0.002 and 1 or sp * 330", "local sj = sp * 330"),
+    # a loadout line's mount chances: every mount may come, a line's own chance or the economy's
+    # default left unread
+    "mount_chance_zero": ("if chance and chance <= 0 then bits = bits - c[1] end", "-- every mount may come"),
+    "mount_chance_line": ("            local chance = tonumber(f[c[2]])\n", "            local chance = nil\n"),
+    "mount_chance_default": ("                chance = d and (tonumber(d) or c[4])\n", "                chance = nil\n"),
+    # the carry-weight tag through get_stats_string_value, a whole kilo
+    "carry_tag_whole": ('        if stat == "additional_inventory_weight" then\n            -- carry weight as the card',
+                        '        if false then\n            -- carry weight as the card'),
+    # reset() keeping the guns' maxima
+    "reset_max": ("    trees, worn_rounds, max_of = {}, {}, {}", "    trees, worn_rounds = {}, {}"),
+    # a scoped combination's own inv_weight, 3DSS left out; 3DSS without the upgrades' weight
+    "weight_3dss": ("        if sw then\n            local up = 0", "        if false then\n            local up = 0"),
+    "weight_3dss_upgrades": ('                up = up + (ps and ini_sys:r_float_ex(ps, "inv_weight") or 0)',
+                             "                up = up"),
     "addon_bits": ("local n = bit.band(bits, m[1]) ~= 0 and status(s, m[2]) == 2", "local n = status(s, m[2]) == 2"),
     "addon_blacklist": ("if not black[k] and not (per_gun[s] and per_gun[s][k]) and ini_sys:section_exist(combo) then",
                         "if ini_sys:section_exist(combo) then"),
@@ -1335,10 +1395,7 @@ def main():
     def card(sec):
         out = {}
         for r in m.stat_rows(False, sec).values():
-            v = lua.globals().utils_ui.get_stats_string_value(None, sec, r.gr, r.stat)
-            if isinstance(v, tuple):
-                v = v[0]
-            out[r.stat] = v
+            out[r.stat] = lua.globals().card_text(None, sec, r.gr, r.stat)
         return out
     jc = card("novice_outfit")
     want = {"fire_wound_protection": "+4 %", "apres_modifier": "+18 ", "burn_protection": "+41 %",
@@ -1487,6 +1544,14 @@ def main():
     v_up, v_never = verdicts(UP), verdicts(NEVER)
     check(v_up[0] == [] and v_never[1] == [],
           "what turns up and what never does: up but judged never %s; never but judged up %s" % (v_up[0], v_never[1]))
+    # crafting as ui_workshop reads craft.ltx: its numbered pages up to the first number missing,
+    # every key less its first two characters, a line of 6, 8 or 10 fields; never [item_combination]
+    crafted = lambda sec: bool(m.turns_up_as(sec) and m.turns_up_as(sec).craft)
+    cr = {sec: crafted(sec) for sec in ("helm_crafted", "ammo_gauss", "craft_short", "craft_page3", "craft_combo")}
+    check(cr == {"helm_crafted": True, "ammo_gauss": True, "craft_short": False, "craft_page3": False,
+                 "craft_combo": False},
+          "crafted: an x_ and an a_ recipe; not a line short of a field, a page after a missing number or "
+          "[item_combination]: %s" % cr)
     u = lambda sec: {k: (list(v.values()) if not isinstance(v, bool) else v) for k, v in m.turns_up_model(sec).items()}
     check(u("wpn_story") == {"story": ["st_strelok", "GENERATE_NAME_x"]} and u("wpn_knife2") == {"trader": True}
           and u("wpn_ak74_rk_kit") == {"rolled": ["AK-74"]} and u("wpn_home") == {"homestead": True},
@@ -1607,6 +1672,9 @@ def main():
           and rows("rk_kit", m.mounted_on) == [] and rows("wpn_ak74", m.mounted_on) == [],
           "a suppressor the line asks for on a gun that takes one; never a blacklisted scope, nor a kit that "
           "makes a gun of its own: %s" % (ms,))
+    mt = rows("toz_sil", m.mounted_on)
+    check(mt == [] and not m.addon_turns_up("toz_sil"),
+          "a suppressor whose chance is 0, the line's own or the economy's default, never comes: %s" % (mt,))
     ck = rows("kobra", m.carriers)
     stalker_gear = [x[0] for x in gear("stalker")]
     check(ck == [("stalker", ["experienced", "professional", "veteran", "expert", "master"], None)]
@@ -1845,6 +1913,23 @@ def main():
     g.grok_gun_condition_fixed = None
     check(jam("wpn_saiga") is None, "no number without the condition lock: %s" % (jam("wpn_saiga"),))
     g.grok_gun_condition_fixed = lock
+    # a built-in suppressor jams the gun as well (arti_jamming's get_silencer_jam_chance): with parts,
+    # whatever their wear, math_random(1000) against misfire_start_prob x 330, 1 under 0.002. The
+    # Vintorez's 0.006 is 1.98, a thousandth a shot; the MP5SD's 0.0027 is 0.891, never; the VSSK's
+    # 0.0009 is 1. A gun without parts never rolls it (the PM's engine misfire stays 0.003)
+    saiga, pm = sections["wpn_saiga"], sections["wpn_pm"]
+    keep = saiga["misfire_start_prob"]
+    saiga["silencer_status"], pm["silencer_status"] = "1", "1"
+    sj = {}
+    for sp in ("0.006", "0.0027", "0.0009"):
+        saiga["misfire_start_prob"] = sp
+        j = m.jam_chance("wpn_saiga")
+        sj[sp] = (round(j.base, 6), j.worn, round(j.both, 9))
+    sj["pm"] = jam("wpn_pm")
+    saiga["misfire_start_prob"], saiga["silencer_status"], pm["silencer_status"] = keep, None, None
+    check(sj == {"0.006": (0.001, 0.017, round(1 - 0.999 * 0.983, 9)), "0.0027": (0, 0.017, 0.017),
+                 "0.0009": (0.001, 0.017, round(1 - 0.999 * 0.983, 9)), "pm": (0.003, None)},
+          "a built-in suppressor's jam, in whole thousandths, in base and in both; none without parts: %s" % sj)
 
     # traders by tier: per row the tier, what unlocks it (any of the entries that stock it), who
     def sold(sec):
@@ -2031,6 +2116,13 @@ def main():
     check(card("novice_outfit_b").get("additional_inventory_weight") == "+1.2 kg",
           "1.1 kg of carry weight reads 1.2 on the card, as for a live suit: %s"
           % card("novice_outfit_b").get("additional_inventory_weight"))
+    # the carry-weight tag reads the card, to a tenth (5.3 kg in float32 shows 5.4), where
+    # get_stats_string_value would round it up to a whole kilo
+    cwt = m.ARMOR_TAGGERS[12]("probe_suit_plain")
+    row = lua.globals().utils_ui.stats_table.outfit.additional_inventory_weight
+    whole = lua.globals().utils_ui.get_stats_string_value(None, "probe_suit_plain", row, "additional_inventory_weight")
+    check(cwt == "Weight Carried 5.4 kg" and whole[0] == "+6 kg",
+          "the carry-weight tag as the card shows it, not as get_stats_string_value does: %s %s" % (cwt, whole))
     q = m.params("wpn_ak74")
     sp0 = m.CARD.speed(q)
     m.add_change(q, "up_sect_a2")
@@ -2118,6 +2210,41 @@ def main():
     psi = tuple(m.max_stat("novice_outfit", "telepatic_protection") or ())
     sections["novice_outfit"]["upgrades"] = "up_gr_j_a, up_gr_j_b"
     check(psi == (19, 0), "Full Upgrades' rewrite of a jacket: each upgrade once: %s" % (psi,))
+
+    # reset() forgets the guns' maxima too: a changed config reads anew after it
+    ak = sections["wpn_ak74"]
+    keep_rpm = ak["rpm"]
+    before = tuple(m.max_stat("wpn_ak74", "fire_rate"))
+    ak["rpm"] = str(float(keep_rpm) + 100)
+    m.reset()
+    after_reset = tuple(m.max_stat("wpn_ak74", "fire_rate"))
+    ak["rpm"] = keep_rpm
+    m.reset()
+    check(after_reset == (before[0] + 100, before[1] + 100) and tuple(m.max_stat("wpn_ak74", "fire_rate")) == before,
+          "a reset forgets the maxima: %s, then %s" % (before, after_reset))
+
+    # a scoped combination's weight as 3DSS's add_scope_weight sets it: the gun's inv_weight, the
+    # scope's and its upgrades', whatever the combination's own says (wpn_ak101_1p29's 4.4 holds
+    # the 1P29 already, wpn_ak101_camo_1p29's 3.6 leaves it out); a gun as it is; without 3DSS the
+    # combination's own
+    lua.execute('''
+        add_scope_weight = {}
+        function add_scope_weight.get_parent_and_scope(wpn_section)
+            if not wpn_section then return end
+            local parent_section = ini_sys:r_string_ex(wpn_section, "parent_section")
+            local scope_section
+            if parent_section and parent_section ~= wpn_section then
+                scope_section = wpn_section:gsub(parent_section .. "_", "")
+            end
+            return parent_section or wpn_section, scope_section
+        end''')
+    wt = {sec: m.kg(m.weight(sec)) for sec in ("wpn_ak101", "wpn_ak101_1p29", "wpn_ak101_camo_1p29")}
+    lua.execute("add_scope_weight = nil")
+    own = {sec: m.kg(m.weight(sec)) for sec in ("wpn_ak101_1p29", "wpn_ak101_camo_1p29")}
+    check(wt == {"wpn_ak101": 3.6, "wpn_ak101_1p29": 4.4, "wpn_ak101_camo_1p29": 4.55}
+          and own == {"wpn_ak101_1p29": 4.4, "wpn_ak101_camo_1p29": 3.6},
+          "a scoped gun's weight as 3DSS sets it, the gun's, the scope's and its upgrades'; without 3DSS its "
+          "own: %s %s" % (wt, own))
 
     # icons as the inventory's cells take them: the texture rectangle from get_item_axis's
     # unpacked form, which an HQ icon pack hooks (LEWD StG44's zzz_hqicons hands its 360-texel

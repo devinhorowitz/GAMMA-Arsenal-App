@@ -42,7 +42,7 @@ local function info(e)
         variants = variants,
         obtainable = arsenal_data.obtainable(e.sec) == true,
         found = arsenal_collection ~= nil and arsenal_collection.entry_found(e) ~= nil,
-        known = intel == nil or intel.known(e) == true,
+        known = intel == nil or intel.listed(e) == true,
         studied = intel == nil or intel.studied(e) == true,
         new = intel ~= nil and intel.is_new(e) == true,
     }
@@ -85,7 +85,9 @@ end
 -- now on, its page says when and from whom, and it is marked new and announced on the PDA
 -- unless `quiet`; with `study` its page shows its stats too. Returns true when it was new to
 -- him. Nothing happens for what never turns up in this game, or with Arsenal's own discovery
--- off (the jailbreak lists everything anyway).
+-- off (the jailbreak lists everything anyway). Nor for a round (category "ammo"): a round is
+-- known once the player knows a gun that fires it, so reveal that gun instead; a round gives
+-- false. A model the player has had is no news either: false, and nothing announced.
 function reveal(sec, who, study, quiet)
     return try(function()
         if not arsenal_intel or arsenal_intel.jailbroken() then return false end
@@ -103,8 +105,10 @@ end
 --     arsenal_api.add_action("my_mod", { label = "st_my_mod_button",
 --         show = function(sec) return <whether it applies to this section> end,
 --         run = function(sec) <what a click does> end })
--- `sec` is the section the page shows. Up to three apps' buttons show at once; adding an id
--- again replaces it. Returns false when the arguments are wrong.
+-- `sec` is the section the page shows. A page has one such button: the first added whose `show`
+-- applies to its section. Workbench's Customize, added as Arsenal starts, applies on the gun,
+-- suit and helmet pages Workbench can plan: a button added after it shows only on the others.
+-- Adding an id again replaces it, last in line. Returns false when the arguments are wrong.
 function add_action(id, def)
     return try(function()
         if type(id) ~= "string" or type(def) ~= "table" or type(def.run) ~= "function" then return false end

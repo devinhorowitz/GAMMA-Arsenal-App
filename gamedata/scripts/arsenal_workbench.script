@@ -521,11 +521,21 @@ function scope_of(sec)
     return (s ~= "" and ini_sys:section_exist(s)) and s or nil
 end
 
--- A gun's weight as the inventory adds it up, its magazine empty (every upgrade unloads it):
--- its own and its upgrades' (float32), its scope's (3DSS adds it to the combination), and the
--- suppressor's and launcher's on it
-local function gun_weight(p, scope, att)
-    return p.inv_weight + weight_of(scope) + weight_of(att.silencer) + weight_of(att.launcher)
+-- A gun's weight as the inventory adds it up, its magazine empty (every upgrade unloads it), with
+-- these upgrades (element sections). A scope's combination weighs what 3DSS sets on it as it
+-- spawns (add_scope_weight.script): the gun it is made of, the scope and the upgrades, never the
+-- combination's own inv_weight, which in many combinations counts the scope already. Any other
+-- gun weighs its own and its upgrades' (the engine adds each upgrade's inv_weight as it goes in).
+-- Then `loose`, a scope the engine attaches with no combination for it, and the suppressor and
+-- launcher on it, which the engine adds.
+local function gun_weight(sec, ups, loose, att)
+    local scope = scope_of(sec)
+    local w = scope and (weight_of(base_of(sec)) + weight_of(scope)) or weight_of(sec)
+    for _, u in ipairs(ups) do
+        local ps = ini_sys:section_exist(u) and ini_sys:r_string_ex(u, "section")
+        w = w + (ps and ini_sys:r_float_ex(ps, "inv_weight") or 0)
+    end
+    return w + weight_of(loose) + weight_of(att.silencer) + weight_of(att.launcher)
 end
 
 local function value_text(gr, v)
@@ -559,11 +569,11 @@ function card(sec, now, plan, att_now, att)
         wa, wb = a.inv_weight, b.inv_weight
     else
         local planned = with_scope(sec, att.scope)
-        local scope = scope_of(sec)
-        if att.scope ~= nil then scope = att.scope or nil end
+        -- a scope chosen that has no combination with the gun: the engine's own addon, on the gun
+        local loose = att.scope and scope_of(planned) ~= att.scope and att.scope or nil
         a = arsenal_data.params_with(sec, now)
         b = arsenal_data.params_with(planned, plan)
-        wa, wb = gun_weight(a, scope_of(sec), att_now), gun_weight(b, scope, att)
+        wa, wb = gun_weight(sec, now, nil, att_now), gun_weight(planned, plan, loose, att)
     end
     for _, r in ipairs(arsenal_data.stat_rows(false, sec)) do
         local x, y
@@ -636,6 +646,20 @@ function fits(sec, ups)
     return { scopes = scopes, silencer = m.silencer, launcher = m.launcher }
 end
 
+-- A plan's attachments (scope, silencer, launcher) checked against the mounts the gun has with
+-- these upgrades, a new table: a suppressor or launcher planned on a mount that is no longer
+-- there (the upgrade that adds it has left the plan) leaves it. A planned "none" stays.
+function fitted(sec, ups, att)
+    local out = copy(att or {})
+    local m = mounts(ini_sys:r_string_ex(sec, "parent_section") or sec, ups)
+    for _, slot in ipairs({ "silencer", "launcher" }) do
+        if out[slot] and not (m[slot] and m[slot].sec == out[slot]) then
+            out[slot] = nil
+        end
+    end
+    return out
+end
+
 -- an attachment's weight
 function weight_of(sec)
     return sec and ini_sys:r_float_ex(sec, "inv_weight") or 0
@@ -685,6 +709,62 @@ function forget_gone()
     for id, p in pairs(plans.id) do
         local se = alife_object(id)
         if not (se and se:section_name() == p.sec) then plans.id[id] = nil end
+    end
+end
+
+-- GAMMA's scope swap (item_weapon.attach_scope and detach_scope) makes the gun anew as its
+-- combination with the scope, or as the gun it is made of, under a new id
+-- (_g.alife_clone_weapon, which copies its upgrades and releases the old one). What Workbench
+-- keeps by the old id follows it: its plan, under the new section, a scope chosen that the gun
+-- now carries (or none, and it now has none) becoming the gun as it is; what was left unchecked
+-- last time; and the item the page showed.
+local moved_ids = {}
+
+local function moved(old, new, sec)
+    moved_ids[old] = new
+    local p = plans.id[old]
+    if p then
+        plans.id[old] = nil
+        local att = copy(p.att or {})
+        if att.scope ~= nil and (att.scope or nil) == scope_of(sec) then att.scope = nil end
+        set_plan(new, sec, p.set, att)
+    end
+    if last_install and last_install.id == old then
+        last_install.id, last_install.sec = new, sec
+    end
+end
+
+-- the id an item has now, following its clones this session
+function moved_id(id)
+    local n = 0
+    while id and moved_ids[id] and n < 100 do
+        id, n = moved_ids[id], n + 1
+    end
+    return id
+end
+
+local function pack(...)
+    return { n = select("#", ...), ... }
+end
+
+-- alife_clone_weapon wrapped once, every argument and every value passed through; left as it is
+-- when the game has none
+local clone_wrapped = false
+local function follow_clones()
+    local orig = _G.alife_clone_weapon
+    if clone_wrapped or type(orig) ~= "function" then return end
+    clone_wrapped = true
+    _G.alife_clone_weapon = function(...)
+        local se_old = ...
+        -- read before the call, which releases the old object
+        local old = se_old and se_old.id
+        local out = pack(orig(...))
+        local se_new = out[1]
+        if old and se_new then
+            local ok, err = pcall(function() moved(old, se_new.id, se_new:section_name()) end)
+            if not ok then printf("[arsenal] Workbench could not follow a gun's clone: %s", tostring(err)) end
+        end
+        return unpack(out, 1, out.n)
     end
 end
 
@@ -749,9 +829,15 @@ function cannot_install(id, sec, planned)
     return nil
 end
 
--- the toolkit window open on the item, the plan's upgrades checked one by one in its order, those
--- it cannot check (no kit, or for a second visit) left; returns the sections left, or nil and
--- an error
+-- The toolkit window open on the item, the plan's upgrades checked one by one, those it cannot
+-- check left; returns the sections left, or nil and an error. The toolkit installs what is
+-- checked row by row (ui_workshop's Upgrade), and the engine takes an upgrade only with an
+-- upgrade in the group of each upgrade that opens it, the item itself aside (Group::can_install:
+-- has_upgrade_group of each parent's group): installed already, or checked here and going in
+-- before it. So an upgrade is checked only once that holds for what is checked: one left for
+-- want of a kit leaves what needs it too, which would spend a kit the engine then refuses, and
+-- one that needs a later row's waits for a second visit. Column by column, so each upgrade's
+-- opener in its row is checked before it (the toolkit's own rule), and again while more can go.
 local function open_toolkit(id, sec, planned)
     local obj = level.object_by_id(id)
     if not obj then return nil, "the item is gone" end
@@ -766,27 +852,48 @@ local function open_toolkit(id, sec, planned)
     dlg.CC:On_Select(idx)
     dlg:On_CC_Mouse1(dlg.CC.ID, idx)
     local t = tree(sec)
-    local skip = later(t, as_set(installed_on(obj)), planned)
+    local inst, checked = as_set(installed_on(obj)), {}
+    local function ready(s)
+        local at, have = t.at[s], copy(inst)
+        for c in pairs(checked) do
+            local o = t.at[c]
+            if o and at and (o.row < at.row or (o.row == at.row and o.col < at.col)) then have[c] = true end
+        end
+        return not groups_missing(t, s, have)
+    end
+    local more = true
+    while more do
+        more = false
+        for col = 1, COLS do
+            for row = 1, ROWS do
+                local info = dlg.upgr and dlg.upgr[row] and dlg.upgr[row][col]
+                local s = info and info.section
+                if s and planned[s] and not dlg.inst_upgr[s] and not checked[s] then
+                    local st = dlg.upgr_xml[row] and dlg.upgr_xml[row][col]
+                    if st and st.btn:IsEnabled() and ready(s) then
+                        st.btn:SetCheck(true)
+                        dlg:EvaluateUpgrades()
+                        checked[s] = true
+                        more = true
+                    end
+                end
+            end
+        end
+    end
     local left = {}
-    -- column by column, so each upgrade's opener is checked before it
     for col = 1, COLS do
         for row = 1, ROWS do
             local info = dlg.upgr and dlg.upgr[row] and dlg.upgr[row][col]
-            if info and planned[info.section] and not dlg.inst_upgr[info.section] then
-                local st = dlg.upgr_xml[row] and dlg.upgr_xml[row][col]
-                if not skip[info.section] and st and st.btn:IsEnabled() then
-                    st.btn:SetCheck(true)
-                    dlg:EvaluateUpgrades()
-                else
-                    left[#left + 1] = info.section
-                end
+            if info and planned[info.section] and not (dlg.inst_upgr[info.section] or checked[info.section]) then
+                left[#left + 1] = info.section
             end
         end
     end
     return left
 end
 
--- what is waiting to go to the toolkit, and how the last handoff went: { left, err }
+-- what is waiting to go to the toolkit, and how the last handoff went: { id, sec, left, err }, the
+-- item's id (followed through its clones) and section
 local pending
 last_install = nil
 
@@ -804,7 +911,7 @@ function install_tick()
         left, err = nil, left
     end
     if err then printf("[arsenal] Workbench could not open the toolkit: %s", tostring(err)) end
-    last_install = { sec = job.sec, left = left, err = err }
+    last_install = { id = job.id, sec = job.sec, left = left, err = err }
     return true
 end
 
@@ -826,4 +933,5 @@ end
 function on_game_start()
     RegisterScriptCallback("save_state", save_state)
     RegisterScriptCallback("load_state", load_state)
+    follow_clones()
 end

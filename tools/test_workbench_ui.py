@@ -99,13 +99,26 @@ end
 function W:GetSize() return #(self.items or {}) end
 function W:SetSelectedIndex(i) self.sel = i end
 function W:GetSelectedItem() return self.sel and self.items[self.sel + 1] end
+-- a scroll view scrolls to its top as it is cleared (CUIScrollView::Clear), and reaches as far as
+-- its content runs past it
 function W:Clear()
     for _, w in ipairs(self.content or {}) do
         w.owner = nil
         if w.autodelete then free(w) end
     end
     self.content = {}
+    self.scroll_pos = 0
 end
+function W:GetCurrentScrollPos() return self.scroll_pos or 0 end
+local function reach(self)
+    local h = 0
+    for _, w in ipairs(self.content or {}) do h = h + (w.h or 0) end
+    return math.max(0, h - self.h)
+end
+-- the engine measures the view and keeps the position within it (CUIScrollView::SetScrollPos)
+function W:SetScrollPos(p) self.scroll_pos = math.max(0, math.min(p, reach(self))) end
+-- what a script reads; max_read stands for the 1 the tree's read gave in game (2026-10-31)
+function W:GetMaxScrollPos() return self.max_read or reach(self) end
 function W:AddWindow(w, auto)
     if w.owner then error("a window attached twice: " .. tostring(w.path), 2) end
     if auto then w.autodelete = true end
@@ -178,7 +191,12 @@ utils_xml = { is_widescreen = function() return true end }
 arsenal_theme = { argb = function(role, a) return a and (role .. "@" .. a) or role end,
                   markup = function(role) return "<" .. role .. ">" end,
                   set_active = function(btn, on) btn.active = on end }
-game.translate_string = function(k) return STRINGS[k] or (k:gsub("^st_", "")) end
+-- the string table trims a text's ends, as the engine does (" or " comes back as "or")
+game.translate_string = function(k)
+    local s = STRINGS[k]
+    if s then return (s:gsub("^%s+", ""):gsub("%s+$", "")) end
+    return (k:gsub("^st_", ""))
+end
 db.actor.alive = function() return ALIVE end
 ALIVE = true
 -- the toolkit's property functors: a line per property
@@ -238,7 +256,35 @@ MUTANTS = {
                       "    local ok, rows = pcall(arsenal_workbench.card, e.sec, now, now, self.att_now, att)"),
     "kits_held_ignored": ('            cell.num:SetTextColor(theme.argb(have >= k.n and "good" or "danger"))',
                           '            cell.num:SetTextColor(theme.argb("good"))'),
-    "toggle_unsaved": ("    self.plan = plan\n    self:Save()\n    self:Refresh()", "    self.plan = plan\n    self:Refresh()"),
+    "toggle_unsaved": ("    self.att = arsenal_workbench.fitted(self.cur.sec, ups, self.att)\n    self:Save()\n",
+                       "    self.att = arsenal_workbench.fitted(self.cur.sec, ups, self.att)\n"),
+    # W5: the tree back at its top after every click, as 1.8.5 had it; past its end; or kept for
+    # an item shown anew
+    "tree_scroll_lost": ("    self.tree_scroll = keep and self.tree_view:GetCurrentScrollPos() or nil", "    self.tree_scroll = nil"),
+    # the clamp by GetMaxScrollPos the first fix had: a read of 1 holds the tree at its top
+    "tree_scroll_trusts_max": ("    ctrl:SetScrollPos(math.max(0, pos))",
+                               "    ctrl:SetScrollPos(math.max(0, math.min(pos, tonumber(ctrl:GetMaxScrollPos()) or pos)))"),
+    "tree_scroll_on_new_item": ("    self.tree_scroll = keep and self.tree_view:GetCurrentScrollPos() or nil",
+                                "    self.tree_scroll = self.tree_view:GetCurrentScrollPos()"),
+    "tree_scroll_never_restored": ("    if self.tree_scroll then\n", "    if false then\n"),
+    # M5: the details gone as soon as the cursor leaves the upgrade, or off the details panel too;
+    # or kept stale through a redraw
+    "info_panel_ignored": ("        if self.info:IsCursorOverWindow() then", "        if false then"),
+    "no_grace": ("        if now - self.left_at < GRACE then return end\n", ""),
+    "hover_kept_on_refresh": ("    self.hover, self.left_at = nil, nil\n    self:ShowInfo(nil)", "    self:ShowInfo(nil)"),
+    # M6, M7: a planned opener named as missing; "or" without its spaces
+    "parent_names_opener_in": ("        line((#names > 0 and not opener_in) and T(", "        line((#names > 0) and T("),
+    "or_unspaced": ('        local sep = " " .. (T("st_arsenal_wb_or"):gsub("^%s+", ""):gsub("%s+$", "")) .. " "',
+                    '        local sep = T("st_arsenal_wb_or")'),
+    # W4: a suppressor or launcher left planned on a mount the plan lost
+    "att_unfitted_on_click": ("    self.att = arsenal_workbench.fitted(self.cur.sec, ups, self.att)\n", ""),
+    "att_unfitted_on_show": ("    self.att = W.fitted(e.sec, ups, att)", "    self.att = att"),
+    # M8: what was left shown by the model, and with what is installed since
+    "left_by_section": ("        if e.id and last and last.id == e.id and last.left then",
+                        "        if last and last.sec == e.sec and last.left then"),
+    "left_keeps_installed": ("                if not self.installed[u] then", "                if true then"),
+    # W2: the page losing the gun it showed when it is made anew
+    "moved_id_unused": ('    if moved and moved ~= self.cur.id then key = "id:" .. moved end\n', ""),
     "refused_silent": ("    if not plan then\n        self.hover = nil\n        self:ShowInfo({ cell = { r, c } })\n        return\n    end",
                        "    if not plan then\n        return\n    end"),
     "clear_keeps": ("    self.plan, self.att = {}, {}\n    self:Save()", "    self:Save()"),
@@ -606,6 +652,36 @@ def steps(lua, g, ui, data, page_, pages, modxml, load, check):
           "the card now: a value the plan leaves alone in the last column; names without the game's color codes: %s"
           % ct[:2])
 
+    # the tree scrolled down to its fifth row stays there through a click on it (Clear scrolls a
+    # view to its top), at the next update, as far as it still reaches; the item shown anew starts
+    # at its top
+    tv = page_.tree_view
+    tv.scroll_pos = 900
+    page_.cb["wb_cell_5_1"]()
+    page_.Update(page_)
+    clamped = tv.scroll_pos
+    page_.cb["wb_cell_5_1"]()
+    page_.Update(page_)
+    kept = tv.scroll_pos
+    page_ = ui.get_ui()
+    page_.Update(page_)
+    anew = tv.scroll_pos
+    check(clamped == 228 and kept == 228 and anew == 0 and len(data.plan_of(7, "wpn_test")[0]) == 0,
+          "a click on a lower row keeps the tree scrolled there, as far as it reaches; shown anew, at its top: "
+          "%s %s %s" % (clamped, kept, anew))
+    # GetMaxScrollPos as a script read it in game, 1, while the tree scrolled: the position goes
+    # back all the same
+    tv.max_read = 1
+    tv.scroll_pos = 200
+    page_.cb["wb_cell_5_1"]()
+    page_.Update(page_)
+    stale = tv.scroll_pos
+    page_.cb["wb_cell_5_1"]()
+    page_.Update(page_)
+    tv.max_read = None
+    check(stale == 200 and len(data.plan_of(7, "wpn_test")[0]) == 0,
+          "a GetMaxScrollPos read of 1 does not hold the tree at its top: %s" % stale)
+
     # a click plans: the row, the card, the kits follow
     page_.cb["wb_cell_1_5"]()
     plan = data.plan_of(7, "wpn_test")[0]
@@ -651,10 +727,59 @@ def steps(lua, g, ui, data, page_, pages, modxml, load, check):
         return kb * 1024 / frames
     end""")(page_, 500)
     check(per_frame < 4, "the cursor resting on an upgrade: no table a frame: %.1f bytes a frame" % per_frame)
+
+    def info_now():
+        return [c.text for c in page_.info.content[1].children.values()]
+    # off it, its details stay a moment, and as long as the cursor is on the details panel (its
+    # scrollbar is the panel's), so what it does below its description can be scrolled to; then
+    # the plan
     g.HOVER = None
     page_.Update(page_)
-    info = [c.text for c in page_.info.content[1].children.values()]
-    check(info and info[0].startswith("Click upgrades"), "away from the tree: the plan: %s" % info[:1])
+    stay = info_now()[:1]
+    g.HOVER = page_.info
+    g.NOW = g.NOW + 5000
+    page_.Update(page_)
+    on_panel = info_now()[:1]
+    g.HOVER = None
+    page_.Update(page_)
+    off_panel = info_now()[:1]
+    g.NOW = g.NOW + 1600
+    page_.Update(page_)
+    info = info_now()
+    check(stay == ["name_up_firstc_t"] and on_panel == ["name_up_firstc_t"] and off_panel == ["name_up_firstc_t"],
+          "the details stay a moment off the upgrade, and while the cursor is on them: %s %s %s"
+          % (stay, on_panel, off_panel))
+    check(info and info[0].startswith("Click upgrades"), "away from the tree and the details: the plan: %s" % info[:1])
+    # the page drawn anew while the details still stay (Clear, a moment off the upgrade): back on
+    # the upgrade, its details again
+    g.HOVER = slot(1, 3).btn
+    page_.Update(page_)
+    g.HOVER = None
+    page_.Update(page_)
+    page_.cb.wb_clear()
+    g.HOVER = slot(1, 3).btn
+    page_.Update(page_)
+    back = info_now()[:1]
+    g.HOVER = None
+    g.NOW = g.NOW + 1600
+    page_.Update(page_)
+    check(back == ["name_up_firstc_t"], "redrawn, then back on the upgrade: its details: %s" % back)
+
+    # what keeps an upgrade shut: its row's openers, " or " spaced (the string table trims the
+    # text's own spaces); one of them in, the other row's group
+    g.HOVER = slot(1, 5).btn
+    page_.Update(page_)
+    info15 = info_now()
+    page_.cb["wb_cell_4_1"]()
+    g.HOVER = slot(4, 3).btn
+    page_.Update(page_)
+    info43 = info_now()
+    page_.cb["wb_cell_4_1"]()
+    g.HOVER = None
+    check(len(info15) > 1 and info15[1] == "Needs name_up_firstc_t or name_up_firstd_t first. Click to plan both.",
+          "both openers named, \" or \" between them: %s" % info15[1:2])
+    check(len(info43) > 1 and info43[1] == STRINGS["st_arsenal_wb_state_group"],
+          "its row's opener planned, the other row's group needed: %s" % info43[1:2])
 
     # a second visit: marked red, told
     page_.cb["wb_cell_4_3"]()
@@ -671,11 +796,28 @@ def steps(lua, g, ui, data, page_, pages, modxml, load, check):
           "a click attaches it to the plan: %s" % page_.att_rows[3].btn.text)
     page_.cb["wb_att_3"]()
     check(data.plan_of(7, "wpn_test")[1].launcher is None, "and off again")
+    # the upgrade that mounts it unplanned, a launcher planned on it leaves the plan: its weight off
+    # the card, its row gone
+    page_.cb["wb_att_3"]()
+    page_.cb["wb_cell_5_1"]()
+    weight = card_rows()[-1]
+    check(data.plan_of(7, "wpn_test")[1].launcher is None and page_.att_rows[3].btn.shown is False
+          and weight[3] == "3.3 kg",
+          "its mount unplanned, a planned launcher leaves the plan and the card: %s %s"
+          % (data.plan_of(7, "wpn_test")[1].launcher, weight))
 
     # Clear
     page_.cb.wb_clear()
     check(len(data.plan_of(7, "wpn_test")[0]) == 0 and page_.rows["id:7"].count.text == "", "Clear empties the plan")
     check(page_.btn_install.enabled is False, "nothing planned: no Install")
+    # a plan saved with a launcher and no mount for it (as 1.8.5 could leave one): dropped when
+    # shown, and saved so
+    data.set_plan(7, "wpn_test", lua.eval("{}"), lua.eval("{ launcher = 'gl_up' }"))
+    ui.show_next(None, 7)
+    page_ = ui.get_ui()
+    check(data.plan_of(7, "wpn_test")[1].launcher is None and page_.btn_clear.enabled is False,
+          "a saved launcher without its mount: gone when shown, nothing left to clear: %s"
+          % data.plan_of(7, "wpn_test")[1].launcher)
 
     # Install: the toolkit's handoff, only when it can go
     lua.execute("INSTALLS = {}; arsenal_workbench.install = function(id, sec, plan) INSTALLS[#INSTALLS + 1] = { id = id, sec = sec } end")
@@ -689,7 +831,7 @@ def steps(lua, g, ui, data, page_, pages, modxml, load, check):
     # weapon_is_grenadelauncher): both shown as they are, their weight in the card's
     lua.execute("""
 SEC.wpn_both = { upgrades = "up_gr_thirda_t", silencer_status = "2", silencer_name = "sil_own",
-    grenade_launcher_status = "2", grenade_launcher_name = "gl_up", inv_name = "st_both" }
+    grenade_launcher_status = "2", grenade_launcher_name = "gl_up", inv_name = "st_both", inv_weight = "3" }
 CATS.wpn_both = "rifles"
 BOTH = item("wpn_both", 9)
 BOTH.parent_obj = ACTOR_OBJ
@@ -761,6 +903,43 @@ BY_ID[9], WORLD[9] = BOTH, "wpn_both"
     page_ = ui.get_ui()
     check(sorted(data.plan_of(7, "wpn_test")[0].keys()) == ["up_firstc_t"],
           "an item's plan is checked against it when shown: %s" % sorted(data.plan_of(7, "wpn_test")[0].keys()))
+
+    # what the last handoff left unchecked: told on that item only, but what it has got since
+    lua.execute("""
+TWIN = item("wpn_test", 8, { "up_firsta_t" })
+TWIN.parent_obj = ACTOR_OBJ
+table.insert(CARRIED, TWIN)
+BY_ID[8], WORLD[8] = TWIN, "wpn_test"
+""")
+    data.last_install = lua.eval("{ id = 7, sec = 'wpn_test', left = { 'up_firstc_t', 'up_firsta_t' } }")
+
+    def left_line(id_):
+        ui.show_next(None, id_)
+        p = ui.get_ui()
+        return [c.text for c in p.info.content[1].children.values() if c.text.startswith("Left unchecked")]
+    left7, left8 = left_line(7), left_line(8)
+    lua.execute("table.remove(CARRIED); BY_ID[8], WORLD[8] = nil, nil")
+    data.last_install = None
+    check(left7 == ["Left unchecked last time: up_firstc_t."] and left8 == [],
+          "what the handoff left: on that item, without what it has since; not on another of its model: %s %s"
+          % (left7, left8))
+
+    # a scope put on the gun shown makes it anew under another id (_g.alife_clone_weapon): the page
+    # follows it
+    lua.execute("""
+TMP = item("wpn_test", 60, {})
+TMP.parent_obj = ACTOR_OBJ
+table.insert(CARRIED, TMP)
+BY_ID[60], WORLD[60] = TMP, "wpn_test"
+""")
+    ui.show_next(None, 60)
+    shown = ui.get_ui().cur.key
+    new = lua.eval("function() return alife_clone_weapon(se_item(60, 'wpn_test'), 'wpn_test').id end")()
+    lua.execute("TMP.idv = %d; BY_ID[60], WORLD[60] = nil, nil; BY_ID[%d], WORLD[%d] = TMP, 'wpn_test'" % (new, new, new))
+    followed = ui.get_ui().cur.key
+    lua.execute("table.remove(CARRIED); BY_ID[%d], WORLD[%d] = nil, nil" % (new, new))
+    check(shown == "id:60" and followed == "id:%d" % new,
+          "the gun shown, made anew under another id, still shown: %s %s" % (shown, followed))
 
     # the switch, Back
     lua.execute("REAL_OPEN = arsenal_pages.open; arsenal_pages.open = function(p) LAST_OPEN = p end")

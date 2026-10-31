@@ -67,7 +67,11 @@ arsenal_api.reveal("wpn_mg42", "the Mercenary Database")
 From then on the model is listed, marked new and announced on the PDA unless `quiet` is true.
 With `study` true, its page shows its stats too. It returns `true` when the model was new to
 the player. Nothing happens for what never turns up in this game, or with the jailbreak on,
-which lists everything anyway.
+which lists everything anyway. A model the player has already had is no news: it returns
+`false` and nothing is announced.
+
+A round (category `"ammo"`) can't be revealed on its own: it is known once the player knows a
+gun that fires it, so reveal the gun. `reveal` on a round does nothing and returns `false`.
 
 **`arsenal_api.mark_all_read()`** reads every new model at once, as the page's **Mark all
 read** does.
@@ -85,8 +89,11 @@ arsenal_api.add_action("my_mod", {
 })
 ```
 
-`sec` is the section the page shows. Up to three apps' buttons show at once, and adding the
-same `id` again replaces it. It returns `false` when the arguments are wrong.
+`sec` is the section the page shows. A page has one such button: the first one added whose
+`show` applies to its section. Workbench's Customize is added as Arsenal starts and applies on
+the gun, suit and helmet pages Workbench can plan, so a button added after it shows only on
+the other pages. Adding the same `id` again replaces it, last in line. It returns `false` when
+the arguments are wrong.
 **`arsenal_api.remove_action(id)`** takes the button away.
 
 **`arsenal_api.open(page, sec)`** opens Arsenal on a page: `"catalog"` (the default),

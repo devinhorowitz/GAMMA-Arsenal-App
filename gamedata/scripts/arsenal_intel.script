@@ -96,8 +96,9 @@ end
 -- what is known
 ---------------------------------------------------------------------------------------------
 
--- a fact on how a model turns up: { carried | worn = { faction, rank }, stash = level, sold =
--- trader, ways = { way = true } }
+-- a fact on how a model turns up: { carried | worn = { faction, rank }, stash = level, sold_by =
+-- { [trader_key] = his name }, ways = { way = true } }; sold = a trader's name is how 1.8.5 and
+-- earlier kept who sold it, by the name alone
 local function add_fact(k, fact)
     if not fact then return end
     local f = st.facts[k] or {}
@@ -111,6 +112,9 @@ local function add_fact(k, fact)
         elseif kind == "stash" or kind == "sold" then
             f[kind] = f[kind] or {}
             f[kind][v] = true
+        elseif kind == "sold_by" then
+            f.sold_by = f.sold_by or {}
+            for key, name in pairs(v) do f.sold_by[key] = name end
         elseif kind == "ways" then
             f.ways = f.ways or {}
             for w in pairs(v) do f.ways[w] = true end
@@ -156,9 +160,22 @@ local function news_soon()
     end
 end
 
+-- whether the player has had one of a model (arsenal_collection)
+local function had(e)
+    return arsenal_collection ~= nil and arsenal_collection.entry_found(e) ~= nil
+end
+
+-- whether the player has heard of a model or had one, whatever the jailbreak shows: what a
+-- fighter, a fight or a technician would tell him of is what this leaves out
+local function heard_of(e)
+    return st.known[e.sec] ~= nil or had(e)
+end
+
 -- learn of a model (a section or a model): it is known from now on, with the fact it came
 -- with; `study` studies it too; `quiet` sends no news and leaves it unmarked. Returns the
--- model when it is new, else nil. What never turns up is never learned.
+-- model when it is new, else nil. What never turns up is never learned. One the player has had
+-- is no news either: a save begun before Arsenal kept what he learned, or one he found while it
+-- turned up nowhere in this game, has it in his collection only.
 function reveal(x, how, fact, study, quiet)
     local e = model(x)
     if not (e and arsenal_data.obtainable(e.sec)) then return nil end
@@ -168,9 +185,10 @@ function reveal(x, how, fact, study, quiet)
         return nil
     end
     local new = not st.known[k]
+    local owned = new and had(e)
     if new then
         st.known[k] = { at = stamp(), how = how }
-        if not quiet then
+        if not (quiet or owned) then
             st.new[k] = true
             pending[#pending + 1] = { e = e, how = how }
             news_soon()
@@ -178,7 +196,7 @@ function reveal(x, how, fact, study, quiet)
     end
     if study then st.studied[k] = true end
     add_fact(k, fact)
-    return new and e or nil
+    return (new and not owned) and e or nil
 end
 
 -- whether a model is listed: with the jailbreak, everything; else what turns up and is known
@@ -210,6 +228,25 @@ end
 -- what is known of how a model turns up (add_fact's shape), or nil
 function facts(e)
     return st.facts[e.sec]
+end
+
+-- The traders a model's facts (facts()) say sell it, by name, sorted, each once: a trader as he
+-- was named the last time his stock showed it (sold_by), then the names an older Arsenal kept
+-- (sold) that none of those repeats
+function sold_names(fx)
+    local names, seen = {}, {}
+    local function add(n)
+        if type(n) == "string" and n ~= "" and not seen[n] then
+            seen[n] = true
+            names[#names + 1] = n
+        end
+    end
+    if type(fx) == "table" then
+        for _, n in pairs(type(fx.sold_by) == "table" and fx.sold_by or {}) do add(n) end
+        for n in pairs(type(fx.sold) == "table" and fx.sold or {}) do add(n) end
+    end
+    table.sort(names)
+    return names
 end
 
 -- how the player first learned of a model: { at = stamp, how = { kind, faction, rank, who, level } }
@@ -295,7 +332,7 @@ end
 local function unknown_gear(f, top)
     local out = {}
     for _, g in ipairs(arsenal_data.faction_gear(f)) do
-        if not st.known[g.e.sec] then
+        if not heard_of(g.e) then
             local low
             for i, r in ipairs(arsenal_data.RANKS) do
                 if i <= top and g.ranks[r] and not low then low = r end
@@ -592,6 +629,17 @@ local function look_again(id, place)
     end)
 end
 
+-- A trader as "Sold by" keeps him: by his story id (Sidorovich, Owl, a base's technician), his
+-- alone whatever the language; else by his profile and the name the game gave him. Two traders
+-- of one name stay two. The game gives a script only his name in words (character_name), so
+-- the page shows the name he had the last time his stock showed it (sold_names).
+local function trader_key(npc, who)
+    local ok, sid = pcall(function() return get_object_story_id and get_object_story_id(npc:id()) end)
+    if ok and type(sid) == "string" and sid ~= "" then return sid end
+    local okP, p = pcall(npc.profile_name, npc)
+    return (okP and type(p) == "string" and p ~= "" and (p .. "|") or "") .. tostring(who)
+end
+
 -- A body, stash or trader's stock, when its window opens (ui_inventory's partner): what the
 -- window shows of it. A trader's stock as the window lists it (shown_of). A box only if it is one
 -- of the Zone's stashes (zone_stash), looked into again a moment later (look_again). A live
@@ -607,8 +655,10 @@ local function GUI_on_show(name)
     local place = arsenal_where.place_of(partner)
     if gui.mode == "trade" then
         local who = partner:character_name()
+        local key = trader_key(partner, who)
         local stock = shown_of(gui, partner, { "npc_trade_bag", "npc_trade" })
-        learn_items(partner, { kind = "trade", who = who, place = place }, function() return { sold = who } end, stock)
+        learn_items(partner, { kind = "trade", who = who, place = place }, function() return { sold_by = { [key] = who } } end,
+            stock)
     elseif gui.npc_is_box then
         if zone_stash(partner) then
             learn_stash(partner, place)
@@ -673,22 +723,38 @@ local function willing(npc)
         and not (npc.relation and npc:relation(db.actor) == game_object.enemy)
 end
 
--- anyone willing: one thing his faction, an ally or an enemy carries, once a day
+-- What a talk picked for a fighter, kept by his id, is his only while the id is: the game gives
+-- a released fighter's id to the next one it makes, so each pick keeps whose it was (his name
+-- and the name he goes by), and another's is no pick for him
+local function whose(npc)
+    return npc:name() .. "|" .. npc:character_name()
+end
+
+local function mine(picks, npc)
+    local t = picks[npc:id()]
+    if t and t.who ~= whose(npc) then return nil end
+    return t
+end
+
+-- anyone willing: one thing his faction, an ally or an enemy carries, once a day. What he would
+-- have told, the player may have heard of since he picked it (from another, or by finding one):
+-- then he picks again, so the day's talk is never spent on nothing new
 function rumor_ok(a, b)
     local npc = npc_of(a, b)
     if not willing(npc) or se_load_var(npc:id(), npc:name(), TALKED) == day() then return false end
-    local t = rumors[npc:id()]
+    local t = mine(rumors, npc)
+    if t and heard_of(t.g.e) then t = nil end
     if not t then
         local rank = ranks.get_obj_rank_name(npc)
         local g, f = word_of(npc:character_community(), rank)
-        t = g and { g = g, f = f, specs = KNOWS_SPECS[rank] == true } or nil
-        rumors[npc:id()] = t
+        t = g and { g = g, f = f, specs = KNOWS_SPECS[rank] == true, who = whose(npc) } or nil
     end
+    rumors[npc:id()] = t
     return t ~= nil
 end
 
 function rumor_text(a, b)
-    local t = rumors[npc_of(a, b):id()]
+    local t = mine(rumors, npc_of(a, b))
     if not t then return game.translate_string("st_arsenal_rumor_none") end
     return string.format(game.translate_string(t.specs and "st_arsenal_rumor_specs" or "st_arsenal_rumor"),
         faction_name(t.f), t.g.e.name)
@@ -696,7 +762,7 @@ end
 
 function rumor_told(a, b)
     local npc = npc_of(a, b)
-    local t = rumors[npc:id()]
+    local t = mine(rumors, npc)
     rumors[npc:id()] = nil
     se_save_var(npc:id(), npc:name(), TALKED, day())
     if t then
@@ -718,32 +784,42 @@ local function sells_word()
     return not (arsenal_mcm and arsenal_mcm.gunsmith and arsenal_mcm.gunsmith() == false)
 end
 
+-- His offer, while it is still word of something new. He picks it as his talk first opens, and
+-- every technician and trader the player talks to picks one, so two may pick one gun: once the
+-- player has heard of it (bought from another, told, found one), it is sold no more.
+local function offer_of(npc)
+    local t = mine(offers, npc)
+    if t and heard_of(t.e) then return nil end
+    return t
+end
+
 -- a technician or trader: word of a special gun the player has not heard of
 function gunsmith_ok(a, b)
     local npc = npc_of(a, b)
     if not willing(npc) or not sells_word() then return false end
-    local t = offers[npc:id()]
+    local t = offer_of(npc)
     if not t then
         local list = {}
         for _, c in ipairs(arsenal_data.CATEGORIES) do
             for _, e in ipairs(arsenal_data.list(c)) do
-                if not st.known[e.sec] and arsenal_data.special(e.sec) then list[#list + 1] = e end
+                if not heard_of(e) and arsenal_data.special(e.sec) then list[#list + 1] = e end
             end
         end
-        t = #list > 0 and { e = list[math.random(#list)] } or nil
+        t = #list > 0 and { e = list[math.random(#list)], who = whose(npc) } or nil
         if t then t.price = price_of(t.e) end
-        offers[npc:id()] = t
     end
+    offers[npc:id()] = t
     return t ~= nil
 end
 
 function gunsmith_offer(a, b)
-    local t = offers[npc_of(a, b):id()]
+    local t = mine(offers, npc_of(a, b))
     return string.format(game.translate_string("st_arsenal_gunsmith_offer"), tostring(t and t.price or 0))
 end
 
+-- the "yes" for his price: only while the offer is word of something new, and he can pay
 function gunsmith_can_pay(a, b)
-    local t = offers[npc_of(a, b):id()]
+    local t = offer_of(npc_of(a, b))
     return t ~= nil and db.actor:money() >= t.price
 end
 
@@ -756,9 +832,10 @@ local function pay(npc, price)
     news_manager.relocate_money(db.actor, "out", price)
 end
 
+-- asked once more as he pays: nothing is charged for a gun he has heard of since the "yes" showed
 function gunsmith_pay(a, b)
     local npc = npc_of(a, b)
-    local t = offers[npc:id()]
+    local t = offer_of(npc)
     if not t then return end
     pay(npc, t.price)
     local ways = { gunsmith = true }
@@ -769,7 +846,7 @@ end
 
 function gunsmith_told(a, b)
     local npc = npc_of(a, b)
-    local t = offers[npc:id()]
+    local t = mine(offers, npc)
     offers[npc:id()] = nil
     return string.format(game.translate_string("st_arsenal_gunsmith_told"), t and t.e.name or "")
 end
