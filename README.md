@@ -45,7 +45,8 @@ and what its new-game kit offers. The rest you learn in the Zone:
 - **Talking.** Anyone willing will pass on one thing a day that his faction, an ally or an
   enemy carries, up to his own rank; experts, masters and legends know its specs.
   Technicians and traders know of special guns, the ones no ordinary fighter carries, and
-  will tell you what one is and how to get it, for a price.
+  will tell you what one is and how to get it, for a price. **MCM > Arsenal > Paid word of
+  special guns** turns that offer off; the free talk stays.
 
 Attachments you learn of only first-hand, from what you find, kill and open: PDAs and talks
 keep to guns and suits.

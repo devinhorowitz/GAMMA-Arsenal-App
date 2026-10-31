@@ -3,8 +3,9 @@ what the player comes to know: his faction's gear from the start, kills and thei
 (their owner's faction or one it is allied with or at war with, up to his rank; encrypted ones
 when decrypted; rare ones with specs), bodies, stashes and traders' stock as their windows show
 them (a trader's as the window lists it, a stash looked into again as it fills, never a box of
-the player's own, a companion's pack), talks, a technician's special guns, the news, the
-jailbreak, saving and regrouping (keys that are one model now, together).
+the player's own, a companion's pack), talks, a technician's special guns (and the MCM option that
+turns that talk off), the news, the jailbreak, saving and regrouping (keys that are one model now,
+together).
 
     python test_intel.py            the real script
     python test_intel.py MUTANT     a broken copy (see MUTANTS); the run must fail
@@ -183,8 +184,10 @@ function arsenal_data.special(sec) return sec == "wpn_special" end
 FOUND = {}
 arsenal_collection = { entry_found = function(e) return FOUND[e.sec] end }
 JAIL = false
+-- MCM > Arsenal > Paid word of special guns, on unless a test turns it off
+GUNSMITH = true
 -- tell is Arsenal's one way to the PDA (arsenal_mcm), on here; test_mcm.py silences it
-arsenal_mcm = { jailbreak = function() return JAIL end,
+arsenal_mcm = { jailbreak = function() return JAIL end, gunsmith = function() return GUNSMITH end,
     tell = function(text) db.actor:give_game_news("Arsenal", text) end }
 
 -- a person or a box: what he carries, his faction and rank
@@ -326,6 +329,14 @@ MUTANTS = {
     "pay_npc_unpaid": ("    npc:give_money(price)\n", ""),
     "pay_no_news": ('    news_manager.relocate_money(db.actor, "out", price)\n', ""),
     "gunsmith_full": ("    local ways = { gunsmith = true }", "    local ways = {}"),
+    # MCM > Arsenal > Paid word of special guns
+    "gunsmith_option_ignored": ("    if not willing(npc) or not sells_word() then return false end",
+                                "    if not willing(npc) then return false end"),
+    "gunsmith_option_hides_rumor": ("    if not willing(npc) or se_load_var(npc:id(), npc:name(), TALKED) == day() then return false end",
+                                    "    if not willing(npc) or arsenal_mcm.gunsmith() == false"
+                                    " or se_load_var(npc:id(), npc:name(), TALKED) == day() then return false end"),
+    "gunsmith_option_needs_mcm": ("    return not (arsenal_mcm and arsenal_mcm.gunsmith and arsenal_mcm.gunsmith() == false)",
+                                  "    return arsenal_mcm.gunsmith() == true"),
     "talks_shared": ("function reset() st, pending, rumors, offers, scheduled = fresh(), {}, {}, {}, false end",
                      "function reset() st, pending, rumors, scheduled = fresh(), {}, {}, false; offers = rumors end"),
     "news_batch": ("        if not groups[key] then", "        if true then"),
@@ -867,6 +878,22 @@ def main():
     said = run(lambda: m.rumor_text(g.db.actor, trader))
     check(both == (True, True) and rich is True and named(said),
           "and the offer checked first: %s %r %r" % (both, rich, said))
+    # MCM > Arsenal > Paid word of special guns, off: the trader offers no word of a special gun,
+    # and still talks of gear for free; on again, the offer is back. An Arsenal MCM without the
+    # option keeps the offer
+    m.reset()
+    lua.execute("SE[610] = nil")
+    g.GUNSMITH = False
+    off = (run(lambda: m.rumor_ok(g.db.actor, trader)), run(lambda: m.gunsmith_ok(g.db.actor, trader)))
+    g.GUNSMITH = True
+    back = run(lambda: m.gunsmith_ok(g.db.actor, trader))
+    m.reset()
+    opt, g.arsenal_mcm.gunsmith = g.arsenal_mcm.gunsmith, None
+    older = run(lambda: m.gunsmith_ok(g.db.actor, trader))
+    g.arsenal_mcm.gunsmith = opt
+    check(off == (True, False) and back is True and older is True,
+          "the paid talk off: no offer, the free talk stays; on again, offered; without the option, offered: "
+          "%s %r %r" % (off, back, older))
 
     # news: one line per source, three names then how many more; seen pages no longer new
     m.reset()

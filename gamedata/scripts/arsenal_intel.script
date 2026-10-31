@@ -21,7 +21,8 @@
         carries specs too
       - a talk: anyone willing passes on one thing his faction, an ally or an enemy carries, up
         to his own rank, once a day; an expert, master or legend knows its specs; a technician
-        or trader sells word of a special gun (one no ordinary fighter carries, arsenal_data.special)
+        or trader sells word of a special gun (one no ordinary fighter carries, arsenal_data.special),
+        unless the player turned that talk off in MCM
     A model is studied once the player handles one (it enters his inventory), or from the specs
     above; its page shows its stats and what fits it only then. Only what turns up in this game
     (arsenal_data.obtainable) is ever learned. A round is known, and its values show, once the
@@ -711,10 +712,16 @@ local function price_of(e)
     return math.max(1000, math.floor(c / 1000 + 0.5) * 100)
 end
 
+-- whether the paid talk is on (MCM > Arsenal > Paid word of special guns); on without MCM. The
+-- free talk (rumor_ok) asks willing() only, so turning this off leaves it alone
+local function sells_word()
+    return not (arsenal_mcm and arsenal_mcm.gunsmith and arsenal_mcm.gunsmith() == false)
+end
+
 -- a technician or trader: word of a special gun the player has not heard of
 function gunsmith_ok(a, b)
     local npc = npc_of(a, b)
-    if not willing(npc) then return false end
+    if not willing(npc) or not sells_word() then return false end
     local t = offers[npc:id()]
     if not t then
         local list = {}

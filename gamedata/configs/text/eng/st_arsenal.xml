@@ -921,4 +921,10 @@
 	<string id="ui_mcm_arsenal_pda_tab_desc">
 		<text>Gives Arsenal a tab of its own in the PDA's tab bar, after the others, in place of its tile in the Launcher. Takes effect when you are back in the game.</text>
 	</string>
+	<string id="ui_mcm_arsenal_gunsmith">
+		<text>Paid word of special guns</text>
+	</string>
+	<string id="ui_mcm_arsenal_gunsmith_desc">
+		<text>Technicians and traders offer, for money, to tell you of a special gun no ordinary fighter carries, and how to get it. Off, they don't offer. The free talk about gear stays.</text>
+	</string>
 </string_table>
