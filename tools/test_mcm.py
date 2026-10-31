@@ -106,12 +106,19 @@ MUTANTS = {
                         "if ui_arsenal.flat_window() or ui_arsenal_workbench.flat_window() then"),
     "kept_on_load": ('    RegisterScriptCallback("actor_on_net_destroy", close_flat)\n', ""),
     "load_skips_compare": ("{ ui_arsenal, ui_arsenal_workbench, ui_arsenal_compare }", "{ ui_arsenal, ui_arsenal_workbench }"),
+    "gunsmith_def": ('{ id = "gunsmith", type = "check", val = 1, def = true }', '{ id = "gunsmith", type = "check", val = 1 }'),
+    "gunsmith_dropped": ('            { id = "gunsmith", type = "check", val = 1, def = true },\n', ""),
+    "gunsmith_off_unset": ('ui_mcm.get("arsenal/gunsmith") end)\n    return not (ok and v == false)',
+                           'ui_mcm.get("arsenal/gunsmith") end)\n    return ok and v == true'),
+    "gunsmith_always": ('ui_mcm.get("arsenal/gunsmith") end)\n    return not (ok and v == false)',
+                        'ui_mcm.get("arsenal/gunsmith") end)\n    return true'),
     "news_def": ('{ id = "news", type = "check", val = 1, def = true }', '{ id = "news", type = "check", val = 1 }'),
     "sources_def": ('{ id = "sources", type = "check", val = 1, def = false }', '{ id = "sources", type = "check", val = 1 }'),
     "sources_dropped": ('            { id = "sources", type = "check", val = 1, def = false },\n', ""),
     "sources_any": ('ui_mcm.get("arsenal/sources") end)\n    return (ok and v == true) or false',
                     'ui_mcm.get("arsenal/sources") end)\n    return ok'),
-    "news_off_unset": ("    return not (ok and v == false)", "    return ok and v == true"),
+    "news_off_unset": ('ui_mcm.get("arsenal/news") end)\n    return not (ok and v == false)',
+                       'ui_mcm.get("arsenal/news") end)\n    return ok and v == true'),
     "news_dropped": ('            { id = "news", type = "check", val = 1, def = true },\n', ""),
     "set_inverted": ('ui_mcm.set("arsenal/news", on and true or false)', 'ui_mcm.set("arsenal/news", not on)'),
     "tell_ignores": ("    if not news() then\n", "    if false then\n"),
@@ -190,6 +197,20 @@ def main():
     mcm, g.ui_mcm = g.ui_mcm, None
     check(m.sources() is False, "off without MCM")
     g.ui_mcm = mcm
+    # "Paid word of special guns": the talk where a technician sells word of a special gun
+    # (arsenal_intel.gunsmith_ok); a check box, on by default, so a player who never opens MCM keeps it
+    smith = [o for o in opts.gr.values() if o.id == "gunsmith"]
+    check(len(smith) == 1 and smith[0].type == "check" and smith[0]["def"] is True,
+          "Paid word of special guns is a check box, on by default (true, not nil)")
+    check(m.gunsmith() is True, "on while the option is unset")
+    g.options["arsenal/gunsmith"] = False
+    check(m.gunsmith() is False, "off once the player turns it off")
+    g.options["arsenal/gunsmith"] = True
+    check(m.gunsmith() is True, "and on again")
+    mcm, g.ui_mcm = g.ui_mcm, None
+    check(m.gunsmith() is True, "on without MCM")
+    g.ui_mcm = mcm
+    g.options["arsenal/gunsmith"] = None
 
     # "Arsenal tab in the PDA": offered only where there is a choice, with MAC and Modded Exes' tab
     # registry both (without MAC the tab is there anyway, without the registry the tile), after the

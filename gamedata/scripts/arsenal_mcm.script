@@ -11,9 +11,11 @@
     registry, "Arsenal tab in the PDA" gives the catalog a tab of its own instead of its tile; off
     until the player turns it on. Seen guns and the jailbreak are off until the
     player turns them on. PDA notifications are on until the player silences them, here or with
-    the Silence box at the foot of Arsenal's pages, which writes the same option. "Show where
-    items are defined" ends each model's page with the files the game read it from
-    (arsenal_sources), for modders; off until the player turns it on.
+    the Silence box at the foot of Arsenal's pages, which writes the same option. "Paid word of
+    special guns" is the talk where a technician or trader sells word of a special gun
+    (arsenal_intel.gunsmith_ok); on until the player turns it off, which leaves the free talk about
+    gear alone. "Show where items are defined" ends each model's page with the files the game read
+    it from (arsenal_sources), for modders; off until the player turns it on.
 --]]
 
 -- The release and its author, on the line at the foot of every page, so a screenshot says which
@@ -43,6 +45,7 @@ function on_mcm_load()
                   { 2, "mcm_kb_mod_ctrl" }, { 3, "mcm_kb_mod_alt" } } },
             { id = "count_seen", type = "check", val = 1, def = false },
             { id = "jailbreak", type = "check", val = 1, def = false },
+            { id = "gunsmith", type = "check", val = 1, def = true },
             { id = "news", type = "check", val = 1, def = true },
             { id = "sources", type = "check", val = 1, def = false },
             { id = "about", type = "desc", text = "ui_mcm_arsenal_about" },
@@ -98,6 +101,13 @@ end
 function jailbreak()
     local ok, v = pcall(function() return ui_mcm and ui_mcm.get("arsenal/jailbreak") end)
     return (ok and v == true) or false
+end
+
+-- whether technicians and traders sell word of special guns: true unless the player turned the
+-- talk off
+function gunsmith()
+    local ok, v = pcall(function() return ui_mcm and ui_mcm.get("arsenal/gunsmith") end)
+    return not (ok and v == false)
 end
 
 -- whether Arsenal's PDA messages are on: true unless the player silenced them
