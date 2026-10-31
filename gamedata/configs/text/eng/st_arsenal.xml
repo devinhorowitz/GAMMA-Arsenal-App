@@ -127,7 +127,7 @@
 		<text>Opens Arsenal in a window of its own, outside the PDA.</text>
 	</string>
 	<string id="ui_mcm_arsenal_about">
-		<text>With the 3D PDA on, the PDA's pages are drawn onto the screen in your hand, which softens icons. Opened with this key, Arsenal is drawn straight to the screen, as sharp as the inventory.</text>
+		<text>Arsenal opens three ways: a PDA tab of its own, a tile in Mod App Creator's Launcher, or the key above. With the 3D PDA on, the PDA's pages are drawn onto the screen in your hand, which softens icons; opened with the key, Arsenal is drawn straight to the screen, as sharp as the inventory.</text>
 	</string>
 	<string id="st_arsenal_modes_by_upgrade">
 		<text>%s (%s by upgrade)</text>
@@ -919,7 +919,7 @@
 		<text>Arsenal tab in the PDA</text>
 	</string>
 	<string id="ui_mcm_arsenal_pda_tab_desc">
-		<text>Gives Arsenal a tab of its own in the PDA's tab bar, after the others, in place of its tile in the Launcher. Takes effect when you are back in the game.</text>
+		<text>Opens Arsenal from a tab of its own in the PDA's tab bar, after the others, instead of its tile in Mod App Creator's Launcher. The tile keeps a crowded tab bar readable. Takes effect when you are back in the game.</text>
 	</string>
 	<string id="ui_mcm_arsenal_gunsmith">
 		<text>Paid word of special guns</text>
