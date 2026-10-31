@@ -77,10 +77,11 @@ current: say so and stop. Installed and older: this is an update.
 ## 6. Requirements
 
 - **MCM** comes with GAMMA.
-- **Mod App Creator (MAC)** gives Arsenal its PDA tile. It is present if an enabled mod (`+` in
-  `modlist.txt`) has `gamedata\scripts\mac_mcm.script`. Without it Arsenal still works: it has a
-  tab of its own in the PDA's tab bar, and the player can bind a key in **MCM > Arsenal**. With
-  MAC, **MCM > Arsenal > Arsenal tab in the PDA** swaps the tile for that tab. MAC is at
+- **Mod App Creator (MAC)** is optional. Arsenal opens three ways: a tab of its own in the PDA's
+  tab bar, a tile in MAC's Launcher, or a key the player binds in **MCM > Arsenal**. Without MAC
+  it has the tab; with MAC it starts on the tile, and **MCM > Arsenal > Arsenal tab in the PDA**
+  swaps the tile for the tab. MAC is present if an enabled mod (`+` in `modlist.txt`) has
+  `gamedata\scripts\mac_mcm.script`. MAC is at
   https://www.moddb.com/mods/stalker-anomaly/addons/mod-app-creator-mac (the player downloads
   it; don't download it yourself unless they ask).
 

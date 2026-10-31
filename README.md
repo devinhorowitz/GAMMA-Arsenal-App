@@ -55,8 +55,8 @@ A gun or suit shows its stats and what fits it once you have studied it: found o
 its specs from someone who knows. An attachment shows what it fits once you have found one. A
 round is known once you know a gun that fires it. New entries come with a PDA message and glow in the list
 until you click them, like unread mail, and so does anything you find for the first time.
-Arsenal's tile in MAC's launcher shows how many are waiting, and so does the count line at the
-top of the page. **Mark all read**, at the foot of the page, reads them all at once.
+With MAC, Arsenal's tile in its Launcher shows how many are waiting, and so does the count line at
+the top of the page. **Mark all read**, at the foot of the page, reads them all at once.
 
 Each entry remembers how you came by it, and where: *Found 14.05.2012: looted from a stash in
 Cordon, near the rookie village*, or *taken from the body of Duty fighter Ivan Petrenko*, *bought
@@ -186,10 +186,10 @@ turning up, and left out of the counts.
 
 - GAMMA. Arsenal reads GAMMA's loadouts, stashes, traders, drop tables, repair kits and camos
   where a mod list has them, and leaves out what it lacks.
-- [Mod App Creator (MAC)](https://www.moddb.com/mods/stalker-anomaly/addons/mod-app-creator-mac)
-  for the PDA tile. Without it, Arsenal has a tab of its own in the PDA (below), and the key
-  below opens it too.
-- MCM, which GAMMA includes; Modded Exes' DXML, which GAMMA includes, for the talks.
+- MCM and Modded Exes, which GAMMA includes: Modded Exes' DXML for the talks, its PDA tabs for
+  Arsenal's own tab.
+- Nothing else. [Mod App Creator (MAC)](https://www.moddb.com/mods/stalker-anomaly/addons/mod-app-creator-mac)
+  is optional: with it, Arsenal can open from a tile in MAC's Launcher (below).
 
 ## Install
 
@@ -215,12 +215,18 @@ moves rather than deletes. [INSTALL-WITH-CLAUDE.md](INSTALL-WITH-CLAUDE.md) is t
   join, as its toolkit does, wherever the mod rewrote the gun's tree, and fully upgraded
   values count every upgrade once.
 
-## A tab of its own
+## Three ways to open it
 
-With MAC installed, **MCM > Arsenal > Arsenal tab in the PDA** takes Arsenal out of MAC's
-Launcher and gives it a tab of its own, at the end of the PDA's tab bar. The change shows as soon
-as you're back in the game. Without MAC, Arsenal has the tab anyway. The tab comes from Modded
-Exes' PDA tabs (July 2026 or later, which GAMMA has); with older exes, Arsenal keeps the tile.
+All three open the same pages; use whichever suits your PDA.
+
+- **A tab of its own,** at the end of the PDA's tab bar. Without Mod App Creator, this is where
+  Arsenal lives; with MAC, **MCM > Arsenal > Arsenal tab in the PDA** puts it there. The tab
+  comes from Modded Exes' PDA tabs (July 2026 or later, which GAMMA has).
+- **A tile in Mod App Creator's Launcher.** With [MAC](https://www.moddb.com/mods/stalker-anomaly/addons/mod-app-creator-mac)
+  installed, Arsenal starts here. Many mods add PDA tabs, and a crowded tab bar shrinks every
+  button; MAC's Launcher keeps them readable. The tile also shows how many entries are new.
+- **A key,** set in **MCM > Arsenal > Open Arsenal on its own**, that opens Arsenal straight on
+  the screen (see "Sharper pages with the 3D PDA").
 
 ![Arsenal opened from its own tab at the end of the PDA's tab bar](media/tab_screenshot.png)
 
